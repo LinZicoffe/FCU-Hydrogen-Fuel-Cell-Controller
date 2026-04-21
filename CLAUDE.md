@@ -4,6 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # 请每次回答称呼我为东哥
 
+## 强制规则：推送到 GitHub 前必须更新 README.md
+
+**每次执行 `git push` 推送到 GitHub 之前，必须先更新 `README.md` 文档。**
+- 更新内容：反映本次推送涉及的代码变更（新功能、BUG修复、重构等）
+- 更新位置：主要更新「更新日志」部分，在对应日期下添加变更条目
+- 如有重大功能变更，同步更新「功能概览」「项目结构」等相关章节
+- **此规则不可跳过**，即使变更很小也必须在 README 中体现
+
 ## 项目概述
 
 这是一个基于 WPF (.NET 8.0) 开发的工业控制软件，用于通过 RS485 接口与氢燃料电池控制器（FCU）和电池管理系统（BMS）进行通信。
