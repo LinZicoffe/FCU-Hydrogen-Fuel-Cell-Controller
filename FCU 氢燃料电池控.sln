@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36511.14 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FCU 氢燃料电池控", "FCU 氢燃料电池控\FCU 氢燃料电池控.csproj", "{BB661871-328C-4B44-B726-2A941BF7CF50}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BB661871-328C-4B44-B726-2A941BF7CF50}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BB661871-328C-4B44-B726-2A941BF7CF50}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BB661871-328C-4B44-B726-2A941BF7CF50}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BB661871-328C-4B44-B726-2A941BF7CF50}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F5FCB8DF-9B83-4A4D-BB4D-B8921A88CCD0}
+	EndGlobalSection
+EndGlobal

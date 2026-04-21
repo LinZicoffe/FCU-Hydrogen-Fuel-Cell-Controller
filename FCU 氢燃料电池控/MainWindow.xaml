@@ -1,0 +1,1519 @@
+<hc:Window x:Class="FCU_氢燃料电池控.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:FCU_氢燃料电池控"
+        xmlns:hc="https://handyorg.github.io/handycontrol"
+        mc:Ignorable="d"
+        Title="瑞达氢燃料电池FCU/DC校准 V1.2" Height="780" Width="1280"
+        Background="{DynamicResource RegionBrush}"
+        WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <!-- HandyControl 内置样式引用 -->
+        <!-- 按钮样式: ButtonPrimary, ButtonSuccess, ButtonWarning, ButtonDanger, ButtonInfo -->
+        <!-- 输入框样式: TextBoxExtend, TextBoxPlus, NumericUpDownExtend -->
+        <!-- GroupBox样式: GroupBoxOriginal, GroupBoxTab -->
+        <!-- 颜色资源: PrimaryBrush, SuccessBrush, WarningBrush, DangerBrush, InfoBrush -->
+
+        <!-- 基础数值定义 -->
+        <sys:Double x:Key="DefaultMargin" xmlns:sys="clr-namespace:System;assembly=mscorlib">4</sys:Double>
+        <sys:Double x:Key="DefaultPadding" xmlns:sys="clr-namespace:System;assembly=mscorlib">6</sys:Double>
+        <CornerRadius x:Key="DefaultCornerRadius">3</CornerRadius>
+
+        <!-- 自定义颜色（用于兼容旧样式） -->
+        <SolidColorBrush x:Key="PrimaryColor" Color="#1976D2"/>
+        <SolidColorBrush x:Key="AccentColor" Color="#2196F3"/>
+        <SolidColorBrush x:Key="DarkColor" Color="#0D47A1"/>
+
+        <!-- 按钮样式别名（映射到HandyControl内置样式） -->
+        <Style x:Key="StandardButtonStyle" TargetType="Button" BasedOn="{StaticResource ButtonPrimary}"/>
+        <Style x:Key="SuccessButtonStyle" TargetType="Button" BasedOn="{StaticResource ButtonSuccess}"/>
+        <Style x:Key="StopButtonStyle" TargetType="Button" BasedOn="{StaticResource ButtonDanger}"/>
+        <Style x:Key="WarningButtonStyle" TargetType="Button" BasedOn="{StaticResource ButtonWarning}"/>
+
+        <!-- 现代 TabItem 样式 -->
+        <Style x:Key="ModernTabItem" TargetType="hc:TabItem">
+            <Setter Property="Padding" Value="16,10"/>
+            <Setter Property="Margin" Value="0,0,5,0"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontFamily" Value="{DynamicResource FontFamily}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="hc:TabItem">
+                        <Grid>
+                            <Border Name="Border"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="0,0,0,2"
+                                    Margin="1,0,1,0">
+                                <ContentPresenter x:Name="ContentSite"
+                                                VerticalAlignment="Center"
+                                                HorizontalAlignment="Center"
+                                                ContentSource="Header"
+                                                Margin="{TemplateBinding Padding}"/>
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
+                                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ContentPanel样式 -->
+        <Style x:Key="ContentPanelStyle" TargetType="Border">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#EEEEEE"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Direction="315" ShadowDepth="1" BlurRadius="6" Opacity="0.08"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- DropShadowEffect资源（供GroupBox使用） -->
+        <DropShadowEffect x:Key="DropShadowEffect" Direction="315" ShadowDepth="1" BlurRadius="6" Opacity="0.08"/>
+
+        <!-- TextBox样式（使用HandyControl主题资源） -->
+        <Style x:Key="StandardTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource TextBoxExtend}">
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="8,0"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+
+        <!-- GroupBox样式（使用HandyControl主题资源） -->
+        <Style x:Key="ModernGroupBoxStyle" TargetType="GroupBox">
+            <Setter Property="FontFamily" Value="{DynamicResource FontFamily}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource RegionBrush}"/>
+            <Setter Property="Padding" Value="16"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GroupBox">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="{TemplateBinding Padding}"
+                                Effect="{StaticResource EffectShadow2}">
+                            <ContentPresenter/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Label样式（使用HandyControl主题资源） -->
+        <Style x:Key="LabelStyle" TargetType="Label">
+            <Setter Property="FontFamily" Value="{DynamicResource FontFamily}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+
+        <!-- TextBlock样式（使用HandyControl主题资源） -->
+        <Style x:Key="TextBlockDisplayStyle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource FontFamily}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="4"/>
+        </Style>
+
+        <!-- 标题TextBlock样式 -->
+        <Style x:Key="TextBlockHeader" TargetType="TextBlock" BasedOn="{StaticResource TextBlockDefault}">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+        </Style>
+
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="50"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="5"/>
+            <RowDefinition Height="200"/>
+            <RowDefinition Height="25"/>
+        </Grid.RowDefinitions>
+
+        <!-- 顶部标题栏 -->
+        <Border Grid.Row="0" Background="{DynamicResource PrimaryBrush}" Padding="16,0">
+            <TextBlock Text="瑞达氢燃料电池FCU/DC校准 V1.2"
+                       Style="{StaticResource TextBlockLargeBold}"
+                       Foreground="White"
+                       VerticalAlignment="Center"/>
+        </Border>
+
+        <!-- 主内容区 -->
+        <Grid Grid.Row="1" Margin="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="270"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 左侧面板 -->
+            <ScrollViewer Grid.Column="0"
+                          Margin="0,0,10,0"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <hc:UniformSpacingPanel Spacing="10" Orientation="Vertical">
+                <!-- 串口设置 -->
+                <hc:Card BorderThickness="0" Effect="{StaticResource EffectShadow2}">
+                    <StackPanel>
+                        <TextBlock Text="串口设置"
+                                   Style="{StaticResource TextBlockHeader}"
+                                   Margin="0,0,0,10"/>
+
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Label Grid.Column="0" Content="串口号:" Style="{StaticResource LabelStyle}"/>
+                            <hc:ComboBox Grid.Column="1"
+                                      ItemsSource="{Binding AvailablePorts}"
+                                      SelectedItem="{Binding SelectedPortName}"
+                                      IsEnabled="{Binding IsConnected, Converter={StaticResource InverseBoolConverter}}"
+                                      Height="32"
+                                      hc:InfoElement.Placeholder="请选择串口"
+                                      hc:InfoElement.ShowClearButton="True"
+                                      FontFamily="Microsoft YaHei UI, Segoe UI, Tahoma, sans-serif"
+                                      FontSize="10"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Label Grid.Column="0" Content="波特率:" Style="{StaticResource LabelStyle}"/>
+                            <hc:ComboBox Grid.Column="1"
+                                      ItemsSource="{Binding AvailableBaudRates}"
+                                      SelectedItem="{Binding SelectedBaudRate}"
+                                      IsEnabled="{Binding IsConnected, Converter={StaticResource InverseBoolConverter}}"
+                                      Height="32"
+                                      hc:InfoElement.Placeholder="请选择波特率"
+                                      hc:InfoElement.ShowClearButton="True"
+                                      FontFamily="Microsoft YaHei UI, Segoe UI, Tahoma, sans-serif"
+                                      FontSize="10"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Label Grid.Column="0" Content="从站地址(1-247):" Style="{StaticResource LabelStyle}" FontSize="10"/>
+                            <TextBox Grid.Column="1"
+                                     Text="{Binding DeviceAddress, UpdateSourceTrigger=PropertyChanged}"
+                                     Height="32"
+                                     FontFamily="Microsoft YaHei UI, Segoe UI, Tahoma, sans-serif"
+                                     FontSize="12"
+                                     VerticalContentAlignment="Center"
+                                     Padding="5,0,0,0"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="10"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <Button Grid.Column="0"
+                                    Content="刷新串口"
+                                    Command="{Binding RefreshPortsCommand}"
+                                    Style="{StaticResource StandardButtonStyle}"
+                                    Height="36"/>
+                            
+                            <!-- 打开串口按钮 -->
+                            <Button Grid.Column="2"
+                                    Content="打开串口"
+                                    Command="{Binding OpenSerialCommand}"
+                                    Style="{StaticResource SuccessButtonStyle}"
+                                    Height="36"
+                                    Visibility="{Binding IsConnected, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
+                                    
+                            <!-- 关闭串口按钮 -->
+                            <Button Grid.Column="2"
+                                    Content="关闭串口"
+                                    Command="{Binding CloseSerialCommand}"
+                                    Style="{StaticResource StopButtonStyle}"
+                                    Height="36"
+                                    Visibility="{Binding IsConnected, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                        </Grid>
+                    </StackPanel>
+                </hc:Card>
+
+                <!-- 读取操作 -->
+                <hc:Card BorderThickness="0" Effect="{StaticResource EffectShadow2}">
+                    <StackPanel>
+                        <TextBlock Text="读取操作"
+                                   Style="{StaticResource TextBlockHeader}"
+                                   Margin="0,0,0,10"/>
+
+                        <Button Content="读取设备序列号"
+                                Command="{Binding ReadSerialNumberCommand}"
+                                Style="{StaticResource StandardButtonStyle}"
+                                Margin="0,0,0,6"/>
+
+                        <Button Content="读取电堆信息"
+                                Command="{Binding ReadStackInfoCommand}"
+                                Style="{StaticResource StandardButtonStyle}"
+                                Margin="0,0,0,6"/>
+
+                        <Button Content="读取配置参数"
+                                Command="{Binding ReadConfigCommand}"
+                                Style="{StaticResource StandardButtonStyle}"/>
+                    </StackPanel>
+                </hc:Card>
+
+                <!-- 系统控制 -->
+                <hc:Card BorderThickness="0" Effect="{StaticResource EffectShadow2}">
+                    <StackPanel>
+                        <TextBlock Text="系统控制"
+                                   Style="{StaticResource TextBlockHeader}"
+                                   Margin="0,0,0,10"/>
+
+                        <Button Content="启动电堆"
+                                Command="{Binding StartStackCommand}"
+                                Style="{StaticResource SuccessButtonStyle}"
+                                Margin="0,0,0,6"/>
+
+                        <Button Content="关闭电堆"
+                                Command="{Binding StopStackCommand}"
+                                Style="{StaticResource StopButtonStyle}"/>
+                    </StackPanel>
+                </hc:Card>
+
+                <!-- 设备序列号显示 -->
+                <hc:Card BorderThickness="0" Effect="{StaticResource EffectShadow2}">
+                    <StackPanel>
+                        <TextBlock Text="设备序列号"
+                                   Style="{StaticResource TextBlockHeader}"
+                                   Margin="0,0,0,10"/>
+                        <TextBox Text="{Binding SerialNumber, Mode=OneWay}"
+                                 Style="{StaticResource StandardTextBoxStyle}"
+                                 IsReadOnly="True"/>
+                    </StackPanel>
+                </hc:Card>
+                </hc:UniformSpacingPanel>
+            </ScrollViewer>
+
+            <!-- 右侧Tab区域 -->
+            <hc:TabControl Grid.Column="1"
+                        Background="Transparent"
+                        BorderThickness="0">
+                <!-- FCU参数配置 Tab（合并：压力/阀门/DCDC/风扇温度） -->
+                <hc:TabItem Header="FCU参数配置">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
+                        <StackPanel>
+                            <!-- 压力参数 -->
+                            <GroupBox Header="压力参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                            <StackPanel>
+                                <!-- 读取按钮 -->
+                                <Button Name="btn_ReadPressureParams"
+                                        Content="读取压力参数"
+                                        Style="{StaticResource StandardButtonStyle}"
+                                        Width="150"
+                                        HorizontalAlignment="Right"
+                                        Margin="0,0,0,10"
+                                        Click="btn_ReadPressureParams_Click"/>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="1*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <Label Grid.Row="0" Grid.Column="0" Content="高压最小值 (KPA):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding HighPressureMin, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource StandardTextBoxStyle}" Margin="4"/>
+                                    <Button Grid.Row="0" Grid.Column="2" Content="修改" Command="{Binding SetHighPressureMinCommand}" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4"/>
+
+                                    <Label Grid.Row="1" Grid.Column="0" Content="高压红警值 (KPA):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding HighPressureRed, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource StandardTextBoxStyle}" Margin="4"/>
+                                    <Button Grid.Row="1" Grid.Column="2" Content="修改" Command="{Binding SetHighPressureRedCommand}" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4"/>
+
+                                    <Label Grid.Row="2" Grid.Column="0" Content="高压黄警值 (KPA):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding HighPressureYellow, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource StandardTextBoxStyle}" Margin="4"/>
+                                    <Button Grid.Row="2" Grid.Column="2" Content="修改" Command="{Binding SetHighPressureYellowCommand}" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4"/>
+
+                                    <Label Grid.Row="3" Grid.Column="0" Content="低压下限值 (KPA):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding LowPressureMin, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource StandardTextBoxStyle}" Margin="4"/>
+                                    <Button Grid.Row="3" Grid.Column="2" Content="修改" Command="{Binding SetLowPressureMinCommand}" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4"/>
+
+                                    <Label Grid.Row="4" Grid.Column="0" Content="低压上限值 (KPA):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding LowPressureMax, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource StandardTextBoxStyle}" Margin="4"/>
+                                    <Button Grid.Row="4" Grid.Column="2" Content="修改" Command="{Binding SetLowPressureMaxCommand}" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4"/>
+
+                                    <Label Grid.Row="5" Grid.Column="0" Content="高压量程 (KPA):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding HighPressureRange, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource StandardTextBoxStyle}" Margin="4"/>
+                                    <Button Grid.Row="5" Grid.Column="2" Content="修改" Command="{Binding SetHighPressureRangeCommand}" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4"/>
+
+                                    <Label Grid.Row="6" Grid.Column="0" Content="低压量程 (KPA):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding LowPressureRange, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource StandardTextBoxStyle}" Margin="4"/>
+                                    <Button Grid.Row="6" Grid.Column="2" Content="修改" Command="{Binding SetLowPressureRangeCommand}" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                            <!-- 阀门参数 -->
+                            <GroupBox Header="排水阀门参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                            <StackPanel>
+                                <!-- 读取按钮 -->
+                                <Button Name="btn_ReadValveParams"
+                                        Content="读取阀门参数"
+                                        Style="{StaticResource StandardButtonStyle}"
+                                        Width="150"
+                                        HorizontalAlignment="Right"
+                                        Margin="0,0,0,10"
+                                        Click="btn_ReadValveParams_Click"/>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="1*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <Label Grid.Row="0" Grid.Column="0" Content="开机第一次时长 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_ValveFirstOpen" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+                                    <Button Grid.Row="0" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetValveFirstOpen_Click"/>
+
+                                    <Label Grid.Row="1" Grid.Column="0" Content="开机第二次时长 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_ValveSecondOpen" Style="{StaticResource StandardTextBoxStyle}" Text="20" Margin="4"/>
+                                    <Button Grid.Row="1" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetValveSecondOpen_Click"/>
+
+                                    <Label Grid.Row="2" Grid.Column="0" Content="正常周期间隔 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Name="tbx_ValveNormalInterval" Style="{StaticResource StandardTextBoxStyle}" Text="150" Margin="4"/>
+                                    <Button Grid.Row="2" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetValveNormalInterval_Click"/>
+
+                                    <Label Grid.Row="3" Grid.Column="0" Content="正常打开时长 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="3" Grid.Column="1" Name="tbx_ValveNormalOpen" Style="{StaticResource StandardTextBoxStyle}" Text="3" Margin="4"/>
+                                    <Button Grid.Row="3" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetValveNormalOpen_Click"/>
+
+                                    <Label Grid.Row="4" Grid.Column="0" Content="关机打开时长 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="4" Grid.Column="1" Name="tbx_ValveShutdownOpen" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+                                    <Button Grid.Row="4" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetValveShutdownOpen_Click"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                            <!-- DCDC参数 -->
+                            <GroupBox Header="DCDC参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                            <StackPanel>
+                                <!-- 读取按钮 -->
+                                <Button Name="btn_ReadDCDCParams"
+                                        Content="读取DCDC参数"
+                                        Style="{StaticResource StandardButtonStyle}"
+                                        Width="150"
+                                        HorizontalAlignment="Right"
+                                        Margin="0,0,0,10"
+                                        Click="btn_ReadDCDCParams_Click"/>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="1*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <Label Grid.Row="0" Grid.Column="0" Content="最低工作电压 (0.1V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_DCDCMinVoltage" Style="{StaticResource StandardTextBoxStyle}" Text="80" Margin="4"/>
+                                    <Button Grid.Row="0" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetDCDCMinVoltage_Click"/>
+
+                                    <Label Grid.Row="1" Grid.Column="0" Content="放电截至电压 (0.1V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_DCDCStopVoltage" Style="{StaticResource StandardTextBoxStyle}" Text="20" Margin="4"/>
+                                    <Button Grid.Row="1" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetDCDCStopVoltage_Click"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                            <!-- 风扇温度参数 -->
+                            <GroupBox Header="风扇及温度参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,0">
+                            <StackPanel>
+                                <!-- 读取按钮 -->
+                                <Button Name="btn_ReadFanTempParams"
+                                        Content="读取风扇温度参数"
+                                        Style="{StaticResource StandardButtonStyle}"
+                                        Width="180"
+                                        HorizontalAlignment="Right"
+                                        Margin="0,0,0,10"
+                                        Click="btn_ReadFanTempParams_Click"/>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="1*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <Label Grid.Row="0" Grid.Column="0" Content="低速占空比 (%):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_FanLowDuty" Style="{StaticResource StandardTextBoxStyle}" Text="20" Margin="4"/>
+                                    <Button Grid.Row="0" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetFanLowDuty_Click"/>
+
+                                    <Label Grid.Row="1" Grid.Column="0" Content="温度下限 (0.1℃):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_TempMin" Style="{StaticResource StandardTextBoxStyle}" Text="400" Margin="4"/>
+                                    <Button Grid.Row="1" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetTempMin_Click"/>
+
+                                    <Label Grid.Row="2" Grid.Column="0" Content="温度上限 (0.1℃):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Name="tbx_TempMax" Style="{StaticResource StandardTextBoxStyle}" Text="650" Margin="4"/>
+                                    <Button Grid.Row="2" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetTempMax_Click"/>
+
+                                    <Label Grid.Row="3" Grid.Column="0" Content="全速运行时长 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="3" Grid.Column="1" Name="tbx_FanFullSpeedTime" Style="{StaticResource StandardTextBoxStyle}" Text="200" Margin="4"/>
+                                    <Button Grid.Row="3" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetFanFullSpeedTime_Click"/>
+
+                                    <Label Grid.Row="4" Grid.Column="0" Content="低温检测时长 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="4" Grid.Column="1" Name="tbx_LowTempCheckTime" Style="{StaticResource StandardTextBoxStyle}" Text="1800" Margin="4"/>
+                                    <Button Grid.Row="4" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetLowTempCheckTime_Click"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+                        </StackPanel>
+                    </ScrollViewer>
+                </hc:TabItem>
+
+                <!-- 拉载控制 Tab -->
+                <hc:TabItem Header="拉载控制">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
+                        <StackPanel>
+                            <!-- 读取按钮 -->
+                            <Button Name="btn_ReadLoadParams"
+                                    Content="读取拉载参数"
+                                    Style="{StaticResource StandardButtonStyle}"
+                                    Width="150"
+                                    HorizontalAlignment="Right"
+                                    Margin="0,0,0,10"
+                                    Click="btn_ReadLoadParams_Click"/>
+
+                            <!-- 拉载时序参数 -->
+                            <GroupBox Header="拉载时序参数" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.2*"/>
+                                        <ColumnDefinition Width="1*"/>
+                                        <ColumnDefinition Width="1.2*"/>
+                                        <ColumnDefinition Width="1*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <Label Grid.Row="0" Grid.Column="0" Content="时序1电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_Seq1_Current" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+                                    <Label Grid.Row="0" Grid.Column="2" Content="时序1时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="0" Grid.Column="3" Name="tbx_Seq1_Time" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+
+                                    <Label Grid.Row="1" Grid.Column="0" Content="时序2电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_Seq2_Current" Style="{StaticResource StandardTextBoxStyle}" Text="10" Margin="4"/>
+                                    <Label Grid.Row="1" Grid.Column="2" Content="时序2时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="1" Grid.Column="3" Name="tbx_Seq2_Time" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+
+                                    <Label Grid.Row="2" Grid.Column="0" Content="时序3电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Name="tbx_Seq3_Current" Style="{StaticResource StandardTextBoxStyle}" Text="20" Margin="4"/>
+                                    <Label Grid.Row="2" Grid.Column="2" Content="时序3时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="2" Grid.Column="3" Name="tbx_Seq3_Time" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+
+                                    <Label Grid.Row="3" Grid.Column="0" Content="时序4电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="3" Grid.Column="1" Name="tbx_Seq4_Current" Style="{StaticResource StandardTextBoxStyle}" Text="40" Margin="4"/>
+                                    <Label Grid.Row="3" Grid.Column="2" Content="时序4时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="3" Grid.Column="3" Name="tbx_Seq4_Time" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+
+                                    <Label Grid.Row="4" Grid.Column="0" Content="时序5电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="4" Grid.Column="1" Name="tbx_Seq5_Current" Style="{StaticResource StandardTextBoxStyle}" Text="70" Margin="4"/>
+                                    <Label Grid.Row="4" Grid.Column="2" Content="时序5时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="4" Grid.Column="3" Name="tbx_Seq5_Time" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+
+                                    <Label Grid.Row="5" Grid.Column="0" Content="时序6电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="5" Grid.Column="1" Name="tbx_Seq6_Current" Style="{StaticResource StandardTextBoxStyle}" Text="110" Margin="4"/>
+                                    <Label Grid.Row="5" Grid.Column="2" Content="时序6时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="5" Grid.Column="3" Name="tbx_Seq6_Time" Style="{StaticResource StandardTextBoxStyle}" Text="7" Margin="4"/>
+
+                                    <Label Grid.Row="6" Grid.Column="0" Content="时序7电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="6" Grid.Column="1" Name="tbx_Seq7_Current" Style="{StaticResource StandardTextBoxStyle}" Text="150" Margin="4"/>
+                                    <Label Grid.Row="6" Grid.Column="2" Content="时序7时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="6" Grid.Column="3" Name="tbx_Seq7_Time" Style="{StaticResource StandardTextBoxStyle}" Text="7" Margin="4"/>
+
+                                    <Label Grid.Row="7" Grid.Column="0" Content="时序8电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="7" Grid.Column="1" Name="tbx_Seq8_Current" Style="{StaticResource StandardTextBoxStyle}" Text="210" Margin="4"/>
+                                    <Label Grid.Row="7" Grid.Column="2" Content="时序8时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="7" Grid.Column="3" Name="tbx_Seq8_Time" Style="{StaticResource StandardTextBoxStyle}" Text="10" Margin="4"/>
+
+                                    <Label Grid.Row="8" Grid.Column="0" Content="时序9电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="8" Grid.Column="1" Name="tbx_Seq9_Current" Style="{StaticResource StandardTextBoxStyle}" Text="280" Margin="4"/>
+                                    <Label Grid.Row="8" Grid.Column="2" Content="时序9时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="8" Grid.Column="3" Name="tbx_Seq9_Time" Style="{StaticResource StandardTextBoxStyle}" Text="10" Margin="4"/>
+
+                                    <Label Grid.Row="9" Grid.Column="0" Content="时序10电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="9" Grid.Column="1" Name="tbx_Seq10_Current" Style="{StaticResource StandardTextBoxStyle}" Text="340" Margin="4"/>
+                                    <Label Grid.Row="9" Grid.Column="2" Content="时序10时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="9" Grid.Column="3" Name="tbx_Seq10_Time" Style="{StaticResource StandardTextBoxStyle}" Text="10" Margin="4"/>
+
+                                    <Label Grid.Row="10" Grid.Column="0" Content="时序11电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="10" Grid.Column="1" Name="tbx_Seq11_Current" Style="{StaticResource StandardTextBoxStyle}" Text="360" Margin="4"/>
+                                    <Label Grid.Row="10" Grid.Column="2" Content="时序11时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="10" Grid.Column="3" Name="tbx_Seq11_Time" Style="{StaticResource StandardTextBoxStyle}" Text="10" Margin="4"/>
+
+                                    <Label Grid.Row="11" Grid.Column="0" Content="时序12电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="11" Grid.Column="1" Name="tbx_Seq12_Current" Style="{StaticResource StandardTextBoxStyle}" Text="380" Margin="4"/>
+                                    <Label Grid.Row="11" Grid.Column="2" Content="时序12时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="11" Grid.Column="3" Name="tbx_Seq12_Time" Style="{StaticResource StandardTextBoxStyle}" Text="2" Margin="4"/>
+
+                                    <Label Grid.Row="12" Grid.Column="0" Content="时序13电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="12" Grid.Column="1" Name="tbx_Seq13_Current" Style="{StaticResource StandardTextBoxStyle}" Text="360" Margin="4"/>
+                                    <Label Grid.Row="12" Grid.Column="2" Content="时序13时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="12" Grid.Column="3" Name="tbx_Seq13_Time" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+
+                                    <Label Grid.Row="13" Grid.Column="0" Content="时序14电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="13" Grid.Column="1" Name="tbx_Seq14_Current" Style="{StaticResource StandardTextBoxStyle}" Text="340" Margin="4"/>
+                                    <Label Grid.Row="13" Grid.Column="2" Content="时序14时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="13" Grid.Column="3" Name="tbx_Seq14_Time" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+
+                                    <Label Grid.Row="14" Grid.Column="0" Content="时序15电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="14" Grid.Column="1" Name="tbx_Seq15_Current" Style="{StaticResource StandardTextBoxStyle}" Text="1000" Margin="4"/>
+                                    <Label Grid.Row="14" Grid.Column="2" Content="时序15时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="14" Grid.Column="3" Name="tbx_Seq15_Time" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+
+                                    <Button Grid.Row="15" Grid.Column="0" Grid.ColumnSpan="4"
+                                            Name="btn_SetLoadSequenceParams"
+                                            Content="设置拉载时序参数"
+                                            Style="{StaticResource StandardButtonStyle}"
+                                            HorizontalAlignment="Center"
+                                            Margin="0,10,0,0"
+                                            Click="btn_SetLoadSequenceParams_Click"/>
+                                </Grid>
+                            </GroupBox>
+
+                            <!-- 拉载控制参数 -->
+                            <GroupBox Header="拉载控制参数" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="1*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <Label Grid.Row="0" Grid.Column="0" Content="峰值电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_LoadPeakCurrent" Style="{StaticResource StandardTextBoxStyle}" Text="380" Margin="4"/>
+                                    <Button Grid.Row="0" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetLoadPeakCurrent_Click"/>
+
+                                    <Label Grid.Row="1" Grid.Column="0" Content="锁定系数 (0.001):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_LoadLockFactor" Style="{StaticResource StandardTextBoxStyle}" Text="900" Margin="4"/>
+                                    <Button Grid.Row="1" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetLoadLockFactor_Click"/>
+
+                                    <Label Grid.Row="2" Grid.Column="0" Content="锁定标志:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <CheckBox Grid.Row="2" Grid.Column="1" Name="chk_LoadLockFlag" Content="启用锁定" VerticalAlignment="Center" Margin="4"/>
+                                    <Button Grid.Row="2" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetLoadLockFlag_Click"/>
+
+                                    <Label Grid.Row="3" Grid.Column="0" Content="最低电压 (0.1V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="3" Grid.Column="1" Name="tbx_LoadMinVoltage" Style="{StaticResource StandardTextBoxStyle}" Text="80" Margin="4"/>
+                                    <Button Grid.Row="3" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetLoadMinVoltage_Click"/>
+
+                                    <Label Grid.Row="4" Grid.Column="0" Content="电流步长 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="4" Grid.Column="1" Name="tbx_LoadCurrentStep" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+                                    <Button Grid.Row="4" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetLoadCurrentStep_Click"/>
+                                </Grid>
+                            </GroupBox>
+
+                            <!-- 拉载启动参数 -->
+                            <GroupBox Header="拉载启动参数" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="1*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <Label Grid.Row="0" Grid.Column="0" Content="首次拉载次数:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_LoadFirstCount" Style="{StaticResource StandardTextBoxStyle}" Text="3" Margin="4"/>
+                                    <Button Grid.Row="0" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetLoadFirstCount_Click"/>
+
+                                    <Label Grid.Row="1" Grid.Column="0" Content="首次拉载间隔 (分钟):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_LoadFirstInterval" Style="{StaticResource StandardTextBoxStyle}" Text="15" Margin="4"/>
+                                    <Button Grid.Row="1" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetLoadFirstInterval_Click"/>
+
+                                    <Label Grid.Row="2" Grid.Column="0" Content="正常拉载间隔 (分钟):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Name="tbx_LoadNormalInterval" Style="{StaticResource StandardTextBoxStyle}" Text="60" Margin="4"/>
+                                    <Button Grid.Row="2" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetLoadNormalInterval_Click"/>
+                                </Grid>
+                            </GroupBox>
+
+                            <!-- 拉载状态实时显示 -->
+                            <GroupBox Header="拉载状态实时显示" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.2*"/>
+                                        <ColumnDefinition Width="1*"/>
+                                        <ColumnDefinition Width="1.2*"/>
+                                        <ColumnDefinition Width="1*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <!-- 第1行 -->
+                                    <Label Grid.Row="0" Grid.Column="0" Content="拉载状态:" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="4"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Name="tbk_LoadState" Text="--" FontWeight="SemiBold" Foreground="Blue" VerticalAlignment="Center" Margin="4"/>
+
+                                    <Label Grid.Row="0" Grid.Column="2" Content="当前时序:" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="4"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="3" Name="tbk_LoadCurrentSequence" Text="--" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4"/>
+
+                                    <!-- 第2行 -->
+                                    <Label Grid.Row="1" Grid.Column="0" Content="当前电流(A):" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="4"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Name="tbk_LoadCurrentCurrent" Text="--" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4"/>
+
+                                    <Label Grid.Row="1" Grid.Column="2" Content="目标电流(A):" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="4"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="3" Name="tbk_LoadTargetCurrent" Text="--" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4"/>
+
+                                    <!-- 第3行 -->
+                                    <Label Grid.Row="2" Grid.Column="0" Content="当前电压(V):" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="4"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Name="tbk_LoadCurrentVoltage" Text="--" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4"/>
+
+                                    <Label Grid.Row="2" Grid.Column="2" Content="当前功率(W):" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="4"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="3" Name="tbk_LoadCurrentPower" Text="--" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4"/>
+
+                                    <!-- 第4行 -->
+                                    <Label Grid.Row="3" Grid.Column="0" Content="最大功率(W):" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="4"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="1" Name="tbk_LoadMaxPower" Text="--" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4"/>
+
+                                    <Label Grid.Row="3" Grid.Column="2" Content="锁定电流(A):" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="4"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="3" Name="tbk_LoadLockCurrent" Text="--" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4"/>
+                                </Grid>
+                            </GroupBox>
+
+                            <!-- 拉载手动控制 -->
+                            <GroupBox Header="拉载手动控制" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,0">
+                                <StackPanel>
+                                    <!-- 主控按钮 -->
+                                    <UniformGrid Columns="4" Margin="0,0,0,8">
+                                        <Button Content="启动拉载" Style="{StaticResource SuccessButtonStyle}" Height="32" Margin="4" Click="btn_LoadStart_Click"/>
+                                        <Button Content="暂停拉载" Style="{StaticResource WarningButtonStyle}" Height="32" Margin="4" Click="btn_LoadPause_Click"/>
+                                        <Button Content="继续拉载" Style="{StaticResource StandardButtonStyle}" Height="32" Margin="4" Click="btn_LoadResume_Click"/>
+                                        <Button Content="停止拉载" Style="{StaticResource StopButtonStyle}" Height="32" Margin="4" Click="btn_LoadStop_Click"/>
+                                    </UniformGrid>
+
+                                    <!-- 输入区域 -->
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <Label Grid.Column="0" Content="跳转时序号:" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="4"/>
+                                        <TextBox Grid.Column="1" Name="tbx_JumpSequence" Style="{StaticResource StandardTextBoxStyle}" Text="1" Margin="4"/>
+
+                                        <Label Grid.Column="2" Content="目标电流(0.1A):" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="4"/>
+                                        <TextBox Grid.Column="3" Name="tbx_TargetCurrent" Style="{StaticResource StandardTextBoxStyle}" Text="100" Margin="4"/>
+                                    </Grid>
+
+                                    <!-- 辅助按钮 -->
+                                    <UniformGrid Columns="4">
+                                        <Button Content="跳转时序" Style="{StaticResource StandardButtonStyle}" Height="32" Margin="4" Click="btn_LoadJumpSequence_Click"/>
+                                        <Button Content="设置电流" Style="{StaticResource StandardButtonStyle}" Height="32" Margin="4" Click="btn_LoadSetCurrent_Click"/>
+                                        <Button Content="单步执行" Style="{StaticResource StandardButtonStyle}" Height="32" Margin="4" Click="btn_LoadStep_Click"/>
+                                        <Button Content="重置拉载" Style="{StaticResource StopButtonStyle}" Height="32" Margin="4" Click="btn_LoadReset_Click"/>
+                                    </UniformGrid>
+                                </StackPanel>
+                            </GroupBox>
+                        </StackPanel>
+                    </ScrollViewer>
+                </hc:TabItem>
+
+                <!-- 系统监控 Tab（合并：电堆信息+通用参数） -->
+                <hc:TabItem Header="系统监控">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
+                        <StackPanel>
+                            <!-- 电堆实时信息 -->
+                            <GroupBox Header="电堆实时信息" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                            <StackPanel>
+                                <!-- 轮询控制按钮区 -->
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
+                                    <TextBlock Text="轮询间隔:" 
+                                               VerticalAlignment="Center" 
+                                               Margin="0,0,8,0"
+                                               FontSize="12"/>
+                                    <hc:ComboBox Name="cbx_PollingInterval" 
+                                              Width="100" 
+                                              Margin="0,0,10,0"
+                                              SelectedIndex="0">
+                                        <ComboBoxItem Content="0.5秒" Tag="500"/>
+                                        <ComboBoxItem Content="1秒" Tag="1000"/>
+                                        <ComboBoxItem Content="2秒" Tag="2000"/>
+                                        <ComboBoxItem Content="5秒" Tag="5000"/>
+                                    </hc:ComboBox>
+                                    <Button Name="btn_StartPolling"
+                                            Content="开启自动刷新"
+                                            Style="{StaticResource StandardButtonStyle}"
+                                            Width="120"
+                                            Margin="0,0,10,0"
+                                            Click="btn_StartPolling_Click"/>
+                                    <Button Name="btn_StopPolling"
+                                            Content="停止自动刷新"
+                                            Style="{StaticResource StandardButtonStyle}"
+                                            Width="120"
+                                            IsEnabled="False"
+                                            Click="btn_StopPolling_Click"/>
+                                </StackPanel>
+
+                                <!-- 电堆信息显示区 -->
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1*"/>
+                                        <ColumnDefinition Width="1*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <Label Grid.Row="0" Grid.Column="0" Content="电堆工作状态:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding StackState}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                    <Label Grid.Row="1" Grid.Column="0" Content="高压压力 (KPA):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding HighPressure}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                    <Label Grid.Row="2" Grid.Column="0" Content="低压压力 (KPA):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding LowPressure}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                    <Label Grid.Row="3" Grid.Column="0" Content="氢气阀状态:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding HydrogenValveState}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                    <Label Grid.Row="4" Grid.Column="0" Content="排水阀状态:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding DrainValveState}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                    <Label Grid.Row="5" Grid.Column="0" Content="DCDC输入电压 (V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding DCDCInputVoltage}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                    <Label Grid.Row="6" Grid.Column="0" Content="DCDC输入电流 (A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding DCDCInputCurrent}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                    <Label Grid.Row="7" Grid.Column="0" Content="DCDC输出电压 (V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding DCDCOutputVoltage}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                    <Label Grid.Row="8" Grid.Column="0" Content="DCDC输出电流 (A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding DCDCOutputCurrent}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                    <Label Grid.Row="9" Grid.Column="0" Content="风扇转速 (RPM):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBlock Grid.Row="9" Grid.Column="1" Text="{Binding FanSpeed}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                    <Label Grid.Row="10" Grid.Column="0" Content="电堆温度 (℃):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding StackTemperature}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                    <Label Grid.Row="11" Grid.Column="0" Content="FCU温度 (℃):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBlock Grid.Row="11" Grid.Column="1" Text="{Binding FCUTemperature}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                    <Label Grid.Row="12" Grid.Column="0" Content="累计运行时间 (秒):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBlock Grid.Row="12" Grid.Column="1" Text="{Binding RunTime}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                    <Label Grid.Row="13" Grid.Column="0" Content="故障码:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBlock Grid.Row="13" Grid.Column="1" Text="{Binding FaultCode}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                            <!-- 通用参数设置 -->
+                            <GroupBox Header="通用参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                                <StackPanel>
+                                    <!-- 读取按钮 -->
+                                    <Button Name="btn_ReadGeneralParams"
+                                            Content="读取通用参数"
+                                            Style="{StaticResource StandardButtonStyle}"
+                                            Width="150"
+                                            HorizontalAlignment="Right"
+                                            Margin="0,0,0,10"
+                                            Click="btn_ReadGeneralParams_Click"/>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1.5*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <Label Grid.Row="0" Grid.Column="0" Content="扫描周期 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_ScanPeriod" Style="{StaticResource StandardTextBoxStyle}" Text="20" Margin="4"/>
+                                        <Button Grid.Row="0" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetScanPeriod_Click"/>
+                                    </Grid>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <!-- 设备地址管理 -->
+                            <GroupBox Header="设备地址管理" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="修改设备地址后需要重启设备才能生效"
+                                               FontSize="11"
+                                               Foreground="#FF9800"
+                                               Margin="0,0,0,10"/>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1.5*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <Label Grid.Row="0" Grid.Column="0" Content="新设备地址 (1-247):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_NewDeviceAddress" Style="{StaticResource StandardTextBoxStyle}" Text="1" Margin="4"/>
+                                        <Button Grid.Row="0" Grid.Column="2" Content="修改地址" Style="{StaticResource WarningButtonStyle}" Width="80" Margin="4" Click="btn_SetDeviceAddress_Click"/>
+                                    </Grid>
+                                </StackPanel>
+                            </GroupBox>
+                        </StackPanel>
+                    </ScrollViewer>
+                </hc:TabItem>
+
+                <!-- BMS电池管理 Tab -->
+                <hc:TabItem Header="BMS电池管理">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
+                        <StackPanel>
+                            <!-- BMS基本信息 -->
+                            <GroupBox Header="BMS基本信息" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                                <StackPanel>
+                                    <!-- 轮询控制按钮区 -->
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
+                                        <Button Name="btn_ReadBMSBasicInfo"
+                                                Content="读取一次"
+                                                Style="{StaticResource StandardButtonStyle}"
+                                                Width="100"
+                                                Margin="0,0,10,0"
+                                                Click="btn_ReadBMSBasicInfo_Click"/>
+                                        <TextBlock Text="轮询间隔:" 
+                                                   VerticalAlignment="Center" 
+                                                   Margin="0,0,8,0"
+                                                   FontSize="12"/>
+                                        <hc:ComboBox Name="cbx_BMSBasicPollingInterval" 
+                                                  Width="80" 
+                                                  Margin="0,0,10,0"
+                                                  SelectedIndex="1">
+                                            <ComboBoxItem Content="0.5秒" Tag="500"/>
+                                            <ComboBoxItem Content="1秒" Tag="1000"/>
+                                            <ComboBoxItem Content="2秒" Tag="2000"/>
+                                            <ComboBoxItem Content="5秒" Tag="5000"/>
+                                        </hc:ComboBox>
+                                        <Button Name="btn_StartBMSBasicPolling"
+                                                Content="开启自动刷新"
+                                                Style="{StaticResource StandardButtonStyle}"
+                                                Width="110"
+                                                Margin="0,0,10,0"
+                                                Click="btn_StartBMSBasicPolling_Click"/>
+                                        <Button Name="btn_StopBMSBasicPolling"
+                                                Content="停止自动刷新"
+                                                Style="{StaticResource StandardButtonStyle}"
+                                                Width="110"
+                                                IsEnabled="False"
+                                                Click="btn_StopBMSBasicPolling_Click"/>
+                                    </StackPanel>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1.2*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="1.2*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <Label Grid.Row="0" Grid.Column="0" Content="SOC (%):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Name="tbk_BMS_SOC" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="0" Grid.Column="2" Content="剩余容量 (Ah):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="3" Name="tbk_BMS_RemainCapacity" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="1" Grid.Column="0" Content="总电压 (V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Name="tbk_BMS_TotalVoltage" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="1" Grid.Column="2" Content="总电流 (A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="3" Name="tbk_BMS_TotalCurrent" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="2" Grid.Column="0" Content="最高单体电压 (V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="1" Name="tbk_BMS_MaxCellVoltage" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="2" Grid.Column="2" Content="最低单体电压 (V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="3" Name="tbk_BMS_MinCellVoltage" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="3" Grid.Column="0" Content="平均单体电压 (V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="3" Grid.Column="1" Name="tbk_BMS_AvgCellVoltage" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="3" Grid.Column="2" Content="最高温度 (℃):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="3" Grid.Column="3" Name="tbk_BMS_MaxTemp" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="4" Grid.Column="0" Content="最低温度 (℃):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="4" Grid.Column="1" Name="tbk_BMS_MinTemp" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="4" Grid.Column="2" Content="平均温度 (℃):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="4" Grid.Column="3" Name="tbk_BMS_AvgTemp" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="5" Grid.Column="0" Content="BMS工作状态:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="5" Grid.Column="1" Name="tbk_BMS_WorkState" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="5" Grid.Column="2" Content="充放电状态:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="5" Grid.Column="3" Name="tbk_BMS_ChargeDischargeState" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="6" Grid.Column="0" Content="循环次数:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="6" Grid.Column="1" Name="tbk_BMS_CycleCount" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="6" Grid.Column="2" Content="SOH (%):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="6" Grid.Column="3" Name="tbk_BMS_SOH" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="7" Grid.Column="0" Content="额定容量 (Ah):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="7" Grid.Column="1" Name="tbk_BMS_RatedCapacity" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="7" Grid.Column="2" Content="当前故障码:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="7" Grid.Column="3" Name="tbk_BMS_FaultCode" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                    </Grid>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <!-- BMS电池组信息 -->
+                            <GroupBox Header="电池组配置信息" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                                <StackPanel>
+                                    <!-- 轮询控制按钮区 -->
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
+                                        <Button Name="btn_ReadBatteryPackInfo"
+                                                Content="读取一次"
+                                                Style="{StaticResource StandardButtonStyle}"
+                                                Width="100"
+                                                Margin="0,0,10,0"
+                                                Click="btn_ReadBatteryPackInfo_Click"/>
+                                        <TextBlock Text="轮询间隔:" 
+                                                   VerticalAlignment="Center" 
+                                                   Margin="0,0,8,0"
+                                                   FontSize="12"/>
+                                        <hc:ComboBox Name="cbx_BMSPackPollingInterval" 
+                                                  Width="80" 
+                                                  Margin="0,0,10,0"
+                                                  SelectedIndex="2">
+                                            <ComboBoxItem Content="0.5秒" Tag="500"/>
+                                            <ComboBoxItem Content="1秒" Tag="1000"/>
+                                            <ComboBoxItem Content="2秒" Tag="2000"/>
+                                            <ComboBoxItem Content="5秒" Tag="5000"/>
+                                        </hc:ComboBox>
+                                        <Button Name="btn_StartBMSPackPolling"
+                                                Content="开启自动刷新"
+                                                Style="{StaticResource StandardButtonStyle}"
+                                                Width="110"
+                                                Margin="0,0,10,0"
+                                                Click="btn_StartBMSPackPolling_Click"/>
+                                        <Button Name="btn_StopBMSPackPolling"
+                                                Content="停止自动刷新"
+                                                Style="{StaticResource StandardButtonStyle}"
+                                                Width="110"
+                                                IsEnabled="False"
+                                                Click="btn_StopBMSPackPolling_Click"/>
+                                    </StackPanel>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1.2*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="1.2*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <Label Grid.Row="0" Grid.Column="0" Content="串联单体数 (个):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Name="tbk_BMS_SeriesCells" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="0" Grid.Column="2" Content="并联单体数 (个):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="3" Name="tbk_BMS_ParallelCells" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="1" Grid.Column="0" Content="额定容量 (Ah):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Name="tbk_BMS_PackRatedCapacity" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="1" Grid.Column="2" Content="额定电压 (V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="3" Name="tbk_BMS_PackRatedVoltage" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="2" Grid.Column="0" Content="充电截止电压 (V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="1" Name="tbk_BMS_ChargeStopVoltage" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="2" Grid.Column="2" Content="放电截止电压 (V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="3" Name="tbk_BMS_DischargeStopVoltage" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="3" Grid.Column="0" Content="充电截止电流 (A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="3" Grid.Column="1" Name="tbk_BMS_ChargeStopCurrent" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+
+                                        <Label Grid.Row="3" Grid.Column="2" Content="放电截止电流 (A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="3" Grid.Column="3" Name="tbk_BMS_DischargeStopCurrent" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                    </Grid>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <!-- BMS充放电控制 -->
+                            <GroupBox Header="充放电控制" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <Button Grid.Column="0" Name="btn_BMS_AllowCharge"
+                                            Content="允许充电"
+                                            Style="{StaticResource SuccessButtonStyle}"
+                                            Margin="4"
+                                            Click="btn_BMS_AllowCharge_Click"/>
+
+                                    <Button Grid.Column="1" Name="btn_BMS_AllowDischarge"
+                                            Content="允许放电"
+                                            Style="{StaticResource SuccessButtonStyle}"
+                                            Margin="4"
+                                            Click="btn_BMS_AllowDischarge_Click"/>
+
+                                    <Button Grid.Column="2" Name="btn_BMS_AllowBoth"
+                                            Content="允许充放电"
+                                            Style="{StaticResource SuccessButtonStyle}"
+                                            Margin="4"
+                                            Click="btn_BMS_AllowBoth_Click"/>
+
+                                    <Button Grid.Column="3" Name="btn_BMS_Forbid"
+                                            Content="禁止充放电"
+                                            Style="{StaticResource StopButtonStyle}"
+                                            Margin="4"
+                                            Click="btn_BMS_Forbid_Click"/>
+                                </Grid>
+                            </GroupBox>
+
+                            <!-- BMS故障信息 -->
+                            <GroupBox Header="故障信息" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,0">
+                                <StackPanel>
+                                    <!-- 轮询控制按钮区 -->
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
+                                        <Button Name="btn_ReadBMSFaultInfo"
+                                                Content="读取一次"
+                                                Style="{StaticResource StandardButtonStyle}"
+                                                Width="100"
+                                                Margin="0,0,10,0"
+                                                Click="btn_ReadBMSFaultInfo_Click"/>
+                                        <TextBlock Text="轮询间隔:" 
+                                                   VerticalAlignment="Center" 
+                                                   Margin="0,0,8,0"
+                                                   FontSize="12"/>
+                                        <hc:ComboBox Name="cbx_BMSFaultPollingInterval" 
+                                                  Width="80" 
+                                                  Margin="0,0,10,0"
+                                                  SelectedIndex="2">
+                                            <ComboBoxItem Content="0.5秒" Tag="500"/>
+                                            <ComboBoxItem Content="1秒" Tag="1000"/>
+                                            <ComboBoxItem Content="2秒" Tag="2000"/>
+                                            <ComboBoxItem Content="5秒" Tag="5000"/>
+                                        </hc:ComboBox>
+                                        <Button Name="btn_StartBMSFaultPolling"
+                                                Content="开启自动刷新"
+                                                Style="{StaticResource StandardButtonStyle}"
+                                                Width="110"
+                                                Margin="0,0,10,0"
+                                                Click="btn_StartBMSFaultPolling_Click"/>
+                                        <Button Name="btn_StopBMSFaultPolling"
+                                                Content="停止自动刷新"
+                                                Style="{StaticResource StandardButtonStyle}"
+                                                Width="110"
+                                                IsEnabled="False"
+                                                Click="btn_StopBMSFaultPolling_Click"/>
+                                    </StackPanel>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="2*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <Label Grid.Row="0" Grid.Column="0" Content="当前故障:" Style="{StaticResource LabelStyle}" Margin="4" VerticalAlignment="Top"/>
+                                        <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_BMS_CurrentFault" 
+                                                 Style="{StaticResource StandardTextBoxStyle}" 
+                                                 Text="--" 
+                                                 IsReadOnly="True"
+                                                 TextWrapping="Wrap"
+                                                 Height="60"
+                                                 VerticalContentAlignment="Top"
+                                                 Margin="4"/>
+
+                                        <Label Grid.Row="1" Grid.Column="0" Content="历史故障:" Style="{StaticResource LabelStyle}" Margin="4" VerticalAlignment="Top"/>
+                                        <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_BMS_HistoryFault" 
+                                                 Style="{StaticResource StandardTextBoxStyle}" 
+                                                 Text="--" 
+                                                 IsReadOnly="True"
+                                                 TextWrapping="Wrap"
+                                                 Height="60"
+                                                 VerticalContentAlignment="Top"
+                                                 Margin="4"/>
+                                    </Grid>
+                                </StackPanel>
+                            </GroupBox>
+                        </StackPanel>
+                    </ScrollViewer>
+                </hc:TabItem>
+
+                <!-- 拉载配方 Tab -->
+                <hc:TabItem Header="拉载参数">
+                    <Grid Margin="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- 工具栏 -->
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
+                            <Button Name="btn_NewRecipe" Content="新建参数" Style="{StaticResource StandardButtonStyle}" Width="90" Height="32" Margin="0,0,6,0" Click="btn_NewRecipe_Click"/>
+                            <Button Name="btn_CopyRecipe" Content="复制参数" Style="{StaticResource StandardButtonStyle}" Width="90" Height="32" Margin="0,0,6,0" Click="btn_CopyRecipe_Click"/>
+                            <Button Name="btn_RenameRecipe" Content="重命名" Style="{StaticResource WarningButtonStyle}" Width="80" Height="32" Margin="0,0,6,0" Click="btn_RenameRecipe_Click"/>
+                            <Button Name="btn_DeleteRecipe" Content="删除参数" Style="{StaticResource StopButtonStyle}" Width="90" Height="32" Margin="0,0,6,0" Click="btn_DeleteRecipe_Click"/>
+                            <Button Name="btn_SaveRecipe" Content="保存参数" Style="{StaticResource SuccessButtonStyle}" Width="90" Height="32" Click="btn_SaveRecipe_Click"/>
+                        </StackPanel>
+
+                        <!-- 主体：左右两栏 -->
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="220"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- 左侧：配方列表 -->
+                            <hc:Card Grid.Column="0" Margin="0,0,10,0" BorderThickness="0" Effect="{StaticResource EffectShadow2}">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Top" Text="配方列表"
+                                               Style="{StaticResource TextBlockHeader}"
+                                               Margin="0,0,0,10"/>
+                                    <ListBox Name="lbx_RecipeList"
+                                             SelectionChanged="lbx_RecipeList_SelectionChanged"
+                                             DisplayMemberPath="Name"
+                                             FontSize="12"/>
+                                </DockPanel>
+                            </hc:Card>
+
+                            <!-- 右侧：参数编辑 + 操作按钮 -->
+                            <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                                <StackPanel>
+                                    <TextBlock Name="tbk_CurrentRecipeName" Text="请选择一个参数"
+                                               Style="{StaticResource TextBlockHeader}"
+                                               Foreground="{DynamicResource PrimaryBrush}"
+                                               Margin="0,0,0,10"/>
+
+                                    <GroupBox Header="时序参数" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="1.2*"/>
+                                                <ColumnDefinition Width="1*"/>
+                                                <ColumnDefinition Width="1.2*"/>
+                                                <ColumnDefinition Width="1*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+
+                                            <Label Grid.Row="0" Grid.Column="0" Content="时序1电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_RecipeSeq1_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                            <Label Grid.Row="0" Grid.Column="2" Content="时序1时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="0" Grid.Column="3" Name="tbx_RecipeSeq1_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+
+                                            <Label Grid.Row="1" Grid.Column="0" Content="时序2电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_RecipeSeq2_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                            <Label Grid.Row="1" Grid.Column="2" Content="时序2时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="1" Grid.Column="3" Name="tbx_RecipeSeq2_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+
+                                            <Label Grid.Row="2" Grid.Column="0" Content="时序3电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="2" Grid.Column="1" Name="tbx_RecipeSeq3_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                            <Label Grid.Row="2" Grid.Column="2" Content="时序3时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="2" Grid.Column="3" Name="tbx_RecipeSeq3_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+
+                                            <Label Grid.Row="3" Grid.Column="0" Content="时序4电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="3" Grid.Column="1" Name="tbx_RecipeSeq4_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                            <Label Grid.Row="3" Grid.Column="2" Content="时序4时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="3" Grid.Column="3" Name="tbx_RecipeSeq4_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+
+                                            <Label Grid.Row="4" Grid.Column="0" Content="时序5电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="4" Grid.Column="1" Name="tbx_RecipeSeq5_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                            <Label Grid.Row="4" Grid.Column="2" Content="时序5时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="4" Grid.Column="3" Name="tbx_RecipeSeq5_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+
+                                            <Label Grid.Row="5" Grid.Column="0" Content="时序6电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="5" Grid.Column="1" Name="tbx_RecipeSeq6_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                            <Label Grid.Row="5" Grid.Column="2" Content="时序6时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="5" Grid.Column="3" Name="tbx_RecipeSeq6_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+
+                                            <Label Grid.Row="6" Grid.Column="0" Content="时序7电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="6" Grid.Column="1" Name="tbx_RecipeSeq7_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                            <Label Grid.Row="6" Grid.Column="2" Content="时序7时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="6" Grid.Column="3" Name="tbx_RecipeSeq7_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+
+                                            <Label Grid.Row="7" Grid.Column="0" Content="时序8电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="7" Grid.Column="1" Name="tbx_RecipeSeq8_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                            <Label Grid.Row="7" Grid.Column="2" Content="时序8时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="7" Grid.Column="3" Name="tbx_RecipeSeq8_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+
+                                            <Label Grid.Row="8" Grid.Column="0" Content="时序9电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="8" Grid.Column="1" Name="tbx_RecipeSeq9_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                            <Label Grid.Row="8" Grid.Column="2" Content="时序9时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="8" Grid.Column="3" Name="tbx_RecipeSeq9_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+
+                                            <Label Grid.Row="9" Grid.Column="0" Content="时序10电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="9" Grid.Column="1" Name="tbx_RecipeSeq10_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                            <Label Grid.Row="9" Grid.Column="2" Content="时序10时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="9" Grid.Column="3" Name="tbx_RecipeSeq10_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+
+                                            <Label Grid.Row="10" Grid.Column="0" Content="时序11电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="10" Grid.Column="1" Name="tbx_RecipeSeq11_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                            <Label Grid.Row="10" Grid.Column="2" Content="时序11时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="10" Grid.Column="3" Name="tbx_RecipeSeq11_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+
+                                            <Label Grid.Row="11" Grid.Column="0" Content="时序12电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="11" Grid.Column="1" Name="tbx_RecipeSeq12_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                            <Label Grid.Row="11" Grid.Column="2" Content="时序12时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="11" Grid.Column="3" Name="tbx_RecipeSeq12_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+
+                                            <Label Grid.Row="12" Grid.Column="0" Content="时序13电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="12" Grid.Column="1" Name="tbx_RecipeSeq13_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                            <Label Grid.Row="12" Grid.Column="2" Content="时序13时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="12" Grid.Column="3" Name="tbx_RecipeSeq13_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+
+                                            <Label Grid.Row="13" Grid.Column="0" Content="时序14电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="13" Grid.Column="1" Name="tbx_RecipeSeq14_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                            <Label Grid.Row="13" Grid.Column="2" Content="时序14时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="13" Grid.Column="3" Name="tbx_RecipeSeq14_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+
+                                            <Label Grid.Row="14" Grid.Column="0" Content="时序15电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="14" Grid.Column="1" Name="tbx_RecipeSeq15_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                            <Label Grid.Row="14" Grid.Column="2" Content="时序15时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <TextBox Grid.Row="14" Grid.Column="3" Name="tbx_RecipeSeq15_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                        </Grid>
+                                    </GroupBox>
+
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,5,0,0">
+                                        <Button Name="btn_ReadRecipeFromDevice" Content="从设备读取"
+                                                Style="{StaticResource StandardButtonStyle}"
+                                                Width="130" Height="36" Margin="0,0,20,0"
+                                                Click="btn_ReadRecipeFromDevice_Click"/>
+                                        <Button Name="btn_ApplyRecipeToDevice" Content="应用到设备"
+                                                Style="{StaticResource SuccessButtonStyle}"
+                                                Width="130" Height="36"
+                                                Click="btn_ApplyRecipeToDevice_Click"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+                    </Grid>
+                </hc:TabItem>
+            </hc:TabControl>
+        </Grid>
+
+        <GridSplitter Grid.Row="2"
+                      Height="5"
+                      HorizontalAlignment="Stretch"
+                      VerticalAlignment="Center"
+                      Background="{DynamicResource BorderBrush}"
+                      ShowsPreview="True"
+                      Cursor="SizeNS"/>
+
+        <!-- 功率曲线图区域 -->
+        <hc:Card Grid.Row="3" Margin="10,0,10,10" BorderThickness="0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- 图表标题和图例 -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                    <TextBlock Text="功率曲线"
+                               Style="{StaticResource TextBlockLargeBold}"
+                               VerticalAlignment="Center"/>
+                    
+                    <!-- 自定义图例 -->
+                    <StackPanel Orientation="Horizontal" Margin="20,0,0,0" VerticalAlignment="Center">
+                        <!-- 输入功率图例 -->
+                        <Border Background="#1E90FF" Width="30" Height="3" VerticalAlignment="Center" CornerRadius="1"/>
+                        <TextBlock Text="输入功率"
+                                   Style="{StaticResource TextBlockDefault}"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   Margin="5,0,15,0"
+                                   VerticalAlignment="Center"/>
+
+                        <!-- 输出功率图例 -->
+                        <Border Background="#FF4500" Width="30" Height="3" VerticalAlignment="Center" CornerRadius="1"/>
+                        <TextBlock Text="输出功率"
+                                   Style="{StaticResource TextBlockDefault}"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   Margin="5,0,0,0"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </StackPanel>
+                
+                <!-- 图表控件 -->
+                <lvc:CartesianChart Grid.Row="1"
+                                    Name="PowerChart"
+                                    Series="{Binding PowerSeries}"
+                                    XAxes="{Binding XAxes}"
+                                    YAxes="{Binding YAxes}"
+                                    LegendPosition="Hidden"
+                                    ZoomMode="X"
+                                    xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"/>
+            </Grid>
+        </hc:Card>
+
+        <!-- 底部状态栏 -->
+        <Border Grid.Row="4" Background="{DynamicResource DarkBrush}" Padding="16,0">
+            <Grid>
+                <TextBlock Text="{Binding StatusMessage}"
+                           Style="{StaticResource TextBlockDefault}"
+                           FontSize="11"
+                           Foreground="White"
+                           VerticalAlignment="Center"/>
+                <TextBlock Name="tbk_License"
+                           Text="📋 许可证管理"
+                           Style="{StaticResource TextBlockDefault}"
+                           FontSize="11"
+                           Foreground="#FFD700"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Cursor="Hand"
+                           MouseDown="TbkLicense_MouseDown"/>
+                <TextBlock Name="tbk_Time"
+                           Text="{Binding Source={x:Static sys:DateTime.Now}, StringFormat='yyyy-MM-dd HH:mm:ss'}"
+                           Style="{StaticResource TextBlockDefault}"
+                           FontSize="11"
+                           Foreground="White"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Center"
+                           xmlns:sys="clr-namespace:System;assembly=mscorlib"/>
+            </Grid>
+        </Border>
+    </Grid>
+</hc:Window>

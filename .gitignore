@@ -1,0 +1,57 @@
+## .NET Build Output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+bld/
+[Bb]in/
+[Oo]bj/
+
+## Visual Studio
+.vs/
+*.user
+*.suo
+*.cache
+*.docstates
+*.pidb
+*.booproj
+*.svd
+*.mdb
+
+## IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+## NuGet
+**/packages/*
+*.nupkg
+**/[Pp]ackages/**
+
+## OS Files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+## Sensitive Files
+密钥*.txt
+*.key
+*.pem
+*.pfx
+*.license
+
+## Node/NPM
+.npm-cache/
+node_modules/
+
+## Claude Code
+.claude/
+
+## Other
+full.md
+SKILL.md
+*.pdf

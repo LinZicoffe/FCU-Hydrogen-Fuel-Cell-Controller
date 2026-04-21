@@ -1,0 +1,443 @@
+using System;
+
+namespace FCU_氢燃料电池控.Models
+{
+    /// <summary>
+    /// 电堆信息数据结构（26字节）
+    /// 对应协议4.6节
+    /// </summary>
+    public class StackInfoData
+    {
+        /// <summary>
+        /// 电堆工作状态 (0:关机, 1:启动中, 2:运行, 3:故障, 4:关机中)
+        /// </summary>
+        public byte WorkState { get; set; }
+
+        /// <summary>
+        /// 高压压力 (KPA)
+        /// </summary>
+        public ushort HighPressure { get; set; }
+
+        /// <summary>
+        /// 低压压力 (KPA)
+        /// </summary>
+        public ushort LowPressure { get; set; }
+
+        /// <summary>
+        /// 氢气阀状态 (0:关闭, 1:打开)
+        /// </summary>
+        public byte HydrogenValveState { get; set; }
+
+        /// <summary>
+        /// 排水阀状态 (0:关闭, 1:打开)
+        /// </summary>
+        public byte DrainValveState { get; set; }
+
+        /// <summary>
+        /// DCDC输入电压 (0.1V)
+        /// </summary>
+        public ushort DCDCInputVoltage { get; set; }
+
+        /// <summary>
+        /// DCDC输入电流 (0.1A)
+        /// </summary>
+        public ushort DCDCInputCurrent { get; set; }
+
+        /// <summary>
+        /// DCDC输出电压 (0.1V)
+        /// </summary>
+        public ushort DCDCOutputVoltage { get; set; }
+
+        /// <summary>
+        /// DCDC输出电流 (0.1A)
+        /// </summary>
+        public ushort DCDCOutputCurrent { get; set; }
+
+        /// <summary>
+        /// 风扇转速 (RPM)
+        /// </summary>
+        public ushort FanSpeed { get; set; }
+
+        /// <summary>
+        /// 电堆温度 (0.1℃)
+        /// </summary>
+        public ushort StackTemperature { get; set; }
+
+        /// <summary>
+        /// FCU控制器温度 (0.1℃)
+        /// </summary>
+        public ushort FCUTemperature { get; set; }
+
+        /// <summary>
+        /// 累计运行时间 (秒)
+        /// </summary>
+        public uint RunTime { get; set; }
+
+        /// <summary>
+        /// 故障码
+        /// </summary>
+        public byte FaultCode { get; set; }
+    }
+
+    /// <summary>
+    /// 压力参数结构
+    /// 对应协议4.2节（V4.2数据域16字节）
+    /// </summary>
+    public class PressureParams
+    {
+        /// <summary>
+        /// 高压最小值 (KPA)
+        /// </summary>
+        public ushort HighPressureMin { get; set; }
+
+        /// <summary>
+        /// 高压红警值 (KPA)
+        /// </summary>
+        public ushort HighPressureRed { get; set; }
+
+        /// <summary>
+        /// 高压黄警值 (KPA)
+        /// </summary>
+        public ushort HighPressureYellow { get; set; }
+
+        /// <summary>
+        /// 低压下限值 (KPA)
+        /// </summary>
+        public ushort LowPressureMin { get; set; }
+
+        /// <summary>
+        /// 低压上限值 (KPA)
+        /// </summary>
+        public ushort LowPressureMax { get; set; }
+
+        /// <summary>
+        /// 高压量程 (KPA) - V4.2新增
+        /// </summary>
+        public ushort HighPressureRange { get; set; }
+
+        /// <summary>
+        /// 低压量程 (KPA) - V4.2新增
+        /// </summary>
+        public ushort LowPressureRange { get; set; }
+    }
+
+    /// <summary>
+    /// 阀门参数结构
+    /// </summary>
+    public class ValveParams
+    {
+        /// <summary>
+        /// 开机第一次时长 (0.1s)
+        /// </summary>
+        public ushort FirstOpenTime { get; set; }
+
+        /// <summary>
+        /// 开机第二次时长 (0.1s)
+        /// </summary>
+        public ushort SecondOpenTime { get; set; }
+
+        /// <summary>
+        /// 正常周期间隔 (0.1s)
+        /// </summary>
+        public ushort NormalInterval { get; set; }
+
+        /// <summary>
+        /// 正常打开时长 (0.1s)
+        /// </summary>
+        public ushort NormalOpenTime { get; set; }
+
+        /// <summary>
+        /// 关机打开时长 (0.1s)
+        /// </summary>
+        public ushort ShutdownOpenTime { get; set; }
+    }
+
+    /// <summary>
+    /// DCDC参数结构
+    /// </summary>
+    public class DCDCParams
+    {
+        /// <summary>
+        /// 最低工作电压 (0.1V)
+        /// </summary>
+        public ushort MinVoltage { get; set; }
+
+        /// <summary>
+        /// 放电截至电压 (0.1V)
+        /// </summary>
+        public ushort StopVoltage { get; set; }
+    }
+
+    /// <summary>
+    /// 风扇温度参数结构
+    /// </summary>
+    public class FanTempParams
+    {
+        /// <summary>
+        /// 低速占空比 (%)
+        /// </summary>
+        public byte LowSpeedDuty { get; set; }
+
+        /// <summary>
+        /// 温度下限 (0.1℃)
+        /// </summary>
+        public ushort TempMin { get; set; }
+
+        /// <summary>
+        /// 温度上限 (0.1℃)
+        /// </summary>
+        public ushort TempMax { get; set; }
+
+        /// <summary>
+        /// 全速运行时长 (0.1s)
+        /// </summary>
+        public ushort FullSpeedTime { get; set; }
+
+        /// <summary>
+        /// 低温检测时长 (0.1s)
+        /// </summary>
+        public ushort LowTempCheckTime { get; set; }
+    }
+
+    /// <summary>
+    /// 报警信息结构
+    /// 对应协议6.1节
+    /// </summary>
+    public class AlarmData
+    {
+        /// <summary>
+        /// 报警类型代码
+        /// </summary>
+        public ushort AlarmType { get; set; }
+
+        /// <summary>
+        /// 报警等级 (0x01:INFO, 0x02:WARNING, 0x03:ERROR, 0x04:CRITICAL)
+        /// </summary>
+        public byte AlarmLevel { get; set; }
+
+        /// <summary>
+        /// 报警数值
+        /// </summary>
+        public ushort AlarmValue { get; set; }
+
+        /// <summary>
+        /// 获取报警类型名称
+        /// </summary>
+        public string GetAlarmTypeName()
+        {
+            return AlarmType switch
+            {
+                0x0001 => "高压压力低",
+                0x0002 => "温度过高",
+                0x0003 => "低压压力异常",
+                0x0004 => "风扇异常",
+                0x0005 => "电压异常",
+                0x0006 => "DCDC异常",
+                0x0007 => "阀门异常",
+                0x0008 => "通信异常",
+                0x0009 => "FCU控制器过热",
+                _ => "未知报警"
+            };
+        }
+
+        /// <summary>
+        /// 获取报警等级名称
+        /// </summary>
+        public string GetAlarmLevelName()
+        {
+            return AlarmLevel switch
+            {
+                0x01 => "信息",
+                0x02 => "警告",
+                0x03 => "错误",
+                0x04 => "严重",
+                _ => "未知"
+            };
+        }
+    }
+
+    /// <summary>
+    /// 状态变更数据结构
+    /// 对应协议6.2节
+    /// </summary>
+    public class StateChangeData
+    {
+        /// <summary>
+        /// 状态类型代码 (0x0101:电堆工作状态, 0x0102:风扇运行状态, 0x0103:DCDC工作状态, 0x0104:阀门状态)
+        /// </summary>
+        public ushort StateType { get; set; }
+
+        /// <summary>
+        /// 旧状态
+        /// </summary>
+        public byte OldState { get; set; }
+
+        /// <summary>
+        /// 新状态
+        /// </summary>
+        public byte NewState { get; set; }
+
+        /// <summary>
+        /// 获取状态类型名称
+        /// </summary>
+        public string GetStateTypeName()
+        {
+            return StateType switch
+            {
+                0x0101 => "电堆工作状态",
+                0x0102 => "风扇运行状态",
+                0x0103 => "DCDC工作状态",
+                0x0104 => "阀门状态",
+                _ => "未知状态"
+            };
+        }
+    }
+
+    /// <summary>
+    /// 通用参数结构
+    /// </summary>
+    public class GeneralParams
+    {
+        /// <summary>
+        /// 扫描周期 (0.1s)
+        /// </summary>
+        public ushort ScanPeriod { get; set; }
+    }
+
+    /// <summary>
+    /// 拉载时序参数结构（参数类型ID 0x0501）
+    /// </summary>
+    public class LoadSequenceParams
+    {
+        /// <summary>
+        /// 时序总数
+        /// </summary>
+        public byte SequenceCount { get; set; }
+
+        /// <summary>
+        /// 各时序电流值 (0.1A)
+        /// </summary>
+        public ushort[] Currents { get; set; } = new ushort[15];
+
+        /// <summary>
+        /// 各时序持续时间 (0.01s)
+        /// </summary>
+        public ushort[] Times { get; set; } = new ushort[15];
+    }
+
+    /// <summary>
+    /// 拉载控制参数结构（参数类型ID 0x0502）
+    /// </summary>
+    public class LoadControlParams
+    {
+        /// <summary>
+        /// 峰值电流 (0.1A)
+        /// </summary>
+        public ushort PeakCurrent { get; set; }
+
+        /// <summary>
+        /// 锁定系数 (0.001)
+        /// </summary>
+        public ushort LockFactor { get; set; }
+
+        /// <summary>
+        /// 锁定标志 (0:不锁定, 1:锁定)
+        /// </summary>
+        public byte LockFlag { get; set; }
+
+        /// <summary>
+        /// 最低电压 (0.1V)
+        /// </summary>
+        public ushort MinVoltage { get; set; }
+
+        /// <summary>
+        /// 电流步长 (0.1A)
+        /// </summary>
+        public ushort CurrentStep { get; set; }
+    }
+
+    /// <summary>
+    /// 拉载启动参数结构（参数类型ID 0x0503）
+    /// </summary>
+    public class LoadStartParams
+    {
+        /// <summary>
+        /// 首次拉载次数
+        /// </summary>
+        public byte FirstCount { get; set; }
+
+        /// <summary>
+        /// 首次拉载间隔 (分钟)
+        /// </summary>
+        public ushort FirstInterval { get; set; }
+
+        /// <summary>
+        /// 正常拉载间隔 (分钟)
+        /// </summary>
+        public ushort NormalInterval { get; set; }
+    }
+
+    /// <summary>
+    /// 拉载状态上报数据结构（功能码0xF2，14字节）
+    /// </summary>
+    public class LoadStatusData
+    {
+        /// <summary>
+        /// 当前时序编号
+        /// </summary>
+        public byte CurrentSequence { get; set; }
+
+        /// <summary>
+        /// 当前电流 (0.1A)
+        /// </summary>
+        public ushort CurrentCurrent { get; set; }
+
+        /// <summary>
+        /// 目标电流 (0.1A)
+        /// </summary>
+        public ushort TargetCurrent { get; set; }
+
+        /// <summary>
+        /// 当前电压 (0.1V)
+        /// </summary>
+        public ushort CurrentVoltage { get; set; }
+
+        /// <summary>
+        /// 当前功率 (0.1W)
+        /// </summary>
+        public ushort CurrentPower { get; set; }
+
+        /// <summary>
+        /// 最大功率 (0.1W)
+        /// </summary>
+        public ushort MaxPower { get; set; }
+
+        /// <summary>
+        /// 锁定电流 (0.1A)
+        /// </summary>
+        public ushort LockCurrent { get; set; }
+
+        /// <summary>
+        /// 拉载状态码
+        /// </summary>
+        public byte LoadState { get; set; }
+
+        /// <summary>
+        /// 获取拉载状态名称
+        /// </summary>
+        public string GetLoadStateName()
+        {
+            return LoadState switch
+            {
+                0x00 => "未开始",
+                0x01 => "进行中",
+                0x02 => "完成",
+                0x03 => "暂停",
+                0x04 => "异常停止",
+                0x05 => "锁定成功",
+                0x06 => "锁定失败",
+                _ => $"未知状态(0x{LoadState:X2})"
+            };
+        }
+    }
+}
