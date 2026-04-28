@@ -395,7 +395,7 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void SendReadConfigCommand(byte deviceAddress, byte paramTypeHigh, byte paramTypeLow)
         {
-            byte[] data = new byte[] { paramTypeHigh, paramTypeLow, 0x00 };
+            byte[] data = new byte[] { paramTypeHigh, paramTypeLow };
             byte[] frame = BuildFrame(deviceAddress, ProtocolConstants.FUNC_READ_CONFIG, data);
             SendFrame(frame);
         }

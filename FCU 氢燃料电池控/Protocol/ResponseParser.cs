@@ -114,9 +114,9 @@ namespace FCU_氢燃料电池控.Protocol
 
             try
             {
-                // 0x8A响应帧数据域：参数类型ID(2) + 子参数索引(1) + 参数数据(N)
-                // offset=8: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)+子参数索引(1)
-                int offset = 8;
+                // 0x8A响应帧数据域：参数类型ID(2) + 参数数据(N)
+                // offset=7: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)
+                int offset = 7;
 
                 // 高压最小值
                 data.HighPressureMin = (ushort)((frame[offset] << 8) | frame[offset + 1]);
@@ -158,8 +158,8 @@ namespace FCU_氢燃料电池控.Protocol
 
             try
             {
-                // offset=8: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)+子参数索引(1)
-                int offset = 8;
+                // offset=7: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)
+                int offset = 7;
 
                 data.FirstOpenTime = (ushort)((frame[offset] << 8) | frame[offset + 1]);
                 data.SecondOpenTime = (ushort)((frame[offset + 2] << 8) | frame[offset + 3]);
@@ -186,8 +186,8 @@ namespace FCU_氢燃料电池控.Protocol
 
             try
             {
-                // offset=8: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)+子参数索引(1)
-                int offset = 8;
+                // offset=7: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)
+                int offset = 7;
 
                 data.MinVoltage = (ushort)((frame[offset] << 8) | frame[offset + 1]);
                 data.StopVoltage = (ushort)((frame[offset + 2] << 8) | frame[offset + 3]);
@@ -211,8 +211,8 @@ namespace FCU_氢燃料电池控.Protocol
 
             try
             {
-                // offset=8: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)+子参数索引(1)
-                int offset = 8;
+                // offset=7: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)
+                int offset = 7;
 
                 data.LowSpeedDuty = frame[offset];
                 data.TempMin = (ushort)((frame[offset + 1] << 8) | frame[offset + 2]);
@@ -239,8 +239,8 @@ namespace FCU_氢燃料电池控.Protocol
 
             try
             {
-                // offset=8: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)+子参数索引(1)
-                int offset = 8;
+                // offset=7: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)
+                int offset = 7;
 
                 data.ScanPeriod = (ushort)((frame[offset] << 8) | frame[offset + 1]);
             }
@@ -331,8 +331,8 @@ namespace FCU_氢燃料电池控.Protocol
 
             try
             {
-                // offset=8: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)+子参数索引(1)
-                int offset = 8;
+                // offset=7: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)
+                int offset = 7;
 
                 data.SequenceCount = frame[offset];
                 int count = Math.Min((int)data.SequenceCount, 15);
@@ -363,8 +363,8 @@ namespace FCU_氢燃料电池控.Protocol
 
             try
             {
-                // offset=8: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)+子参数索引(1)
-                int offset = 8;
+                // offset=7: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)
+                int offset = 7;
 
                 data.PeakCurrent = (ushort)((frame[offset] << 8) | frame[offset + 1]);
                 data.LockFactor = (ushort)((frame[offset + 2] << 8) | frame[offset + 3]);
@@ -391,8 +391,8 @@ namespace FCU_氢燃料电池控.Protocol
 
             try
             {
-                // offset=8: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)+子参数索引(1)
-                int offset = 8;
+                // offset=7: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)
+                int offset = 7;
 
                 data.FirstCount = frame[offset];
                 data.FirstInterval = (ushort)((frame[offset + 1] << 8) | frame[offset + 2]);
