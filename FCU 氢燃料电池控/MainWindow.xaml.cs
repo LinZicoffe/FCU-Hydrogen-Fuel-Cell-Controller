@@ -126,8 +126,8 @@ namespace FCU_氢燃料电池控
             // BMS Modbus 主站服务初始化 [上位机优化计划 h-t4]
             _bmsService = new BmsService(serialPortManager);
             _bmsService.DataUpdated += OnBmsDataUpdated;
-            _bmsService.StatusChanged += (s, msg) => Dispatcher.Invoke(() => UpdateStatus(msg));
-            _bmsService.ErrorOccurred += (s, msg) => Dispatcher.Invoke(() => { HC.Growl.Warning(msg); UpdateStatus(msg); });
+            _bmsService.StatusChanged += msg => Dispatcher.Invoke(() => UpdateStatus(msg));
+            _bmsService.ErrorOccurred += msg => Dispatcher.Invoke(() => { HC.Growl.Warning(msg); UpdateStatus(msg); });
             _bmsService.MosWriteCompleted += OnBmsMosWriteCompleted;
             
             // 图表初始化（保留）
@@ -2508,11 +2508,6 @@ namespace FCU_氢燃料电池控
             tbx_BMS_CurrentFault.Text = "--";
             tbx_BMS_HistoryFault.Text = "--";
         }
-
-        #endregion
-
-        // ❌ 已删除：旧 AA55-BMS 轮询(3定时器)与 Process* 解析
-        // 轮询已由 BmsService(03H单次读reg128~152)接管, 解析见 OnBmsDataUpdated [上位机优化计划 D4]
 
         #endregion
 
