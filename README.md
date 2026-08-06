@@ -143,6 +143,9 @@ dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release
 
 ### 2026-08-06
 
+*V2*：
+- 修复问题：窗口调窄时顶部 Tab 显示不全（HandyControl TabPanel 溢出裁剪）——TabItem 样式紧凑化（Padding 16→8、Margin 5→2），6 个 Tab 总宽 602px→438px；窗口新增 `MinWidth=1000`/`MinHeight=600` 保护整体布局
+
 *V1*：
 - 新增功能：BMS 通信重写为 Modbus RTU 主站（V1.28-S），新增 `Protocol/ModbusRtu.cs`（CRC16/03H/10H/滑窗解析）、`Services/BmsService.cs`（03H 轮询 reg128~152、300ms 超时、3 次置离线、10H MOS 控制、总线静默检查）、`Models/BmsData.cs`、`Models/BmsBitDecoder.cs`（reg137/138/139 位图解码）
 - 新增功能：BMS 总线仲裁握手——连接串口后发 0x0D=0 接管总线，断开/关窗前发 0x0D=1 归还并等 0x8D 确认（300ms，未确认则警告）；BMS 从站地址 UI 可配（默认 1）
