@@ -8,6 +8,7 @@
 // ======================================================================
 
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.IO.Ports;
@@ -48,9 +49,7 @@ namespace FCU_氢燃料电池控
         // ❌ 已删除：private SerialPort? _serialPort; - 现在使用 SerialPortManager
         private DispatcherTimer? _timer;
         private DispatcherTimer? _pollingTimer;  // 电堆信息轮询定时器
-        private DispatcherTimer? _bmsBasicPollingTimer;  // BMS基本信息轮询定时器
-        private DispatcherTimer? _bmsPackPollingTimer;   // BMS电池组信息轮询定时器
-        private DispatcherTimer? _bmsFaultPollingTimer;  // BMS故障信息轮询定时器
+        private BmsService? _bmsService;  // BMS Modbus 主站服务 [上位机优化计划 h-t2]
         private DispatcherTimer? _chartUpdateTimer;  // 图表数据采集定时器
         private bool _isSerialOpen = false;
         private ProtocolHandler? _protocolHandler;
@@ -123,7 +122,13 @@ namespace FCU_氢燃料电池控
             
             // 轮询定时器初始化（保留）
             InitializePollingTimer();
-            InitializeBMSPollingTimers();
+
+            // BMS Modbus 主站服务初始化 [上位机优化计划 h-t4]
+            _bmsService = new BmsService(serialPortManager);
+            _bmsService.DataUpdated += OnBmsDataUpdated;
+            _bmsService.StatusChanged += (s, msg) => Dispatcher.Invoke(() => UpdateStatus(msg));
+            _bmsService.ErrorOccurred += (s, msg) => Dispatcher.Invoke(() => { HC.Growl.Warning(msg); UpdateStatus(msg); });
+            _bmsService.MosWriteCompleted += OnBmsMosWriteCompleted;
             
             // 图表初始化（保留）
             InitializePowerChart();
@@ -166,10 +171,9 @@ namespace FCU_氢燃料电池控
                     _pollingTimer.Stop();
                 }
                 
-                // 停止BMS轮询定时器
-                _bmsBasicPollingTimer?.Stop();
-                _bmsPackPollingTimer?.Stop();
-                _bmsFaultPollingTimer?.Stop();
+                // 停止BMS Modbus轮询并清显示
+                _bmsService?.StopPolling();
+                ResetBmsDisplay();
             }
         }
 
@@ -207,27 +211,6 @@ namespace FCU_氢燃料电池控
             _pollingTimer.Interval = TimeSpan.FromSeconds(1); // 默认1秒
             _pollingTimer.Tick += PollingTimer_Tick;
             // 默认不启动，由用户点击按钮启动
-        }
-
-        /// <summary>
-        /// 初始化BMS轮询定时器
-        /// </summary>
-        private void InitializeBMSPollingTimers()
-        {
-            // BMS基本信息轮询定时器
-            _bmsBasicPollingTimer = new DispatcherTimer();
-            _bmsBasicPollingTimer.Interval = TimeSpan.FromSeconds(1);
-            _bmsBasicPollingTimer.Tick += BMSBasicPollingTimer_Tick;
-
-            // BMS电池组信息轮询定时器
-            _bmsPackPollingTimer = new DispatcherTimer();
-            _bmsPackPollingTimer.Interval = TimeSpan.FromSeconds(2);
-            _bmsPackPollingTimer.Tick += BMSPackPollingTimer_Tick;
-
-            // BMS故障信息轮询定时器
-            _bmsFaultPollingTimer = new DispatcherTimer();
-            _bmsFaultPollingTimer.Interval = TimeSpan.FromSeconds(2);
-            _bmsFaultPollingTimer.Tick += BMSFaultPollingTimer_Tick;
         }
 
         /// <summary>
@@ -1470,10 +1453,19 @@ namespace FCU_氢燃料电池控
                 if (sp == null || _protocolHandler == null)
                     return;
 
+                List<byte>? rxBytes = null;
                 while (sp.BytesToRead > 0)
                 {
                     byte b = (byte)sp.ReadByte();
                     _protocolHandler.ProcessReceivedByte(b);
+                    (rxBytes ??= new List<byte>()).Add(b);
+                }
+
+                // Modbus 字节流并行喂入 BMS 服务 (转到UI线程, 保持BmsService单线程)
+                if (rxBytes != null && _bmsService != null)
+                {
+                    byte[] copy = rxBytes.ToArray();
+                    Dispatcher.BeginInvoke(() => _bmsService.AppendReceivedBytes(copy));
                 }
             }
             catch
@@ -1492,7 +1484,6 @@ namespace FCU_氢燃料电池控
             try
             {
                 byte functionCode = ResponseParser.GetFunctionCode(frame);
-                byte dataLength = frame.Length >= 5 ? frame[4] : (byte)0;
 
                 switch (functionCode)
                 {
@@ -1500,36 +1491,12 @@ namespace FCU_氢燃料电池控
                         HandleSerialNumberResponse(frame);
                         break;
 
-                    case 0x82: // 参数设置响应 或 BMS基本信息响应
-                        // 根据数据长度区分: FCU参数设置响应为1字节, BMS基本信息响应为32字节
-                        if (dataLength == 32)
-                        {
-                            // BMS基本信息响应
-                            HandleBMSBasicInfoResponse(frame);
-                        }
-                        else
-                        {
-                            // FCU参数设置响应
-                            HandleSetParamResponse(frame);
-                        }
+                    case 0x82: // FCU参数设置响应
+                        HandleSetParamResponse(frame);
                         break;
 
-                    case 0x83: // BMS电池组信息响应
-                        HandleBatteryPackInfoResponse(frame);
-                        break;
-
-                    case 0x87: // 电堆信息响应 或 BMS故障信息响应
-                        // 根据数据长度区分: FCU电堆信息响应为26字节, BMS故障信息响应为4字节
-                        if (dataLength == 4)
-                        {
-                            // BMS故障信息响应
-                            HandleBMSFaultInfoResponse(frame);
-                        }
-                        else
-                        {
-                            // FCU电堆信息响应
-                            HandleStackInfoResponse(frame);
-                        }
+                    case 0x87: // FCU电堆信息响应
+                        HandleStackInfoResponse(frame);
                         break;
 
                     case 0x88: // 启动响应
@@ -1552,10 +1519,6 @@ namespace FCU_氢燃料电池控
                         HandleBmsPollResponse(frame);
                         break;
 
-                    case 0x90: // BMS控制响应
-                        HandleBMSControlResponse(frame);
-                        break;
-
                     case 0xF0: // 报警信息上报
                         HandleAlarmReport(frame);
                         break;
@@ -1564,20 +1527,8 @@ namespace FCU_氢燃料电池控
                         HandleStateChangeReport(frame);
                         break;
 
-                    case 0xF3: // BMS信息定时上报
-                        HandleBMSPeriodicReport(frame);
-                        break;
-
-                    case 0xF4: // BMS报警事件上报
-                        HandleBMSAlarmReport(frame);
-                        break;
-
                     case 0xF2: // 拉载状态上报
                         HandleLoadStatusReport(frame);
-                        break;
-
-                    case 0xF5: // BMS状态变更上报
-                        HandleBMSStateChangeReport(frame);
                         break;
                 }
             }
@@ -2151,185 +2102,8 @@ namespace FCU_氢燃料电池控
             UpdateStatus($"状态变更：{message}");
         }
 
-        /// <summary>
-        /// 处理BMS基本信息响应
-        /// </summary>
-        private void HandleBMSBasicInfoResponse(byte[] frame)
-        {
-            byte[] data = ResponseParser.GetDataField(frame);
-            Dispatcher.Invoke(() =>
-            {
-                ProcessBMSBasicInfoResponse(data);
-            });
-        }
-
-        /// <summary>
-        /// 处理电池组信息响应
-        /// </summary>
-        private void HandleBatteryPackInfoResponse(byte[] frame)
-        {
-            byte[] data = ResponseParser.GetDataField(frame);
-            Dispatcher.Invoke(() =>
-            {
-                ProcessBatteryPackInfoResponse(data);
-            });
-        }
-
-        /// <summary>
-        /// 处理BMS故障信息响应
-        /// </summary>
-        private void HandleBMSFaultInfoResponse(byte[] frame)
-        {
-            byte[] data = ResponseParser.GetDataField(frame);
-            Dispatcher.Invoke(() =>
-            {
-                ProcessBMSFaultInfoResponse(data);
-            });
-        }
-
-        /// <summary>
-        /// 处理BMS控制响应
-        /// </summary>
-        private void HandleBMSControlResponse(byte[] frame)
-        {
-            byte result = ResponseParser.ParseControlResponse(frame);
-            Dispatcher.Invoke(() =>
-            {
-                if (result == 0x00)
-                {
-                    UpdateStatus("BMS控制指令执行成功");
-                }
-                else
-                {
-                    string errorMessage = result switch
-                    {
-                        0x01 => "功能码未定义",
-                        0x02 => "数据域长度错误",
-                        0x03 => "CRC16校验错误",
-                        0x04 => "设备地址不匹配",
-                        0x05 => "参数值超出范围",
-                        0x06 => "参数类型ID无效",
-                        0x07 => "继电器编号无效",
-                        0x08 => "控制指令无效",
-                        0x09 => "BMS处于故障状态",
-                        0x0A => "BMS处于休眠状态",
-                        0x0B => "充放电禁止状态",
-                        0x0C => "继电器操作失败",
-                        0x0D => "MOS管操作失败",
-                        0x0E => "数据写入Flash失败",
-                        _ => $"未知错误(0x{result:X2})"
-                    };
-                    UpdateStatus($"BMS控制指令失败: {errorMessage}");
-                }
-            });
-        }
-
-        /// <summary>
-        /// 处理BMS信息定时上报
-        /// </summary>
-        private void HandleBMSPeriodicReport(byte[] frame)
-        {
-            byte[] data = ResponseParser.GetDataField(frame);
-            Dispatcher.Invoke(() =>
-            {
-                ProcessBMSBasicInfoResponse(data);
-                UpdateStatus("收到BMS定时上报");
-            });
-        }
-
-        /// <summary>
-        /// 处理BMS报警事件上报
-        /// </summary>
-        private void HandleBMSAlarmReport(byte[] frame)
-        {
-            byte[] data = ResponseParser.GetDataField(frame);
-            if (data.Length >= 5)
-            {
-                ushort alarmType = (ushort)((data[0] << 8) | data[1]);
-                byte alarmLevel = data[2];
-                ushort alarmValue = (ushort)((data[3] << 8) | data[4]);
-
-                string alarmTypeName = alarmType switch
-                {
-                    0x0001 => "单体过压",
-                    0x0002 => "单体欠压",
-                    0x0003 => "总压过压",
-                    0x0004 => "总压欠压",
-                    0x0005 => "充电过流",
-                    0x0006 => "放电过流",
-                    0x0007 => "温度过高",
-                    0x0008 => "温度过低",
-                    0x0009 => "SOC过低",
-                    0x000A => "硬件故障",
-                    _ => $"未知类型(0x{alarmType:X4})"
-                };
-
-                string levelName = alarmLevel switch
-                {
-                    0x01 => "提示",
-                    0x02 => "警告",
-                    0x03 => "严重",
-                    0x04 => "紧急",
-                    _ => "未知"
-                };
-
-                Dispatcher.Invoke(() =>
-                {
-                    string message = $"BMS报警: {alarmTypeName}\n等级: {levelName}\n数值: {alarmValue}";
-                    MessageBox.Show(message, "BMS报警", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    UpdateStatus($"收到BMS报警: {alarmTypeName}");
-                });
-            }
-        }
-
-        /// <summary>
-        /// 处理BMS状态变更上报
-        /// </summary>
-        private void HandleBMSStateChangeReport(byte[] frame)
-        {
-            byte[] data = ResponseParser.GetDataField(frame);
-            if (data.Length >= 4)
-            {
-                byte oldWorkState = data[0];
-                byte newWorkState = data[1];
-                byte oldChargeState = data[2];
-                byte newChargeState = data[3];
-
-                string GetWorkStateName(byte state)
-                {
-                    return state switch
-                    {
-                        0x00 => "初始化",
-                        0x01 => "待机",
-                        0x02 => "充电",
-                        0x03 => "放电",
-                        0x04 => "预充电",
-                        0x05 => "故障",
-                        _ => $"未知({state:X2})"
-                    };
-                }
-
-                string GetChargeStateName(byte state)
-                {
-                    return state switch
-                    {
-                        0x00 => "静止",
-                        0x01 => "充电",
-                        0x02 => "放电",
-                        0x03 => "预充电",
-                        _ => $"未知({state:X2})"
-                    };
-                }
-
-                Dispatcher.Invoke(() =>
-                {
-                    string message = $"BMS状态变更:\n" +
-                                   $"工作状态: {GetWorkStateName(oldWorkState)} → {GetWorkStateName(newWorkState)}\n" +
-                                   $"充放电状态: {GetChargeStateName(oldChargeState)} → {GetChargeStateName(newChargeState)}";
-                    UpdateStatus(message.Replace("\n", " "));
-                });
-            }
-        }
+        // ❌ 已删除：旧 AA55-BMS 响应处理(0x82-32B/0x83/0x87-4B/0x90/0xF3/F4/F5)
+        // BMS 已重写为 Modbus RTU 主站(BmsService), 不再走 AA55 帧分发 [上位机优化计划 D4]
 
 #if ENABLE_LICENSE_FEATURE
         /// <summary>
@@ -2413,654 +2187,223 @@ namespace FCU_氢燃料电池控
 
         #endregion
 
-        #region BMS电池管理功能
+        #region BMS电池管理功能 (Modbus RTU, V1.28-S)
 
         /// <summary>
-        /// 读取BMS基本信息按钮点击事件
+        /// 读取BMS按钮: 手动触发一次 03H 读 reg128~152
         /// </summary>
-        private void btn_ReadBMSBasicInfo_Click(object sender, RoutedEventArgs e)
+        private void btn_ReadBMS_Click(object sender, RoutedEventArgs e)
         {
-            try
+            if (!_isSerialOpen)
             {
-                if (!_isSerialOpen)
-                {
-                    HC.Growl.Warning("请先打开串口");
-                    return;
-                }
-
-                // 构建功能码0x02读取BMS基本信息请求帧（BMS默认地址为2）
-                byte deviceAddress = 2;
-                byte[] frame = ProtocolHandler.BuildRequestFrame(deviceAddress, 0x02, new byte[0]);
-
-                SendFrame(frame);
-                UpdateStatus("已发送读取BMS基本信息指令");
+                HC.Growl.Warning("请先打开串口");
+                return;
             }
-            catch (Exception ex)
-            {
-                HC.Growl.Error($"读取BMS基本信息失败: {ex.Message}");
-                UpdateStatus($"读取BMS基本信息失败: {ex.Message}");
-            }
+            _bmsService?.ReadOnce();
         }
 
         /// <summary>
-        /// 读取电池组信息按钮点击事件
+        /// 开启BMS自动刷新 (03H轮询)
         /// </summary>
-        private void btn_ReadBatteryPackInfo_Click(object sender, RoutedEventArgs e)
+        private void btn_StartBMSPolling_Click(object sender, RoutedEventArgs e)
         {
-            try
+            if (!_isSerialOpen)
             {
-                if (!_isSerialOpen)
-                {
-                    HC.Growl.Warning("请先打开串口");
-                    return;
-                }
-
-                // 构建功能码0x03读取电池组信息请求帧
-                byte deviceAddress = 2;  // BMS默认地址为2
-                byte[] frame = ProtocolHandler.BuildRequestFrame(deviceAddress, 0x03, new byte[0]);
-
-                SendFrame(frame);
-                UpdateStatus("已发送读取电池组信息指令");
+                HC.Growl.Warning("请先打开串口");
+                return;
             }
-            catch (Exception ex)
+
+            double intervalSec = 2.0;
+            if (cbx_BMSPollingInterval.SelectedItem is ComboBoxItem item && item.Tag != null)
             {
-                HC.Growl.Error($"读取电池组信息失败: {ex.Message}");
-                UpdateStatus($"读取电池组信息失败: {ex.Message}");
+                intervalSec = int.Parse(item.Tag.ToString()!) / 1000.0;
             }
+
+            _bmsService?.StartPolling(intervalSec);
+            btn_StartBMSPolling.IsEnabled = false;
+            btn_StopBMSPolling.IsEnabled = true;
+            cbx_BMSPollingInterval.IsEnabled = false;
+            UpdateStatus($"已开启BMS自动刷新 ({intervalSec:0.#}s)");
         }
 
         /// <summary>
-        /// 读取BMS故障信息按钮点击事件
+        /// 停止BMS自动刷新
         /// </summary>
-        private void btn_ReadBMSFaultInfo_Click(object sender, RoutedEventArgs e)
+        private void btn_StopBMSPolling_Click(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                if (!_isSerialOpen)
-                {
-                    HC.Growl.Warning("请先打开串口");
-                    return;
-                }
-
-                // 构建功能码0x07读取BMS故障信息请求帧
-                byte deviceAddress = 2;  // BMS默认地址为2
-                byte[] frame = ProtocolHandler.BuildRequestFrame(deviceAddress, 0x07, new byte[0]);
-
-                SendFrame(frame);
-                UpdateStatus("已发送读取BMS故障信息指令");
-            }
-            catch (Exception ex)
-            {
-                HC.Growl.Error($"读取BMS故障信息失败: {ex.Message}");
-                UpdateStatus($"读取BMS故障信息失败: {ex.Message}");
-            }
+            _bmsService?.StopPolling();
+            btn_StartBMSPolling.IsEnabled = true;
+            btn_StopBMSPolling.IsEnabled = false;
+            cbx_BMSPollingInterval.IsEnabled = true;
+            UpdateStatus("已停止BMS自动刷新");
         }
 
         /// <summary>
-        /// BMS允许充电按钮点击事件
+        /// BMS从站地址应用 (UI可配, 默认1, 与固件FCU_MODBUS_SLAVE_ADDR一致) [上位机优化计划 D2]
         /// </summary>
+        private void btn_ApplyBmsAddress_Click(object sender, RoutedEventArgs e)
+        {
+            if (!byte.TryParse(tbx_BmsAddress.Text, out byte addr) || addr == 0)
+            {
+                HC.Growl.Warning("BMS地址必须为1-254");
+                return;
+            }
+            if (_bmsService != null)
+            {
+                _bmsService.SlaveAddress = addr;
+                UpdateStatus($"BMS从站地址已设为 {addr}");
+            }
+        }
+
+        /// <summary>允许充电: 10H 写 reg1=0xAAAA 打开充电MOS [BMS协议 §3.3]</summary>
         private void btn_BMS_AllowCharge_Click(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                if (!_isSerialOpen)
-                {
-                    HC.Growl.Warning("请先打开串口");
-                    return;
-                }
-
-                // 构建功能码0x11充放电控制请求帧，控制指令0x01表示允许充电
-                byte deviceAddress = 2;  // BMS默认地址为2
-                byte[] dataField = new byte[] { 0x01 };  // 允许充电
-                byte[] frame = ProtocolHandler.BuildRequestFrame(deviceAddress, 0x11, dataField);
-
-                SendFrame(frame);
-                UpdateStatus("已发送允许充电指令");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"允许充电指令发送失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-                UpdateStatus($"允许充电指令发送失败: {ex.Message}");
-            }
+            if (!CheckBmsReady()) return;
+            _bmsService?.SetChargeMos(true);
         }
 
-        /// <summary>
-        /// BMS允许放电按钮点击事件
-        /// </summary>
+        /// <summary>允许放电: 10H 写 reg2=0xAAAA 打开放电MOS</summary>
         private void btn_BMS_AllowDischarge_Click(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                if (!_isSerialOpen)
-                {
-                    HC.Growl.Warning("请先打开串口");
-                    return;
-                }
-
-                // 构建功能码0x11充放电控制请求帧，控制指令0x02表示允许放电
-                byte deviceAddress = 2;  // BMS默认地址为2
-                byte[] dataField = new byte[] { 0x02 };  // 允许放电
-                byte[] frame = ProtocolHandler.BuildRequestFrame(deviceAddress, 0x11, dataField);
-
-                SendFrame(frame);
-                UpdateStatus("已发送允许放电指令");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"允许放电指令发送失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-                UpdateStatus($"允许放电指令发送失败: {ex.Message}");
-            }
+            if (!CheckBmsReady()) return;
+            _bmsService?.SetDischargeMos(true);
         }
 
-        /// <summary>
-        /// BMS允许充放电按钮点击事件
-        /// </summary>
+        /// <summary>允许充放电: 先开充电MOS, 成功回调中再开放电MOS(避免总线忙冲突)</summary>
         private void btn_BMS_AllowBoth_Click(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                if (!_isSerialOpen)
-                {
-                    HC.Growl.Warning("请先打开串口");
-                    return;
-                }
-
-                // 构建功能码0x11充放电控制请求帧，控制指令0x03表示允许充放电
-                byte deviceAddress = 2;  // BMS默认地址为2
-                byte[] dataField = new byte[] { 0x03 };  // 允许充放电
-                byte[] frame = ProtocolHandler.BuildRequestFrame(deviceAddress, 0x11, dataField);
-
-                SendFrame(frame);
-                UpdateStatus("已发送允许充放电指令");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"允许充放电指令发送失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-                UpdateStatus($"允许充放电指令发送失败: {ex.Message}");
-            }
+            if (!CheckBmsReady()) return;
+            _pendingSecondMosWrite = () => _bmsService?.SetDischargeMos(true);
+            _bmsService?.SetChargeMos(true);
         }
 
-        /// <summary>
-        /// BMS禁止充放电按钮点击事件
-        /// </summary>
+        /// <summary>禁止充放电: 先关充电MOS, 成功回调中再关放电MOS</summary>
         private void btn_BMS_Forbid_Click(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                if (!_isSerialOpen)
-                {
-                    HC.Growl.Warning("请先打开串口");
-                    return;
-                }
-
-                // 构建功能码0x11充放电控制请求帧，控制指令0x00表示禁止充放电
-                byte deviceAddress = 2;  // BMS默认地址为2
-                byte[] dataField = new byte[] { 0x00 };  // 禁止充放电
-                byte[] frame = ProtocolHandler.BuildRequestFrame(deviceAddress, 0x11, dataField);
-
-                SendFrame(frame);
-                UpdateStatus("已发送禁止充放电指令");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"禁止充放电指令发送失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-                UpdateStatus($"禁止充放电指令发送失败: {ex.Message}");
-            }
+            if (!CheckBmsReady()) return;
+            _pendingSecondMosWrite = () => _bmsService?.SetDischargeMos(false);
+            _bmsService?.SetChargeMos(false);
         }
 
-        #region BMS轮询功能
-
-        /// <summary>
-        /// BMS基本信息轮询定时器Tick事件
-        /// </summary>
-        private void BMSBasicPollingTimer_Tick(object? sender, EventArgs e)
+        private bool CheckBmsReady()
         {
-            try
+            if (!_isSerialOpen)
             {
-                if (!_isSerialOpen)
-                    return;
-
-                byte deviceAddress = 2;  // BMS固定地址为2
-                byte[] frame = ProtocolHandler.BuildRequestFrame(deviceAddress, 0x02, new byte[0]);
-                SendFrame(frame);
+                HC.Growl.Warning("请先打开串口");
+                return false;
             }
-            catch { }
+            return true;
         }
 
-        /// <summary>
-        /// BMS电池组信息轮询定时器Tick事件
-        /// </summary>
-        private void BMSPackPollingTimer_Tick(object? sender, EventArgs e)
-        {
-            try
-            {
-                if (!_isSerialOpen)
-                    return;
-
-                byte deviceAddress = 2;  // BMS固定地址为2
-                byte[] frame = ProtocolHandler.BuildRequestFrame(deviceAddress, 0x03, new byte[0]);
-                SendFrame(frame);
-            }
-            catch { }
-        }
+        /// <summary>排队的第二次MOS写 (允许/禁止充放电需两帧)</summary>
+        private Action? _pendingSecondMosWrite;
 
         /// <summary>
-        /// BMS故障信息轮询定时器Tick事件
+        /// MOS写完成: 反馈结果; 首次成功且有排队第二次写则继续
         /// </summary>
-        private void BMSFaultPollingTimer_Tick(object? sender, EventArgs e)
+        private void OnBmsMosWriteCompleted(bool success, string message)
         {
-            try
+            if (success)
             {
-                if (!_isSerialOpen)
-                    return;
-
-                byte deviceAddress = 2;  // BMS固定地址为2
-                byte[] frame = ProtocolHandler.BuildRequestFrame(deviceAddress, 0x07, new byte[0]);
-                SendFrame(frame);
+                UpdateStatus(message);
             }
-            catch { }
-        }
-
-        /// <summary>
-        /// 开启BMS基本信息自动刷新
-        /// </summary>
-        private void btn_StartBMSBasicPolling_Click(object sender, RoutedEventArgs e)
-        {
-            try
+            else
             {
-                if (!_isSerialOpen)
-                {
-                    HC.Growl.Warning("请先打开串口");
-                    return;
-                }
-
-                if (_bmsBasicPollingTimer == null)
-                    return;
-
-                // 获取选择的轮询间隔
-                ComboBoxItem? selectedItem = cbx_BMSBasicPollingInterval.SelectedItem as ComboBoxItem;
-                if (selectedItem != null && selectedItem.Tag != null)
-                {
-                    int interval = int.Parse(selectedItem.Tag.ToString()!);
-                    _bmsBasicPollingTimer.Interval = TimeSpan.FromMilliseconds(interval);
-                }
-
-                _bmsBasicPollingTimer.Start();
-                btn_StartBMSBasicPolling.IsEnabled = false;
-                btn_StopBMSBasicPolling.IsEnabled = true;
-                cbx_BMSBasicPollingInterval.IsEnabled = false;
-                UpdateStatus("已开启BMS基本信息自动刷新");
+                HC.Growl.Error(message);
+                UpdateStatus(message);
             }
-            catch (Exception ex)
+
+            var pending = _pendingSecondMosWrite;
+            _pendingSecondMosWrite = null;
+            if (success && pending != null)
             {
-                HC.Growl.Error($"开启自动刷新失败: {ex.Message}");
+                pending();
             }
         }
 
         /// <summary>
-        /// 停止BMS基本信息自动刷新
+        /// BMS数据更新 (03H reg128~152) [上位机优化计划 D8]
+        /// 无对应寄存器的字段显示"--"
         /// </summary>
-        private void btn_StopBMSBasicPolling_Click(object sender, RoutedEventArgs e)
+        private void OnBmsDataUpdated(BmsData data)
         {
-            try
+            if (!data.Online)
             {
-                if (_bmsBasicPollingTimer == null)
-                    return;
+                ResetBmsDisplay();
+                return;
+            }
 
-                _bmsBasicPollingTimer.Stop();
-                btn_StartBMSBasicPolling.IsEnabled = true;
-                btn_StopBMSBasicPolling.IsEnabled = false;
-                cbx_BMSBasicPollingInterval.IsEnabled = true;
-                UpdateStatus("已停止BMS基本信息自动刷新");
-            }
-            catch (Exception ex)
-            {
-                HC.Growl.Error($"停止自动刷新失败: {ex.Message}");
-            }
+            tbk_BMS_SOC.Text = data.Soc.ToString();
+            tbk_BMS_SOH.Text = data.Soh.ToString();
+            tbk_BMS_RemainCapacity.Text = data.RemainCapacity.ToString("F2");
+            tbk_BMS_RatedCapacity.Text = data.RatedCapacity.ToString("F2");
+            tbk_BMS_TotalVoltage.Text = data.PackVoltage.ToString("F2");
+            tbk_BMS_TotalCurrent.Text = data.Current.ToString("F2");
+            tbk_BMS_MaxCellVoltage.Text = data.CellVoltMax.ToString("F3");
+            tbk_BMS_MinCellVoltage.Text = data.CellVoltMin.ToString("F3");
+            // 平均单体电压/平均温度: 无对应寄存器
+            tbk_BMS_AvgCellVoltage.Text = "--";
+            tbk_BMS_MaxTemp.Text = data.CellTempMax.ToString("F1");
+            tbk_BMS_MinTemp.Text = data.CellTempMin.ToString("F1");
+            tbk_BMS_AvgTemp.Text = "--";
+            tbk_BMS_WorkState.Text = GetBmsWorkStateText(data.SystemStatus);
+            tbk_BMS_ChargeDischargeState.Text =
+                $"充电MOS:{(data.ChargeMosOn ? "开" : "关")} 放电MOS:{(data.DischargeMosOn ? "开" : "关")}";
+            tbk_BMS_CycleCount.Text = data.CycleCount.ToString();
+            tbk_BMS_FaultCode.Text = data.FaultStatus == 0 ? "无故障" : $"0x{data.FaultStatus:X4}";
+            tbk_BMS_SeriesCells.Text = data.SeriesCells.ToString();
+
+            // 故障信息区: reg137告警/138保护/139故障 位解码 [BMS协议 附表1/2/3]
+            tbx_BMS_CurrentFault.Text =
+                $"告警: {BmsBitDecoder.DecodeAlarm(data.AlarmStatus)}\n" +
+                $"保护: {BmsBitDecoder.DecodeProtect(data.ProtectStatus)}\n" +
+                $"故障: {BmsBitDecoder.DecodeFault(data.FaultStatus)}";
+            // 历史记录需读reg2400+, 本期不支持
+            tbx_BMS_HistoryFault.Text = "--";
         }
 
         /// <summary>
-        /// 开启BMS电池组信息自动刷新
+        /// BMS工作状态文本 [BMS协议 附表4]: BIT8充电指示/BIT9放电指示/BIT10充满/BIT11待机
         /// </summary>
-        private void btn_StartBMSPackPolling_Click(object sender, RoutedEventArgs e)
+        private static string GetBmsWorkStateText(ushort sys)
         {
-            try
-            {
-                if (!_isSerialOpen)
-                {
-                    HC.Growl.Warning("请先打开串口");
-                    return;
-                }
-
-                if (_bmsPackPollingTimer == null)
-                    return;
-
-                ComboBoxItem? selectedItem = cbx_BMSPackPollingInterval.SelectedItem as ComboBoxItem;
-                if (selectedItem != null && selectedItem.Tag != null)
-                {
-                    int interval = int.Parse(selectedItem.Tag.ToString()!);
-                    _bmsPackPollingTimer.Interval = TimeSpan.FromMilliseconds(interval);
-                }
-
-                _bmsPackPollingTimer.Start();
-                btn_StartBMSPackPolling.IsEnabled = false;
-                btn_StopBMSPackPolling.IsEnabled = true;
-                cbx_BMSPackPollingInterval.IsEnabled = false;
-                UpdateStatus("已开启BMS电池组信息自动刷新");
-            }
-            catch (Exception ex)
-            {
-                HC.Growl.Error($"开启自动刷新失败: {ex.Message}");
-            }
+            if ((sys & 0x0100) != 0) return "充电中";
+            if ((sys & 0x0200) != 0) return "放电中";
+            if ((sys & 0x0400) != 0) return "已充满";
+            if ((sys & 0x0800) != 0) return "待机";
+            return $"未知(0x{sys:X4})";
         }
 
         /// <summary>
-        /// 停止BMS电池组信息自动刷新
+        /// BMS显示复位 (离线/断开串口时全部置"--")
         /// </summary>
-        private void btn_StopBMSPackPolling_Click(object sender, RoutedEventArgs e)
+        private void ResetBmsDisplay()
         {
-            try
-            {
-                if (_bmsPackPollingTimer == null)
-                    return;
-
-                _bmsPackPollingTimer.Stop();
-                btn_StartBMSPackPolling.IsEnabled = true;
-                btn_StopBMSPackPolling.IsEnabled = false;
-                cbx_BMSPackPollingInterval.IsEnabled = true;
-                UpdateStatus("已停止BMS电池组信息自动刷新");
-            }
-            catch (Exception ex)
-            {
-                HC.Growl.Error($"停止自动刷新失败: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 开启BMS故障信息自动刷新
-        /// </summary>
-        private void btn_StartBMSFaultPolling_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                if (!_isSerialOpen)
-                {
-                    HC.Growl.Warning("请先打开串口");
-                    return;
-                }
-
-                if (_bmsFaultPollingTimer == null)
-                    return;
-
-                ComboBoxItem? selectedItem = cbx_BMSFaultPollingInterval.SelectedItem as ComboBoxItem;
-                if (selectedItem != null && selectedItem.Tag != null)
-                {
-                    int interval = int.Parse(selectedItem.Tag.ToString()!);
-                    _bmsFaultPollingTimer.Interval = TimeSpan.FromMilliseconds(interval);
-                }
-
-                _bmsFaultPollingTimer.Start();
-                btn_StartBMSFaultPolling.IsEnabled = false;
-                btn_StopBMSFaultPolling.IsEnabled = true;
-                cbx_BMSFaultPollingInterval.IsEnabled = false;
-                UpdateStatus("已开启BMS故障信息自动刷新");
-            }
-            catch (Exception ex)
-            {
-                HC.Growl.Error($"开启自动刷新失败: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 停止BMS故障信息自动刷新
-        /// </summary>
-        private void btn_StopBMSFaultPolling_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                if (_bmsFaultPollingTimer == null)
-                    return;
-
-                _bmsFaultPollingTimer.Stop();
-                btn_StartBMSFaultPolling.IsEnabled = true;
-                btn_StopBMSFaultPolling.IsEnabled = false;
-                cbx_BMSFaultPollingInterval.IsEnabled = true;
-                UpdateStatus("已停止BMS故障信息自动刷新");
-            }
-            catch (Exception ex)
-            {
-                HC.Growl.Error($"停止自动刷新失败: {ex.Message}");
-            }
+            tbk_BMS_SOC.Text = "--";
+            tbk_BMS_SOH.Text = "--";
+            tbk_BMS_RemainCapacity.Text = "--";
+            tbk_BMS_RatedCapacity.Text = "--";
+            tbk_BMS_TotalVoltage.Text = "--";
+            tbk_BMS_TotalCurrent.Text = "--";
+            tbk_BMS_MaxCellVoltage.Text = "--";
+            tbk_BMS_MinCellVoltage.Text = "--";
+            tbk_BMS_AvgCellVoltage.Text = "--";
+            tbk_BMS_MaxTemp.Text = "--";
+            tbk_BMS_MinTemp.Text = "--";
+            tbk_BMS_AvgTemp.Text = "--";
+            tbk_BMS_WorkState.Text = "--";
+            tbk_BMS_ChargeDischargeState.Text = "--";
+            tbk_BMS_CycleCount.Text = "--";
+            tbk_BMS_FaultCode.Text = "--";
+            tbk_BMS_SeriesCells.Text = "--";
+            tbx_BMS_CurrentFault.Text = "--";
+            tbx_BMS_HistoryFault.Text = "--";
         }
 
         #endregion
 
-        /// <summary>
-        /// 处理BMS基本信息响应 (功能码0x82)
-        /// </summary>
-        private void ProcessBMSBasicInfoResponse(byte[] data)
-        {
-            try
-            {
-                if (data.Length < 32)
-                {
-                    UpdateStatus("BMS基本信息数据长度不足");
-                    return;
-                }
-
-                // 解析SOC (0.1%)
-                ushort soc = (ushort)((data[0] << 8) | data[1]);
-                tbk_BMS_SOC.Text = (soc / 10.0).ToString("F1");
-
-                // 解析剩余容量 (0.1Ah)
-                ushort remainCapacity = (ushort)((data[2] << 8) | data[3]);
-                tbk_BMS_RemainCapacity.Text = (remainCapacity / 10.0).ToString("F1");
-
-                // 解析总电压 (0.1V)
-                ushort totalVoltage = (ushort)((data[4] << 8) | data[5]);
-                tbk_BMS_TotalVoltage.Text = (totalVoltage / 10.0).ToString("F1");
-
-                // 解析总电流 (0.1A, 有符号)
-                short totalCurrent = (short)((data[6] << 8) | data[7]);
-                tbk_BMS_TotalCurrent.Text = (totalCurrent / 10.0).ToString("F1");
-
-                // 解析最高单体电压 (0.001V)
-                ushort maxCellVoltage = (ushort)((data[8] << 8) | data[9]);
-                tbk_BMS_MaxCellVoltage.Text = (maxCellVoltage / 1000.0).ToString("F3");
-
-                // 解析最低单体电压 (0.001V)
-                ushort minCellVoltage = (ushort)((data[10] << 8) | data[11]);
-                tbk_BMS_MinCellVoltage.Text = (minCellVoltage / 1000.0).ToString("F3");
-
-                // 解析平均单体电压 (0.001V)
-                ushort avgCellVoltage = (ushort)((data[12] << 8) | data[13]);
-                tbk_BMS_AvgCellVoltage.Text = (avgCellVoltage / 1000.0).ToString("F3");
-
-                // 解析温度信息 (0.1℃, 有符号)
-                short maxTemp = (short)((data[15] << 8) | data[16]);
-                tbk_BMS_MaxTemp.Text = (maxTemp / 10.0).ToString("F1");
-
-                short minTemp = (short)((data[18] << 8) | data[19]);
-                tbk_BMS_MinTemp.Text = (minTemp / 10.0).ToString("F1");
-
-                short avgTemp = (short)((data[20] << 8) | data[21]);
-                tbk_BMS_AvgTemp.Text = (avgTemp / 10.0).ToString("F1");
-
-                // 解析BMS工作状态
-                byte workState = data[22];
-                tbk_BMS_WorkState.Text = workState switch
-                {
-                    0x00 => "初始化",
-                    0x01 => "待机",
-                    0x02 => "充电",
-                    0x03 => "放电",
-                    0x04 => "预充电",
-                    0x05 => "故障",
-                    _ => $"未知({workState:X2})"
-                };
-
-                // 解析充放电状态
-                byte chargeDischargeState = data[23];
-                tbk_BMS_ChargeDischargeState.Text = chargeDischargeState switch
-                {
-                    0x00 => "静止",
-                    0x01 => "充电",
-                    0x02 => "放电",
-                    0x03 => "预充电",
-                    _ => $"未知({chargeDischargeState:X2})"
-                };
-
-                // 解析循环次数
-                ushort cycleCount = (ushort)((data[24] << 8) | data[25]);
-                tbk_BMS_CycleCount.Text = cycleCount.ToString();
-
-                // 解析SOH (0.1%)
-                ushort soh = (ushort)((data[26] << 8) | data[27]);
-                tbk_BMS_SOH.Text = (soh / 10.0).ToString("F1");
-
-                // 解析额定容量 (0.1Ah)
-                ushort ratedCapacity = (ushort)((data[28] << 8) | data[29]);
-                tbk_BMS_RatedCapacity.Text = (ratedCapacity / 10.0).ToString("F1");
-
-                // 解析故障码
-                byte faultCode = data[30];
-                tbk_BMS_FaultCode.Text = faultCode switch
-                {
-                    0x00 => "无故障",
-                    0x01 => "单体过压",
-                    0x02 => "单体欠压",
-                    0x03 => "总压过压",
-                    0x04 => "总压欠压",
-                    0x05 => "充电过流",
-                    0x06 => "放电过流",
-                    0x07 => "温度过高",
-                    0x08 => "温度过低",
-                    0x09 => "SOC过低",
-                    0x0A => "通信异常",
-                    0x0B => "BMS硬件故障",
-                    0x0C => "继电器故障",
-                    0x0D => "均衡故障",
-                    _ => $"未知故障({faultCode:X2})"
-                };
-
-                UpdateStatus("BMS基本信息读取成功");
-            }
-            catch (Exception ex)
-            {
-                UpdateStatus($"解析BMS基本信息失败: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 处理电池组信息响应 (功能码0x83)
-        /// </summary>
-        private void ProcessBatteryPackInfoResponse(byte[] data)
-        {
-            try
-            {
-                if (data.Length < 16)
-                {
-                    UpdateStatus("电池组信息数据长度不足");
-                    return;
-                }
-
-                // 解析串联单体数
-                ushort seriesCells = (ushort)((data[0] << 8) | data[1]);
-                tbk_BMS_SeriesCells.Text = seriesCells.ToString();
-
-                // 解析并联单体数
-                ushort parallelCells = (ushort)((data[2] << 8) | data[3]);
-                tbk_BMS_ParallelCells.Text = parallelCells.ToString();
-
-                // 解析额定容量 (0.1Ah)
-                ushort ratedCapacity = (ushort)((data[4] << 8) | data[5]);
-                tbk_BMS_PackRatedCapacity.Text = (ratedCapacity / 10.0).ToString("F1");
-
-                // 解析额定电压 (0.1V)
-                ushort ratedVoltage = (ushort)((data[6] << 8) | data[7]);
-                tbk_BMS_PackRatedVoltage.Text = (ratedVoltage / 10.0).ToString("F1");
-
-                // 解析充电截止电压 (0.1V)
-                ushort chargeStopVoltage = (ushort)((data[8] << 8) | data[9]);
-                tbk_BMS_ChargeStopVoltage.Text = (chargeStopVoltage / 10.0).ToString("F1");
-
-                // 解析放电截止电压 (0.1V)
-                ushort dischargeStopVoltage = (ushort)((data[10] << 8) | data[11]);
-                tbk_BMS_DischargeStopVoltage.Text = (dischargeStopVoltage / 10.0).ToString("F1");
-
-                // 解析充电截止电流 (0.1A)
-                ushort chargeStopCurrent = (ushort)((data[12] << 8) | data[13]);
-                tbk_BMS_ChargeStopCurrent.Text = (chargeStopCurrent / 10.0).ToString("F1");
-
-                // 解析放电截止电流 (0.1A)
-                ushort dischargeStopCurrent = (ushort)((data[14] << 8) | data[15]);
-                tbk_BMS_DischargeStopCurrent.Text = (dischargeStopCurrent / 10.0).ToString("F1");
-
-                UpdateStatus("电池组信息读取成功");
-            }
-            catch (Exception ex)
-            {
-                UpdateStatus($"解析电池组信息失败: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 处理BMS故障信息响应 (功能码0x87)
-        /// </summary>
-        private void ProcessBMSFaultInfoResponse(byte[] data)
-        {
-            try
-            {
-                if (data.Length < 4)
-                {
-                    UpdateStatus("BMS故障信息数据长度不足");
-                    return;
-                }
-
-                // 解析当前故障码 (16位位掩码)
-                ushort currentFault = (ushort)((data[0] << 8) | data[1]);
-                tbx_BMS_CurrentFault.Text = ParseBMSFaultCode(currentFault);
-
-                // 解析历史故障码 (16位位掩码)
-                ushort historyFault = (ushort)((data[2] << 8) | data[3]);
-                tbx_BMS_HistoryFault.Text = ParseBMSFaultCode(historyFault);
-
-                UpdateStatus("BMS故障信息读取成功");
-            }
-            catch (Exception ex)
-            {
-                UpdateStatus($"解析BMS故障信息失败: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 解析BMS故障码位掩码
-        /// </summary>
-        private string ParseBMSFaultCode(ushort faultCode)
-        {
-            if (faultCode == 0)
-            {
-                return "无故障";
-            }
-
-            var faults = new System.Collections.Generic.List<string>();
-
-            if ((faultCode & 0x0001) != 0) faults.Add("单体过压");
-            if ((faultCode & 0x0002) != 0) faults.Add("单体欠压");
-            if ((faultCode & 0x0004) != 0) faults.Add("总压过压");
-            if ((faultCode & 0x0008) != 0) faults.Add("总压欠压");
-            if ((faultCode & 0x0010) != 0) faults.Add("充电过流");
-            if ((faultCode & 0x0020) != 0) faults.Add("放电过流");
-            if ((faultCode & 0x0040) != 0) faults.Add("温度过高");
-            if ((faultCode & 0x0080) != 0) faults.Add("温度过低");
-            if ((faultCode & 0x0100) != 0) faults.Add("SOC过低");
-            if ((faultCode & 0x0200) != 0) faults.Add("通信异常");
-            if ((faultCode & 0x0400) != 0) faults.Add("BMS硬件故障");
-            if ((faultCode & 0x0800) != 0) faults.Add("继电器故障");
-            if ((faultCode & 0x1000) != 0) faults.Add("均衡故障");
-
-            return string.Join(", ", faults);
-        }
+        // ❌ 已删除：旧 AA55-BMS 轮询(3定时器)与 Process* 解析
+        // 轮询已由 BmsService(03H单次读reg128~152)接管, 解析见 OnBmsDataUpdated [上位机优化计划 D4]
 
         #endregion
 

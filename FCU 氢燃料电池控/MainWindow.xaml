@@ -964,39 +964,55 @@
                             <!-- BMS基本信息 -->
                             <GroupBox Header="BMS基本信息" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <StackPanel>
-                                    <!-- 轮询控制按钮区 -->
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
-                                        <Button Name="btn_ReadBMSBasicInfo"
-                                                Content="读取一次"
-                                                Style="{StaticResource StandardButtonStyle}"
-                                                Width="100"
-                                                Margin="0,0,10,0"
-                                                Click="btn_ReadBMSBasicInfo_Click"/>
-                                        <TextBlock Text="轮询间隔:" 
+                                    <!-- Modbus控制区: 地址可配(默认1) + 单次读 + 轮询 [上位机优化计划 D2] -->
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                        <TextBlock Text="BMS地址:" 
                                                    VerticalAlignment="Center" 
                                                    Margin="0,0,8,0"
                                                    FontSize="12"/>
-                                        <hc:ComboBox Name="cbx_BMSBasicPollingInterval" 
-                                                  Width="80" 
-                                                  Margin="0,0,10,0"
-                                                  SelectedIndex="1">
-                                            <ComboBoxItem Content="0.5秒" Tag="500"/>
-                                            <ComboBoxItem Content="1秒" Tag="1000"/>
-                                            <ComboBoxItem Content="2秒" Tag="2000"/>
-                                            <ComboBoxItem Content="5秒" Tag="5000"/>
-                                        </hc:ComboBox>
-                                        <Button Name="btn_StartBMSBasicPolling"
-                                                Content="开启自动刷新"
+                                        <TextBox Name="tbx_BmsAddress"
+                                                 Text="1"
+                                                 Style="{StaticResource StandardTextBoxStyle}"
+                                                 Width="50"
+                                                 Margin="0,0,6,0"/>
+                                        <Button Name="btn_ApplyBmsAddress"
+                                                Content="应用"
                                                 Style="{StaticResource StandardButtonStyle}"
-                                                Width="110"
-                                                Margin="0,0,10,0"
-                                                Click="btn_StartBMSBasicPolling_Click"/>
-                                        <Button Name="btn_StopBMSBasicPolling"
-                                                Content="停止自动刷新"
-                                                Style="{StaticResource StandardButtonStyle}"
-                                                Width="110"
-                                                IsEnabled="False"
-                                                Click="btn_StopBMSBasicPolling_Click"/>
+                                                Width="60"
+                                                Click="btn_ApplyBmsAddress_Click"/>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0">
+                                            <Button Name="btn_ReadBMS"
+                                                    Content="读取一次"
+                                                    Style="{StaticResource StandardButtonStyle}"
+                                                    Width="100"
+                                                    Margin="0,0,10,0"
+                                                    Click="btn_ReadBMS_Click"/>
+                                            <TextBlock Text="轮询间隔:" 
+                                                       VerticalAlignment="Center" 
+                                                       Margin="0,0,8,0"
+                                                       FontSize="12"/>
+                                            <hc:ComboBox Name="cbx_BMSPollingInterval" 
+                                                      Width="80" 
+                                                      Margin="0,0,10,0"
+                                                      SelectedIndex="2">
+                                                <ComboBoxItem Content="0.5秒" Tag="500"/>
+                                                <ComboBoxItem Content="1秒" Tag="1000"/>
+                                                <ComboBoxItem Content="2秒" Tag="2000"/>
+                                                <ComboBoxItem Content="5秒" Tag="5000"/>
+                                            </hc:ComboBox>
+                                            <Button Name="btn_StartBMSPolling"
+                                                    Content="开启自动刷新"
+                                                    Style="{StaticResource StandardButtonStyle}"
+                                                    Width="110"
+                                                    Margin="0,0,10,0"
+                                                    Click="btn_StartBMSPolling_Click"/>
+                                            <Button Name="btn_StopBMSPolling"
+                                                    Content="停止自动刷新"
+                                                    Style="{StaticResource StandardButtonStyle}"
+                                                    Width="110"
+                                                    IsEnabled="False"
+                                                    Click="btn_StopBMSPolling_Click"/>
+                                        </StackPanel>
                                     </StackPanel>
 
                                     <Grid>
@@ -1072,40 +1088,7 @@
                             <!-- BMS电池组信息 -->
                             <GroupBox Header="电池组配置信息" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <StackPanel>
-                                    <!-- 轮询控制按钮区 -->
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
-                                        <Button Name="btn_ReadBatteryPackInfo"
-                                                Content="读取一次"
-                                                Style="{StaticResource StandardButtonStyle}"
-                                                Width="100"
-                                                Margin="0,0,10,0"
-                                                Click="btn_ReadBatteryPackInfo_Click"/>
-                                        <TextBlock Text="轮询间隔:" 
-                                                   VerticalAlignment="Center" 
-                                                   Margin="0,0,8,0"
-                                                   FontSize="12"/>
-                                        <hc:ComboBox Name="cbx_BMSPackPollingInterval" 
-                                                  Width="80" 
-                                                  Margin="0,0,10,0"
-                                                  SelectedIndex="2">
-                                            <ComboBoxItem Content="0.5秒" Tag="500"/>
-                                            <ComboBoxItem Content="1秒" Tag="1000"/>
-                                            <ComboBoxItem Content="2秒" Tag="2000"/>
-                                            <ComboBoxItem Content="5秒" Tag="5000"/>
-                                        </hc:ComboBox>
-                                        <Button Name="btn_StartBMSPackPolling"
-                                                Content="开启自动刷新"
-                                                Style="{StaticResource StandardButtonStyle}"
-                                                Width="110"
-                                                Margin="0,0,10,0"
-                                                Click="btn_StartBMSPackPolling_Click"/>
-                                        <Button Name="btn_StopBMSPackPolling"
-                                                Content="停止自动刷新"
-                                                Style="{StaticResource StandardButtonStyle}"
-                                                Width="110"
-                                                IsEnabled="False"
-                                                Click="btn_StopBMSPackPolling_Click"/>
-                                    </StackPanel>
+                                    <TextBlock Text="仅串联单体数有寄存器来源(reg145), 其余字段本期不支持显示&quot;--&quot;; 数据随上方自动刷新更新" Foreground="#FFB26B" Margin="4,0,4,10"/>
 
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -1187,40 +1170,7 @@
                             <!-- BMS故障信息 -->
                             <GroupBox Header="故障信息" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,0">
                                 <StackPanel>
-                                    <!-- 轮询控制按钮区 -->
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
-                                        <Button Name="btn_ReadBMSFaultInfo"
-                                                Content="读取一次"
-                                                Style="{StaticResource StandardButtonStyle}"
-                                                Width="100"
-                                                Margin="0,0,10,0"
-                                                Click="btn_ReadBMSFaultInfo_Click"/>
-                                        <TextBlock Text="轮询间隔:" 
-                                                   VerticalAlignment="Center" 
-                                                   Margin="0,0,8,0"
-                                                   FontSize="12"/>
-                                        <hc:ComboBox Name="cbx_BMSFaultPollingInterval" 
-                                                  Width="80" 
-                                                  Margin="0,0,10,0"
-                                                  SelectedIndex="2">
-                                            <ComboBoxItem Content="0.5秒" Tag="500"/>
-                                            <ComboBoxItem Content="1秒" Tag="1000"/>
-                                            <ComboBoxItem Content="2秒" Tag="2000"/>
-                                            <ComboBoxItem Content="5秒" Tag="5000"/>
-                                        </hc:ComboBox>
-                                        <Button Name="btn_StartBMSFaultPolling"
-                                                Content="开启自动刷新"
-                                                Style="{StaticResource StandardButtonStyle}"
-                                                Width="110"
-                                                Margin="0,0,10,0"
-                                                Click="btn_StartBMSFaultPolling_Click"/>
-                                        <Button Name="btn_StopBMSFaultPolling"
-                                                Content="停止自动刷新"
-                                                Style="{StaticResource StandardButtonStyle}"
-                                                Width="110"
-                                                IsEnabled="False"
-                                                Click="btn_StopBMSFaultPolling_Click"/>
-                                    </StackPanel>
+                                    <TextBlock Text="当前故障=reg137告警/138保护/139故障位解码(附表1/2/3), 随上方自动刷新更新; 历史故障本期不支持" Foreground="#FFB26B" Margin="4,0,4,10"/>
 
                                     <Grid>
                                         <Grid.ColumnDefinitions>
