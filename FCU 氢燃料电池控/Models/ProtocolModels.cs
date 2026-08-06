@@ -280,10 +280,22 @@ namespace FCU_氢燃料电池控.Models
                 0x0005 => "电压异常",
                 0x0006 => "DCDC异常",
                 0x0007 => "阀门异常",
-                0x0008 => "通信异常",
+                0x0008 => "BMS故障",
                 0x0009 => "FCU控制器过热",
                 _ => "未知报警"
             };
+        }
+
+        /// <summary>
+        /// 获取报警数值描述
+        /// 0x0008(BMS故障): AlarmValue为BMS故障位图(reg139), 按附表3解码 [上位机优化计划 h-t6]
+        /// 其余类型: 返回原始数值
+        /// </summary>
+        public string GetAlarmValueDescription()
+        {
+            return AlarmType == 0x0008
+                ? BmsBitDecoder.DecodeFault(AlarmValue)
+                : AlarmValue.ToString();
         }
 
         /// <summary>

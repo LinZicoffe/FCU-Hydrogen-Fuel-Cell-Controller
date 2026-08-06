@@ -2187,7 +2187,7 @@ namespace FCU_氢燃料电池控
         private void ShowAlarmMessage(AlarmData alarm)
         {
             string title = $"{alarm.GetAlarmLevelName()}报警";
-            string message = $"报警类型：{alarm.GetAlarmTypeName()}\n报警数值：{alarm.AlarmValue}";
+            string message = $"报警类型：{alarm.GetAlarmTypeName()}\n报警数值：{alarm.GetAlarmValueDescription()}";
 
             MessageBoxImage icon = alarm.AlarmLevel switch
             {
