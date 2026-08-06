@@ -143,6 +143,11 @@ dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release
 
 ### 2026-08-06
 
+*V3*：
+- 配置变更：项目版本升级至 V1.3.0（csproj Version/FileVersion/AssemblyVersion 同步更新），新增独立自包含发布目录 `publish_v1.3.0`（win-x64 self-contained，256 个文件）
+- 配置变更：`setup.iss` 版本号更新为 1.3.0、Source 指向 `publish_v1.3.0`，生成 `FCU氢燃料电池控制器_v1.3.0.exe` 安装包，保留 V1.0.0/V1.1.0/V1.2.0 旧安装包
+- 文档更新：`setup.iss`、`打包教程.md` 纳入版本库管理，打包流程可复现
+
 *V2*：
 - 修复问题：窗口调窄时顶部 Tab 显示不全（HandyControl TabPanel 溢出裁剪）——TabItem 样式紧凑化（Padding 16→8、Margin 5→2），6 个 Tab 总宽 602px→438px；窗口新增 `MinWidth=1000`/`MinHeight=600` 保护整体布局
 
