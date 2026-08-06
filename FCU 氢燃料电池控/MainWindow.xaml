@@ -470,7 +470,7 @@
                         </GroupBox>
 
                             <!-- 风扇温度参数 -->
-                            <GroupBox Header="风扇及温度参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,0">
+                            <GroupBox Header="风扇及温度参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                             <StackPanel>
                                 <!-- 读取按钮 -->
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
@@ -511,6 +511,64 @@
 
                                     <Label Grid.Row="4" Grid.Column="0" Content="低温检测时长 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="4" Grid.Column="1" Name="tbx_LowTempCheckTime" Style="{StaticResource StandardTextBoxStyle}" Text="1800" Margin="4"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                            <!-- 工作流程参数 (0x0E/0x0601, 与固件fcu_flow_params_t对应) -->
+                            <GroupBox Header="工作流程参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,0">
+                            <StackPanel>
+                                <!-- 读取/设置按钮 -->
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
+                                <Button Name="btn_ReadFlowParams"
+                                        Content="读取工作流程参数"
+                                        Style="{StaticResource StandardButtonStyle}"
+                                        Width="180"
+                                        Margin="4"
+                                        Click="btn_ReadFlowParams_Click"/>
+                                <Button Content="写入FCU并固化" Style="{StaticResource SuccessButtonStyle}" Width="150" Margin="4" Click="btn_SetFlowParams_Click"/>
+                                </StackPanel>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="1*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <Label Grid.Row="0" Grid.Column="0" Content="purge进氢第一次开 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_PurgeH2Open1" Style="{StaticResource StandardTextBoxStyle}" Text="10" Margin="4"/>
+
+                                    <Label Grid.Row="1" Grid.Column="0" Content="purge进氢关断 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_PurgeH2Close" Style="{StaticResource StandardTextBoxStyle}" Text="10" Margin="4"/>
+
+                                    <Label Grid.Row="2" Grid.Column="0" Content="purge进氢第二次开 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Name="tbx_PurgeH2Open2" Style="{StaticResource StandardTextBoxStyle}" Text="10" Margin="4"/>
+
+                                    <Label Grid.Row="3" Grid.Column="0" Content="关机排水保持 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="3" Grid.Column="1" Name="tbx_PurgeDrainHold" Style="{StaticResource StandardTextBoxStyle}" Text="30" Margin="4"/>
+
+                                    <Label Grid.Row="4" Grid.Column="0" Content="排水模式:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <hc:ComboBox Grid.Row="4" Grid.Column="1" Name="cbx_DrainMode" SelectedIndex="0" Margin="4"
+                                                 SelectionChanged="cbx_DrainMode_SelectionChanged">
+                                        <ComboBoxItem Content="0 - 定时"/>
+                                        <ComboBoxItem Content="1 - 低压反馈"/>
+                                    </hc:ComboBox>
+
+                                    <Label Grid.Row="5" Grid.Column="0" Content="低压反馈排水阈值 (kPa, ≥1):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="5" Grid.Column="1" Name="tbx_LowNormalRef" Style="{StaticResource StandardTextBoxStyle}" Text="55" IsEnabled="False" Margin="4"/>
+
+                                    <Label Grid.Row="6" Grid.Column="0" Content="拉载风扇占空比 (%, ≤100):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="6" Grid.Column="1" Name="tbx_LoadDuty" Style="{StaticResource StandardTextBoxStyle}" Text="30" Margin="4"/>
                                 </Grid>
                             </StackPanel>
                         </GroupBox>

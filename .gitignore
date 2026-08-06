@@ -55,3 +55,9 @@ node_modules/
 full.md
 SKILL.md
 *.pdf
+
+## 构建产物与工具状态
+publish*/
+Output/
+.omc/
+

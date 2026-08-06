@@ -1519,6 +1519,10 @@ namespace FCU_氢燃料电池控
                         HandleBmsPollResponse(frame);
                         break;
 
+                    case ProtocolConstants.RESP_FLOW_PARAMS: // 工作流程参数设置响应(1B结果码)
+                        HandleSetParamResponse(frame);
+                        break;
+
                     case 0xF0: // 报警信息上报
                         HandleAlarmReport(frame);
                         break;
@@ -1814,6 +1818,11 @@ namespace FCU_氢燃料电池控
                         UpdateLoadStartParams(loadStartParams);
                         break;
 
+                    case 0x0601: // 工作流程参数
+                        var flowParams = ResponseParser.ParseFlowParams(frame);
+                        UpdateFlowParams(flowParams);
+                        break;
+
                     case 0x0901: // 通用参数
                         var generalParams = ResponseParser.ParseGeneralParams(frame);
                         UpdateGeneralParams(generalParams);
@@ -1947,6 +1956,106 @@ namespace FCU_氢燃料电池控
             tbx_TempMax.Text = data.TempMax.ToString();
             tbx_FanFullSpeedTime.Text = data.FullSpeedTime.ToString();
             tbx_LowTempCheckTime.Text = data.LowTempCheckTime.ToString();
+        }
+
+        /// <summary>
+        /// 更新工作流程参数显示 (0x0601)
+        /// </summary>
+        private void UpdateFlowParams(FlowParams data)
+        {
+            tbx_PurgeH2Open1.Text = data.PurgeH2Open1.ToString();
+            tbx_PurgeH2Close.Text = data.PurgeH2Close.ToString();
+            tbx_PurgeH2Open2.Text = data.PurgeH2Open2.ToString();
+            tbx_PurgeDrainHold.Text = data.PurgeDrainHold.ToString();
+            cbx_DrainMode.SelectedIndex = data.DrainMode == 1 ? 1 : 0;
+            tbx_LowNormalRef.Text = data.LowNormalRef.ToString();
+            tbx_LoadDuty.Text = data.LoadDuty.ToString();
+        }
+
+        /// <summary>
+        /// 读取工作流程参数按钮 (0x09读配置, 参数类型0x0601)
+        /// </summary>
+        private void btn_ReadFlowParams_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (!_isSerialOpen)
+                {
+                    HC.Growl.Warning("请先打开串口");
+                    return;
+                }
+
+                byte deviceAddress = byte.Parse(GetDeviceAddress());
+                SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_FLOW >> 8), (byte)(ProtocolConstants.PARAM_TYPE_FLOW & 0xFF));
+                UpdateStatus("已发送读取工作流程参数命令");
+            }
+            catch (Exception ex)
+            {
+                HC.Growl.Error($"读取工作流程参数失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 设置工作流程参数按钮 (0x0E, 数据域12B不含参数类型ID)
+        /// 前端校验与固件 fcu_protocol_set_flow_params 对齐:
+        /// drain_mode≤1(下拉保证) / low_normal_ref≥1 / load_duty≤100 [fcu_protocol.c:1402-1407]
+        /// </summary>
+        private void btn_SetFlowParams_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (!_isSerialOpen)
+                {
+                    HC.Growl.Warning("请先打开串口");
+                    return;
+                }
+
+                var p = new FlowParams
+                {
+                    PurgeH2Open1 = ushort.Parse(tbx_PurgeH2Open1.Text),
+                    PurgeH2Close = ushort.Parse(tbx_PurgeH2Close.Text),
+                    PurgeH2Open2 = ushort.Parse(tbx_PurgeH2Open2.Text),
+                    PurgeDrainHold = ushort.Parse(tbx_PurgeDrainHold.Text),
+                    DrainMode = (byte)(cbx_DrainMode.SelectedIndex == 1 ? 1 : 0),
+                    LowNormalRef = ushort.Parse(tbx_LowNormalRef.Text),
+                    LoadDuty = byte.Parse(tbx_LoadDuty.Text)
+                };
+
+                if (p.LowNormalRef == 0)
+                {
+                    HC.Growl.Warning("低压反馈排水阈值必须 ≥1 kPa (固件将拒绝0)");
+                    return;
+                }
+                if (p.LoadDuty > 100)
+                {
+                    HC.Growl.Warning("拉载风扇占空比必须 ≤100%");
+                    return;
+                }
+
+                byte deviceAddress = byte.Parse(GetDeviceAddress());
+                byte[] data = ResponseParser.BuildFlowParamsData(p);
+                SendFrame(BuildFrame(deviceAddress, ProtocolConstants.FUNC_SET_FLOW_PARAMS, data));
+                UpdateStatus("已发送设置工作流程参数命令(0x0E)");
+            }
+            catch (FormatException)
+            {
+                HC.Growl.Warning("参数格式错误, 请检查输入");
+            }
+            catch (Exception ex)
+            {
+                HC.Growl.Error($"设置工作流程参数失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 排水模式切换: 仅低压反馈模式启用阈值输入
+        /// </summary>
+        private void cbx_DrainMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (tbx_LowNormalRef != null)
+            {
+                tbx_LowNormalRef.IsEnabled = cbx_DrainMode.SelectedIndex == 1;
+            }
         }
 
         /// <summary>

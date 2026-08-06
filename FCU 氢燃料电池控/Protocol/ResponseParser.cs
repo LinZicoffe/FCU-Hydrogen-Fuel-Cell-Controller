@@ -264,6 +264,57 @@ namespace FCU_氢燃料电池控.Protocol
         }
 
         /// <summary>
+        /// 解析工作流程参数 (0x8A响应, 参数类型0x0601, 数据域12字节大端)
+        /// 与固件 fcu_flow_params_t 一一对应 [fcu_protocol.c read_config 0x0601分支]
+        /// 创建日期: 2026-08-06
+        /// </summary>
+        /// <param name="frame">完整响应帧</param>
+        /// <returns>工作流程参数</returns>
+        public static FlowParams ParseFlowParams(byte[] frame)
+        {
+            var data = new FlowParams();
+
+            try
+            {
+                if (!TryGetReadConfigParameterData(frame, ProtocolConstants.PARAM_TYPE_FLOW,
+                    out int offset, out int parameterDataLength) || parameterDataLength != 12)
+                    return data;
+
+                data.PurgeH2Open1 = (ushort)((frame[offset] << 8) | frame[offset + 1]);
+                data.PurgeH2Close = (ushort)((frame[offset + 2] << 8) | frame[offset + 3]);
+                data.PurgeH2Open2 = (ushort)((frame[offset + 4] << 8) | frame[offset + 5]);
+                data.PurgeDrainHold = (ushort)((frame[offset + 6] << 8) | frame[offset + 7]);
+                data.DrainMode = frame[offset + 8];
+                data.LowNormalRef = (ushort)((frame[offset + 9] << 8) | frame[offset + 10]);
+                data.LoadDuty = frame[offset + 11];
+            }
+            catch
+            {
+                // 解析异常时返回默认值
+            }
+
+            return data;
+        }
+
+        /// <summary>
+        /// 构建工作流程参数数据域 (0x0E, 12字节大端, 不含参数类型ID)
+        /// [fcu_protocol.c fcu_handle_set_flow_params 解析顺序]
+        /// </summary>
+        public static byte[] BuildFlowParamsData(FlowParams p)
+        {
+            return new byte[]
+            {
+                (byte)(p.PurgeH2Open1 >> 8), (byte)(p.PurgeH2Open1 & 0xFF),
+                (byte)(p.PurgeH2Close >> 8), (byte)(p.PurgeH2Close & 0xFF),
+                (byte)(p.PurgeH2Open2 >> 8), (byte)(p.PurgeH2Open2 & 0xFF),
+                (byte)(p.PurgeDrainHold >> 8), (byte)(p.PurgeDrainHold & 0xFF),
+                p.DrainMode,
+                (byte)(p.LowNormalRef >> 8), (byte)(p.LowNormalRef & 0xFF),
+                p.LoadDuty
+            };
+        }
+
+        /// <summary>
         /// 解析通用参数（参数类型ID 0x0901）
         /// </summary>
         /// <param name="frame">完整帧数据</param>

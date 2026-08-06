@@ -200,6 +200,52 @@ namespace FCU_氢燃料电池控.Models
     }
 
     /// <summary>
+    /// 工作流程参数 (0x0E/0x0601, 数据域12字节, 大端)
+    /// 与固件 fcu_flow_params_t 一一对应 [fcu_protocol.h:231-238]
+    /// 创建日期: 2026-08-06
+    /// </summary>
+    public class FlowParams
+    {
+        /// <summary>
+        /// 关机purge进氢第一次开时长 (0.1s), 默认10(1.0s) [需求4.3]
+        /// </summary>
+        public ushort PurgeH2Open1 { get; set; }
+
+        /// <summary>
+        /// 关机purge进氢关断时长 (0.1s), 默认10(1.0s)
+        /// </summary>
+        public ushort PurgeH2Close { get; set; }
+
+        /// <summary>
+        /// 关机purge进氢第二次开时长 (0.1s), 默认10(1.0s)
+        /// </summary>
+        public ushort PurgeH2Open2 { get; set; }
+
+        /// <summary>
+        /// 关机排水保持时长 (0.1s), 默认30(3.0s) [需求4.2]
+        /// </summary>
+        public ushort PurgeDrainHold { get; set; }
+
+        /// <summary>
+        /// 排水模式: 0=定时(默认), 1=低压反馈 [需求3.4]
+        /// 固件校验: >1 拒绝
+        /// </summary>
+        public byte DrainMode { get; set; }
+
+        /// <summary>
+        /// 低压反馈排水阈值 (kPa), 默认55 [需求3.4]
+        /// 固件校验: ==0 拒绝
+        /// </summary>
+        public ushort LowNormalRef { get; set; }
+
+        /// <summary>
+        /// 进拉载风扇占空比 (%), 默认30 [需求3.3]
+        /// 固件校验: >100 拒绝
+        /// </summary>
+        public byte LoadDuty { get; set; }
+    }
+
+    /// <summary>
     /// 报警信息结构
     /// 对应协议6.1节
     /// </summary>
