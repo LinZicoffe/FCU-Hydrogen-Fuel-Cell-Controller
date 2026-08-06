@@ -334,32 +334,7 @@
                 <hc:TabItem Header="FCU参数配置">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
                         <StackPanel>
-                            <GroupBox Header="在线测试" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
-                                <StackPanel>
-                                    <TextBlock Text="仅在电堆关机状态下测试执行器；打开氢阀和吹扫前需人工确认。" Foreground="#FFB26B" Margin="4,0,4,10"/>
-                                    <WrapPanel Margin="0,0,0,8">
-                                        <TextBlock Text="开氢阀：" VerticalAlignment="Center" Margin="4"/>
-                                        <Button Content="打开" Style="{StaticResource WarningButtonStyle}" Width="80" Margin="4" Click="btn_HydrogenOpen_Click"/>
-                                        <Button Content="关闭" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_HydrogenClose_Click"/>
-                                        <TextBlock Name="tbk_HydrogenTestState" Text="状态：未知" VerticalAlignment="Center" Margin="12,4,4,4"/>
-                                    </WrapPanel>
-                                    <WrapPanel Margin="0,0,0,8">
-                                        <TextBlock Text="排水阀：" VerticalAlignment="Center" Margin="4"/>
-                                        <Button Content="打开" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_DrainOpen_Click"/>
-                                        <Button Content="关闭" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_DrainClose_Click"/>
-                                        <TextBlock Name="tbk_DrainTestState" Text="状态：未知" VerticalAlignment="Center" Margin="12,4,4,4"/>
-                                    </WrapPanel>
-                                    <WrapPanel>
-                                        <TextBlock Text="吹扫时长 (0.1s)：" VerticalAlignment="Center" Margin="4"/>
-                                        <TextBox Name="tbx_PurgeDuration" Text="50" Style="{StaticResource StandardTextBoxStyle}" Width="90" Margin="4"/>
-                                        <Button Content="开始吹扫" Style="{StaticResource WarningButtonStyle}" Width="100" Margin="4" Click="btn_PurgeStart_Click"/>
-                                        <Button Content="停止吹扫" Style="{StaticResource StopButtonStyle}" Width="100" Margin="4" Click="btn_PurgeStop_Click"/>
-                                        <TextBlock Name="tbk_PurgeTestState" Text="状态：停止" VerticalAlignment="Center" Margin="12,4,4,4"/>
-                                    </WrapPanel>
-                                </StackPanel>
-                            </GroupBox>
-
-                            <TextBlock Text="参数设定：读取在线测试后的参数，写入FCU并固化到Flash。" FontWeight="SemiBold" Margin="4,0,4,10"/>
+                            <TextBlock Text="参数设定：读取当前参数，修改后写入FCU并固化到Flash。" FontWeight="SemiBold" Margin="4,0,4,10"/>
                             <!-- 压力参数 -->
                             <GroupBox Header="压力参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                             <StackPanel>

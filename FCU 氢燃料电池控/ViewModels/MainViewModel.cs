@@ -289,6 +289,11 @@ namespace FCU_氢燃料电池控.ViewModels
         public ICommand SetLowPressureRangeCommand { get; }
         public ICommand ClearCommunicationLogCommand { get; }
 
+        /// <summary>
+        /// 关闭串口前触发 (订阅者可执行收尾动作, 如归还 BMS 总线仲裁 [SOC计划 §1.3])
+        /// </summary>
+        public event Action? BeforeSerialClose;
+
         #endregion
 
         #region 公开方法
@@ -383,6 +388,7 @@ namespace FCU_氢燃料电池控.ViewModels
 
         private void ExecuteCloseSerial()
         {
+            BeforeSerialClose?.Invoke();
             _serialPortManager.Close();
             StatusMessage = "串口已关闭";
         }

@@ -21,6 +21,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
+using System.Threading;
 using System.Windows.Threading;
 using FCU_氢燃料电池控.Protocol;
 using FCU_氢燃料电池控.Models;
@@ -53,6 +54,9 @@ namespace FCU_氢燃料电池控
         private DispatcherTimer? _chartUpdateTimer;  // 图表数据采集定时器
         private bool _isSerialOpen = false;
         private ProtocolHandler? _protocolHandler;
+
+        // BMS 总线仲裁 (0x0D set_bms_poll) [SOC计划 §1.3]
+        private volatile bool _bmsPollAckReceived;
 #if ENABLE_LICENSE_FEATURE
         private readonly LicenseService? _licenseService;
 #endif
@@ -111,6 +115,7 @@ namespace FCU_氢燃料电池控
             serialPortManager.DataReceived += SerialPort_DataReceived;
             serialPortManager.ConnectionStateChanged += OnSerialConnectionChanged;
             serialPortManager.FrameSent += OnFrameSent;
+            _viewModel.BeforeSerialClose += OnBeforeSerialClose;
             // ==================== MVVM初始化结束 ====================
             
             // 协议处理初始化（保留）
@@ -145,6 +150,10 @@ namespace FCU_氢燃料电池控
             {
                 // 串口打开时，启动图表采集
                 _chartUpdateTimer?.Start();
+
+                // [SOC计划 §1.3] 会话级仲裁: 上位机接管 BMS 总线, 停固件 Modbus 轮询
+                // (固件每次写Flash, 禁止逐次握手; 关轮询后固件走离线宽松策略, 不会超时ABORT)
+                SendBmsPollEnable(0);
             }
             else
             {
@@ -693,59 +702,8 @@ namespace FCU_氢燃料电池控
             SetFanTempParamHelper("风扇温度参数并固化到FCU");
         }
 
-        private void SendOnlineTestCommand(byte command, ushort? duration = null)
-        {
-            if (!_isSerialOpen)
-            {
-                HC.Growl.Warning("请先打开串口");
-                return;
-            }
-
-            byte[] data = duration.HasValue
-                ? new[] { command, (byte)(duration.Value >> 8), (byte)duration.Value }
-                : new[] { command };
-            SendFrame(BuildFrame(byte.Parse(GetDeviceAddress()), ProtocolConstants.FUNC_ONLINE_TEST, data));
-            UpdateStatus($"已发送在线测试命令 0x{command:X2}");
-        }
-
-        private bool ConfirmHazardousOperation(string operation)
-        {
-            return MessageBox.Show(
-                $"确认执行“{operation}”吗？\n\n请确认管路、通风和人员安全，且FCU当前处于关机状态。",
-                "在线测试安全确认",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning) == MessageBoxResult.Yes;
-        }
-
-        private void btn_HydrogenOpen_Click(object sender, RoutedEventArgs e)
-        {
-            if (ConfirmHazardousOperation("打开氢阀"))
-                SendOnlineTestCommand(ProtocolConstants.ONLINE_TEST_HYDROGEN_OPEN);
-        }
-
-        private void btn_HydrogenClose_Click(object sender, RoutedEventArgs e) =>
-            SendOnlineTestCommand(ProtocolConstants.ONLINE_TEST_HYDROGEN_CLOSE);
-
-        private void btn_DrainOpen_Click(object sender, RoutedEventArgs e) =>
-            SendOnlineTestCommand(ProtocolConstants.ONLINE_TEST_DRAIN_OPEN);
-
-        private void btn_DrainClose_Click(object sender, RoutedEventArgs e) =>
-            SendOnlineTestCommand(ProtocolConstants.ONLINE_TEST_DRAIN_CLOSE);
-
-        private void btn_PurgeStart_Click(object sender, RoutedEventArgs e)
-        {
-            if (!ushort.TryParse(tbx_PurgeDuration.Text, out ushort duration) || duration == 0)
-            {
-                HC.Growl.Warning("吹扫时长必须为1-65535，单位0.1秒");
-                return;
-            }
-
-            if (ConfirmHazardousOperation($"吹扫 {duration / 10.0:F1} 秒"))
-                SendOnlineTestCommand(ProtocolConstants.ONLINE_TEST_PURGE_START, duration);
-        }
-
-        private void btn_PurgeStop_Click(object sender, RoutedEventArgs e) =>
-            SendOnlineTestCommand(ProtocolConstants.ONLINE_TEST_PURGE_STOP);
+        // ❌ 已删除：在线测试(0x0D)相关方法与6个按钮事件
+        // 固件从未实现在线测试功能码, 且与 set_bms_poll(0x0D) 撞码 [上位机优化计划 D3]
 
         // ❌ 已删除：7个压力参数设置按钮事件处理方法
         // btn_SetHighPressureMin_Click, btn_SetHighPressureRed_Click, 
@@ -1590,8 +1548,8 @@ namespace FCU_氢燃料电池控
                         HandleSetDeviceAddressResponse(frame);
                         break;
 
-                    case ProtocolConstants.RESP_ONLINE_TEST:
-                        HandleOnlineTestResponse(frame);
+                    case ProtocolConstants.RESP_BMS_POLL: // BMS轮询使能响应 [SOC计划 §4.6]
+                        HandleBmsPollResponse(frame);
                         break;
 
                     case 0x90: // BMS控制响应
@@ -1763,30 +1721,100 @@ namespace FCU_氢燃料电池控
             });
         }
 
-        private void HandleOnlineTestResponse(byte[] frame)
+        /// <summary>
+        /// 处理 BMS 轮询使能响应 (0x8D, 数据域1B结果码) [SOC计划 §4.6]
+        /// </summary>
+        private void HandleBmsPollResponse(byte[] frame)
         {
-            if (frame.Length < 11 || frame[4] != 4)
-                return;
+            byte result = ResponseParser.ParseSetParamResponse(frame);
 
             Dispatcher.Invoke(() =>
             {
-                byte result = frame[5];
-                tbk_HydrogenTestState.Text = frame[6] == 1 ? "状态：打开" : "状态：关闭";
-                tbk_DrainTestState.Text = frame[7] == 1 ? "状态：打开" : "状态：关闭";
-                tbk_PurgeTestState.Text = frame[8] == 1 ? "状态：吹扫中" : "状态：停止";
+                _bmsPollAckReceived = true;
                 if (result == ProtocolConstants.ERR_SUCCESS)
                 {
-                    HC.Growl.Success("在线测试命令执行成功");
-                    UpdateStatus("在线测试状态已更新");
+                    UpdateStatus("BMS 轮询使能设置成功");
                 }
                 else
                 {
                     string message = ProtocolConstants.GetErrorCodeDescription(result);
-                    HC.Growl.Error($"在线测试失败：{message}");
-                    UpdateStatus($"在线测试失败：{message}");
+                    HC.Growl.Error($"BMS 轮询使能设置失败: {message}");
+                    UpdateStatus($"BMS 轮询使能设置失败: {message}");
                 }
             });
         }
+
+        #region BMS 总线仲裁 (0x0D set_bms_poll)
+
+        /// <summary>
+        /// 发送 BMS 轮询使能 (0x0D): 上位机接管/归还 BMS 总线
+        /// [SOC计划 §1.3] en=0 上位机接管(停固件轮询), en=1 恢复固件轮询
+        /// 注意: 固件每次写Flash整页擦写(fcu_protocol.c set_bms_poll),
+        ///       仅允许会话级调用(连接/断开各一次), 禁止逐次握手 [上位机优化计划 D1]
+        /// </summary>
+        private void SendBmsPollEnable(byte en)
+        {
+            if (!_isSerialOpen)
+                return;
+
+            SendFrame(BuildFrame(byte.Parse(GetDeviceAddress()), ProtocolConstants.FUNC_SET_BMS_POLL, new[] { en }));
+        }
+
+        /// <summary>
+        /// 关闭串口前: 归还 BMS 总线 (发 en=1 并等 0x8D 确认, 最多300ms)
+        /// [R6] 未确认则警告, 防"以为恢复了其实没有"
+        /// </summary>
+        private void OnBeforeSerialClose()
+        {
+            if (!_isSerialOpen)
+                return;
+
+            _bmsPollAckReceived = false;
+            SendBmsPollEnable(1);
+
+            // 9600bps 收发各8B约20ms, 300ms裕量充足; DoEvents泵送使确认帧可被处理
+            int start = Environment.TickCount;
+            while (!_bmsPollAckReceived && Environment.TickCount - start < 300)
+            {
+                DoEvents();
+                Thread.Sleep(10);
+            }
+
+            if (!_bmsPollAckReceived)
+            {
+                HC.Growl.Warning("BMS 轮询恢复未确认, FCU 可能保持关闭");
+                UpdateStatus("BMS 轮询恢复未确认, FCU 可能保持关闭, 请重新连接并正常断开, 或将 FCU 重新上电");
+            }
+        }
+
+        /// <summary>
+        /// 窗口关闭前: 若串口仍连接, 先归还 BMS 总线
+        /// </summary>
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            if (_isSerialOpen)
+            {
+                OnBeforeSerialClose();
+            }
+            base.OnClosing(e);
+        }
+
+        /// <summary>
+        /// 泵送 Dispatcher 消息队列 (等确认帧期间保持 UI 与串口事件可处理)
+        /// </summary>
+        private static void DoEvents()
+        {
+            DispatcherFrame frame = new DispatcherFrame();
+            Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.Background,
+                new DispatcherOperationCallback(f =>
+                {
+                    ((DispatcherFrame)f!).Continue = false;
+                    return null;
+                }), frame);
+            Dispatcher.PushFrame(frame);
+        }
+
+        #endregion
 
         /// <summary>
         /// 处理配置参数响应

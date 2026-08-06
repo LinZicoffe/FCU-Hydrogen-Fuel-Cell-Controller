@@ -99,16 +99,26 @@ namespace FCU_氢燃料电池控.Protocol
         /// </summary>
         public const byte FUNC_SET_DEVICE_ADDRESS = 0x0C;
 
-        /// <summary>功能码：在线测试氢阀、排水阀和吹扫</summary>
-        public const byte FUNC_ONLINE_TEST = 0x0D;
-        public const byte RESP_ONLINE_TEST = 0x8D;
+        /// <summary>
+        /// 功能码：设置BMS轮询使能 [SOC计划 §4.6] (数据域1B: 0=上位机接管BMS总线, 1=恢复固件轮询)
+        /// 注意: 固件每次写Flash整页擦写, 仅允许会话级调用(连接/断开各一次), 禁止逐次握手
+        /// </summary>
+        public const byte FUNC_SET_BMS_POLL = 0x0D;
 
-        public const byte ONLINE_TEST_HYDROGEN_OPEN = 0x01;
-        public const byte ONLINE_TEST_HYDROGEN_CLOSE = 0x02;
-        public const byte ONLINE_TEST_DRAIN_OPEN = 0x03;
-        public const byte ONLINE_TEST_DRAIN_CLOSE = 0x04;
-        public const byte ONLINE_TEST_PURGE_START = 0x05;
-        public const byte ONLINE_TEST_PURGE_STOP = 0x06;
+        /// <summary>
+        /// 响应功能码：BMS轮询使能设置结果 (数据域1B结果码)
+        /// </summary>
+        public const byte RESP_BMS_POLL = 0x8D;
+
+        /// <summary>
+        /// 功能码：设置工作流程参数(purge/排水模式/拉载风扇) [SOC计划 §5.3] (数据域12B, 不含参数类型ID)
+        /// </summary>
+        public const byte FUNC_SET_FLOW_PARAMS = 0x0E;
+
+        /// <summary>
+        /// 响应功能码：工作流程参数设置结果 (数据域1B结果码)
+        /// </summary>
+        public const byte RESP_FLOW_PARAMS = 0x8E;
 
         /// <summary>
         /// 响应功能码：读取配置参数
@@ -173,6 +183,11 @@ namespace FCU_氢燃料电池控.Protocol
         /// 参数类型：拉载手动控制
         /// </summary>
         public const ushort PARAM_TYPE_LOAD_MANUAL = 0x0504;
+
+        /// <summary>
+        /// 参数类型：工作流程参数 [SOC计划 §5.3]
+        /// </summary>
+        public const ushort PARAM_TYPE_FLOW = 0x0601;
 
         /// <summary>
         /// 参数类型：通用参数
@@ -365,8 +380,10 @@ namespace FCU_氢燃料电池控.Protocol
                 FUNC_READ_CONFIG => "读取配置参数",
                 FUNC_SET_GENERAL_PARAMS => "设置通用参数",
                 FUNC_SET_DEVICE_ADDRESS => "修改设备地址",
-                FUNC_ONLINE_TEST => "在线测试",
-                RESP_ONLINE_TEST => "在线测试响应",
+                FUNC_SET_BMS_POLL => "设置BMS轮询使能",
+                RESP_BMS_POLL => "BMS轮询使能响应",
+                FUNC_SET_FLOW_PARAMS => "设置工作流程参数",
+                RESP_FLOW_PARAMS => "工作流程参数响应",
                 FUNC_ALARM_REPORT => "报警信息上报",
                 FUNC_STATE_CHANGE_REPORT => "状态变更上报",
                 FUNC_LOAD_STATUS_REPORT => "拉载状态上报",
