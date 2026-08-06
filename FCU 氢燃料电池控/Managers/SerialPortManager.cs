@@ -32,6 +32,11 @@ namespace FCU_氢燃料电池控.Managers
         /// </summary>
         public event EventHandler<string>? ErrorOccurred;
 
+        /// <summary>
+        /// 完整帧成功写入串口事件
+        /// </summary>
+        public event Action<byte[]>? FrameSent;
+
         #endregion
 
         #region 属性
@@ -173,6 +178,16 @@ namespace FCU_氢燃料电池控.Managers
                 }
 
                 _serialPort!.Write(data, 0, data.Length);
+
+                try
+                {
+                    FrameSent?.Invoke((byte[])data.Clone());
+                }
+                catch
+                {
+                    // 日志等观察者异常不能影响已完成的串口发送
+                }
+
                 return true;
             }
             catch (Exception ex)

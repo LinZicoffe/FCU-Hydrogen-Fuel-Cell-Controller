@@ -9,6 +9,7 @@
 
 using System;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.IO.Ports;
 using System.Text;
 using System.Windows;
@@ -29,6 +30,7 @@ using FCU_氢燃料电池控.ViewModels;
 using LiveChartsCore;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
+using Microsoft.Win32;
 using SkiaSharp;
 using HC = HandyControl.Controls;
 
@@ -51,7 +53,9 @@ namespace FCU_氢燃料电池控
         private DispatcherTimer? _chartUpdateTimer;  // 图表数据采集定时器
         private bool _isSerialOpen = false;
         private ProtocolHandler? _protocolHandler;
+#if ENABLE_LICENSE_FEATURE
         private readonly LicenseService? _licenseService;
+#endif
 
         // 图表相关字段
         private readonly ObservableCollection<double> _inputPowerValues = new ObservableCollection<double>();
@@ -82,12 +86,21 @@ namespace FCU_氢燃料电池控
         public Axis[] YAxes { get; set; } = Array.Empty<Axis>();
 
         /// <summary>
-        /// 构造函数（接收LicenseService参数）
+        /// 构造函数
         /// </summary>
-        public MainWindow(LicenseService licenseService)
+#if ENABLE_LICENSE_FEATURE
+        public MainWindow(string companyName, LicenseService licenseService)
+#else
+        public MainWindow(string companyName)
+#endif
         {
             InitializeComponent();
+#if ENABLE_LICENSE_FEATURE
             _licenseService = licenseService;
+#endif
+            Title = companyName;
+            tbk_ApplicationName.Text = companyName;
+            tbk_CompanyName.Text = companyName;
             
             // ==================== MVVM初始化 ====================
             _viewModel = new MainViewModel();
@@ -97,6 +110,7 @@ namespace FCU_氢燃料电池控
             var serialPortManager = _viewModel.GetSerialPortManager();
             serialPortManager.DataReceived += SerialPort_DataReceived;
             serialPortManager.ConnectionStateChanged += OnSerialConnectionChanged;
+            serialPortManager.FrameSent += OnFrameSent;
             // ==================== MVVM初始化结束 ====================
             
             // 协议处理初始化（保留）
@@ -110,8 +124,10 @@ namespace FCU_氢燃料电池控
             InitializePowerChart();
             InitializeChartUpdateTimer();
             
-            // 许可证初始化（保留）
+            // 授权码功能暂时停用；启用编译常量后恢复状态显示。
+#if ENABLE_LICENSE_FEATURE
             Loaded += MainWindow_Loaded;
+#endif
 
             // 拉载配方服务初始化
             _recipeService = new RecipeService();
@@ -148,6 +164,7 @@ namespace FCU_氢燃料电池控
             }
         }
 
+#if ENABLE_LICENSE_FEATURE
         /// <summary>
         /// 窗口加载事件
         /// </summary>
@@ -155,6 +172,7 @@ namespace FCU_氢燃料电池控
         {
             UpdateLicenseStatusDisplay();
         }
+#endif
 
         #region 初始化方法
 
@@ -393,9 +411,11 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 发送读取配置命令
         /// </summary>
-        private void SendReadConfigCommand(byte deviceAddress, byte paramTypeHigh, byte paramTypeLow)
+        private void SendReadConfigCommand(byte deviceAddress, byte paramTypeHigh, byte paramTypeLow, byte subIndex = 0)
         {
-            byte[] data = new byte[] { paramTypeHigh, paramTypeLow };
+            // V4.3: parameter ID (2 bytes) + sub-index (1 byte).
+            // A sub-index of 0 requests every parameter in the selected group.
+            byte[] data = new byte[] { paramTypeHigh, paramTypeLow, subIndex };
             byte[] frame = BuildFrame(deviceAddress, ProtocolConstants.FUNC_READ_CONFIG, data);
             SendFrame(frame);
         }
@@ -657,6 +677,75 @@ namespace FCU_氢燃料电池控
         #endregion
 
         #region 参数设置
+
+        private void btn_SetValveParams_Click(object sender, RoutedEventArgs e)
+        {
+            SetValveParamHelper("阀门参数并固化到FCU");
+        }
+
+        private void btn_SetDCDCParams_Click(object sender, RoutedEventArgs e)
+        {
+            SetDCDCParamHelper("参数并固化到FCU");
+        }
+
+        private void btn_SetFanTempParams_Click(object sender, RoutedEventArgs e)
+        {
+            SetFanTempParamHelper("风扇温度参数并固化到FCU");
+        }
+
+        private void SendOnlineTestCommand(byte command, ushort? duration = null)
+        {
+            if (!_isSerialOpen)
+            {
+                HC.Growl.Warning("请先打开串口");
+                return;
+            }
+
+            byte[] data = duration.HasValue
+                ? new[] { command, (byte)(duration.Value >> 8), (byte)duration.Value }
+                : new[] { command };
+            SendFrame(BuildFrame(byte.Parse(GetDeviceAddress()), ProtocolConstants.FUNC_ONLINE_TEST, data));
+            UpdateStatus($"已发送在线测试命令 0x{command:X2}");
+        }
+
+        private bool ConfirmHazardousOperation(string operation)
+        {
+            return MessageBox.Show(
+                $"确认执行“{operation}”吗？\n\n请确认管路、通风和人员安全，且FCU当前处于关机状态。",
+                "在线测试安全确认",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning) == MessageBoxResult.Yes;
+        }
+
+        private void btn_HydrogenOpen_Click(object sender, RoutedEventArgs e)
+        {
+            if (ConfirmHazardousOperation("打开氢阀"))
+                SendOnlineTestCommand(ProtocolConstants.ONLINE_TEST_HYDROGEN_OPEN);
+        }
+
+        private void btn_HydrogenClose_Click(object sender, RoutedEventArgs e) =>
+            SendOnlineTestCommand(ProtocolConstants.ONLINE_TEST_HYDROGEN_CLOSE);
+
+        private void btn_DrainOpen_Click(object sender, RoutedEventArgs e) =>
+            SendOnlineTestCommand(ProtocolConstants.ONLINE_TEST_DRAIN_OPEN);
+
+        private void btn_DrainClose_Click(object sender, RoutedEventArgs e) =>
+            SendOnlineTestCommand(ProtocolConstants.ONLINE_TEST_DRAIN_CLOSE);
+
+        private void btn_PurgeStart_Click(object sender, RoutedEventArgs e)
+        {
+            if (!ushort.TryParse(tbx_PurgeDuration.Text, out ushort duration) || duration == 0)
+            {
+                HC.Growl.Warning("吹扫时长必须为1-65535，单位0.1秒");
+                return;
+            }
+
+            if (ConfirmHazardousOperation($"吹扫 {duration / 10.0:F1} 秒"))
+                SendOnlineTestCommand(ProtocolConstants.ONLINE_TEST_PURGE_START, duration);
+        }
+
+        private void btn_PurgeStop_Click(object sender, RoutedEventArgs e) =>
+            SendOnlineTestCommand(ProtocolConstants.ONLINE_TEST_PURGE_STOP);
 
         // ❌ 已删除：7个压力参数设置按钮事件处理方法
         // btn_SetHighPressureMin_Click, btn_SetHighPressureRed_Click, 
@@ -1383,6 +1472,31 @@ namespace FCU_氢燃料电池控
             serialPortManager?.SendData(frame);
         }
 
+        private void OnFrameSent(byte[] frame)
+        {
+            AppendCommunicationFrame(CommunicationDirection.Tx, frame);
+        }
+
+        private void AppendCommunicationFrame(CommunicationDirection direction, byte[] frame)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(
+                    () => AppendCommunicationFrame(direction, frame),
+                    DispatcherPriority.Background);
+                return;
+            }
+
+            _viewModel?.AppendCommunicationFrame(direction, frame);
+
+            if (chk_AutoScrollCommunicationLog.IsChecked == true &&
+                lbx_CommunicationLog.Items.Count > 0)
+            {
+                lbx_CommunicationLog.ScrollIntoView(
+                    lbx_CommunicationLog.Items[lbx_CommunicationLog.Items.Count - 1]);
+            }
+        }
+
         #endregion
 
         #region 串口数据接收处理
@@ -1390,7 +1504,7 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 串口数据接收事件
         /// </summary>
-        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
+        private void SerialPort_DataReceived(object? sender, SerialDataReceivedEventArgs e)
         {
             try
             {
@@ -1415,6 +1529,8 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void OnFrameReceived(byte[] frame)
         {
+            AppendCommunicationFrame(CommunicationDirection.Rx, frame);
+
             try
             {
                 byte functionCode = ResponseParser.GetFunctionCode(frame);
@@ -1472,6 +1588,10 @@ namespace FCU_氢燃料电池控
 
                     case 0x8C: // 修改设备地址响应
                         HandleSetDeviceAddressResponse(frame);
+                        break;
+
+                    case ProtocolConstants.RESP_ONLINE_TEST:
+                        HandleOnlineTestResponse(frame);
                         break;
 
                     case 0x90: // BMS控制响应
@@ -1633,12 +1753,37 @@ namespace FCU_氢燃料电池控
                 {
                     string errorMessage = result switch
                     {
-                        0x02 => "地址无效（必须在1-247范围内）",
-                        0x09 => "保存到Flash失败",
+                        ProtocolConstants.ERR_ADDRESS_INVALID => "地址无效（必须在1-247范围内）",
+                        ProtocolConstants.ERR_SAVE_FAILED => "保存到Flash失败",
                         _ => $"未知错误(0x{result:X2})"
                     };
                     MessageBox.Show($"设备地址修改失败：{errorMessage}", "失败", MessageBoxButton.OK, MessageBoxImage.Error);
                     UpdateStatus($"设备地址修改失败: {errorMessage}");
+                }
+            });
+        }
+
+        private void HandleOnlineTestResponse(byte[] frame)
+        {
+            if (frame.Length < 11 || frame[4] != 4)
+                return;
+
+            Dispatcher.Invoke(() =>
+            {
+                byte result = frame[5];
+                tbk_HydrogenTestState.Text = frame[6] == 1 ? "状态：打开" : "状态：关闭";
+                tbk_DrainTestState.Text = frame[7] == 1 ? "状态：打开" : "状态：关闭";
+                tbk_PurgeTestState.Text = frame[8] == 1 ? "状态：吹扫中" : "状态：停止";
+                if (result == ProtocolConstants.ERR_SUCCESS)
+                {
+                    HC.Growl.Success("在线测试命令执行成功");
+                    UpdateStatus("在线测试状态已更新");
+                }
+                else
+                {
+                    string message = ProtocolConstants.GetErrorCodeDescription(result);
+                    HC.Growl.Error($"在线测试失败：{message}");
+                    UpdateStatus($"在线测试失败：{message}");
                 }
             });
         }
@@ -2158,6 +2303,7 @@ namespace FCU_氢燃料电池控
             }
         }
 
+#if ENABLE_LICENSE_FEATURE
         /// <summary>
         /// 更新许可证状态显示
         /// </summary>
@@ -2234,6 +2380,8 @@ namespace FCU_氢燃料电池控
                 MessageBox.Show($"打开许可证管理窗口失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+#endif
 
         #endregion
 
@@ -2890,6 +3038,73 @@ namespace FCU_氢燃料电池控
 
         #region 窗口事件
 
+        private void btn_CopyCommunicationLog_Click(object sender, RoutedEventArgs e)
+        {
+            if (lbx_CommunicationLog.SelectedItems.Count == 0)
+            {
+                HC.Growl.Warning("请先选择要复制的通信日志");
+                return;
+            }
+
+            try
+            {
+                var builder = new StringBuilder();
+                foreach (object item in lbx_CommunicationLog.SelectedItems)
+                {
+                    if (item is CommunicationLogEntry entry)
+                    {
+                        builder.AppendLine(entry.DisplayText);
+                    }
+                }
+
+                Clipboard.SetText(builder.ToString().TrimEnd());
+                UpdateStatus($"已复制 {lbx_CommunicationLog.SelectedItems.Count} 条通信日志");
+            }
+            catch (Exception ex)
+            {
+                HC.Growl.Error($"复制通信日志失败: {ex.Message}");
+            }
+        }
+
+        private void btn_SaveCommunicationLog_Click(object sender, RoutedEventArgs e)
+        {
+            if (_viewModel == null || _viewModel.CommunicationLogs.Count == 0)
+            {
+                HC.Growl.Warning("当前没有可保存的通信日志");
+                return;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Title = "保存通信日志",
+                Filter = "日志文件 (*.log)|*.log|文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*",
+                DefaultExt = ".log",
+                AddExtension = true,
+                FileName = $"FCU通信日志_{DateTime.Now:yyyyMMdd_HHmmss}.log"
+            };
+
+            if (dialog.ShowDialog(this) != true)
+            {
+                return;
+            }
+
+            try
+            {
+                var lines = new string[_viewModel.CommunicationLogs.Count];
+                for (int i = 0; i < _viewModel.CommunicationLogs.Count; i++)
+                {
+                    lines[i] = _viewModel.CommunicationLogs[i].DisplayText;
+                }
+
+                File.WriteAllLines(dialog.FileName, lines, new UTF8Encoding(false));
+                UpdateStatus($"通信日志已保存: {dialog.FileName}");
+            }
+            catch (Exception ex)
+            {
+                HC.Growl.Error($"保存通信日志失败: {ex.Message}");
+            }
+        }
+
         /// <summary>
         /// 窗口关闭事件
         /// </summary>
@@ -2904,6 +3119,15 @@ namespace FCU_氢燃料电池控
             {
                 _chartUpdateTimer.Stop();
             }
+
+            if (_viewModel != null)
+            {
+                var serialPortManager = _viewModel.GetSerialPortManager();
+                serialPortManager.DataReceived -= SerialPort_DataReceived;
+                serialPortManager.ConnectionStateChanged -= OnSerialConnectionChanged;
+                serialPortManager.FrameSent -= OnFrameSent;
+            }
+
             // 串口清理由SerialPortManager在Dispose时处理
             _viewModel?.GetSerialPortManager()?.Dispose();
         }

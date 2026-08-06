@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using FCU_氢燃料电池控.Helpers;
 using FCU_氢燃料电池控.Managers;
+using FCU_氢燃料电池控.Models;
 using FCU_氢燃料电池控.Protocol;
 
 namespace FCU_氢燃料电池控.ViewModels
@@ -16,6 +17,7 @@ namespace FCU_氢燃料电池控.ViewModels
     {
         private readonly SerialPortManager _serialPortManager;
         private readonly ParameterManager _parameterManager;
+        private const int MaxCommunicationLogEntries = 5000;
         private bool _isDisposed;
 
         #region 串口相关属性
@@ -43,6 +45,13 @@ namespace FCU_氢燃料电池控.ViewModels
                     ((RelayCommand)ReadStackInfoCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)StartStackCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)StopStackCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)SetHighPressureMinCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)SetHighPressureRedCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)SetHighPressureYellowCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)SetLowPressureMinCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)SetLowPressureMaxCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)SetHighPressureRangeCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)SetLowPressureRangeCommand).RaiseCanExecuteChanged();
                 }
             }
         }
@@ -104,6 +113,21 @@ namespace FCU_氢燃料电池控.ViewModels
         {
             get => _statusMessage;
             set => SetProperty(ref _statusMessage, value);
+        }
+
+        #endregion
+
+        #region 通信日志属性
+
+        private bool _isCommunicationLogPaused;
+
+        public ObservableCollection<CommunicationLogEntry> CommunicationLogs { get; } =
+            new ObservableCollection<CommunicationLogEntry>();
+
+        public bool IsCommunicationLogPaused
+        {
+            get => _isCommunicationLogPaused;
+            set => SetProperty(ref _isCommunicationLogPaused, value);
         }
 
         #endregion
@@ -263,6 +287,7 @@ namespace FCU_氢燃料电池控.ViewModels
         public ICommand SetLowPressureMaxCommand { get; }
         public ICommand SetHighPressureRangeCommand { get; }
         public ICommand SetLowPressureRangeCommand { get; }
+        public ICommand ClearCommunicationLogCommand { get; }
 
         #endregion
 
@@ -273,6 +298,21 @@ namespace FCU_氢燃料电池控.ViewModels
         /// </summary>
         /// <returns>串口管理器实例</returns>
         public SerialPortManager GetSerialPortManager() => _serialPortManager;
+
+        public void AppendCommunicationFrame(CommunicationDirection direction, byte[] frame)
+        {
+            if (IsCommunicationLogPaused || frame == null || frame.Length == 0)
+            {
+                return;
+            }
+
+            CommunicationLogs.Add(new CommunicationLogEntry(DateTime.Now, direction, frame));
+
+            while (CommunicationLogs.Count > MaxCommunicationLogEntries)
+            {
+                CommunicationLogs.RemoveAt(0);
+            }
+        }
 
         #endregion
 
@@ -306,6 +346,7 @@ namespace FCU_氢燃料电池控.ViewModels
             SetLowPressureMaxCommand = new RelayCommand(ExecuteSetLowPressureMax, CanExecuteSerialOperation);
             SetHighPressureRangeCommand = new RelayCommand(ExecuteSetHighPressureRange, CanExecuteSerialOperation);
             SetLowPressureRangeCommand = new RelayCommand(ExecuteSetLowPressureRange, CanExecuteSerialOperation);
+            ClearCommunicationLogCommand = new RelayCommand(() => CommunicationLogs.Clear());
 
             // 初始化串口列表
             RefreshPortList();

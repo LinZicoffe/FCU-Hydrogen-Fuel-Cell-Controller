@@ -13,8 +13,15 @@ namespace FCU_氢燃料电池控.Utils
     {
         private const string LICENSE_FILE = "license.encrypted";
         private const string TRIAL_FILE = "trial.encrypted";
+        private const string REGISTRATION_FILE = "registration.encrypted";
         private static readonly byte[] StorageSalt = new byte[]
             { 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88 };
+
+        private static string RegistrationDirectoryPath => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "FCU氢燃料电池控制系统");
+
+        private static string RegistrationFilePath => Path.Combine(RegistrationDirectoryPath, REGISTRATION_FILE);
 
         /// <summary>
         /// 保存许可证数据 (加密存储)
@@ -143,6 +150,68 @@ namespace FCU_氢燃料电池控.Utils
             catch
             {
                 // 忽略删除失败
+            }
+        }
+
+        /// <summary>
+        /// 检查当前电脑是否已经完成公司注册。
+        /// </summary>
+        public static bool RegistrationExists()
+        {
+            return File.Exists(RegistrationFilePath);
+        }
+
+        /// <summary>
+        /// 首次将公司注册信息保存到机器公共数据目录。文件已存在时拒绝覆盖。
+        /// </summary>
+        public static bool TrySaveRegistration(RegistrationData registration)
+        {
+            if (File.Exists(RegistrationFilePath))
+            {
+                return false;
+            }
+
+            var json = JsonSerializer.Serialize(registration);
+            var (key, iv) = CryptoHelper.DeriveKeyFromPassword("FCU_REGISTRATION_KEY", StorageSalt);
+            var encrypted = CryptoHelper.AesEncrypt(json, key, iv);
+
+            try
+            {
+                Directory.CreateDirectory(RegistrationDirectoryPath);
+                using var stream = new FileStream(RegistrationFilePath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                using var writer = new StreamWriter(stream);
+                writer.Write(encrypted);
+                return true;
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 加载已保存的公司注册信息。
+        /// </summary>
+        public static RegistrationData? LoadRegistration()
+        {
+            try
+            {
+                if (!File.Exists(RegistrationFilePath))
+                {
+                    return null;
+                }
+
+                using var stream = new FileStream(RegistrationFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                using var reader = new StreamReader(stream);
+                var encrypted = reader.ReadToEnd();
+
+                var (key, iv) = CryptoHelper.DeriveKeyFromPassword("FCU_REGISTRATION_KEY", StorageSalt);
+                var json = CryptoHelper.AesDecrypt(encrypted, key, iv);
+                return JsonSerializer.Deserialize<RegistrationData>(json);
+            }
+            catch
+            {
+                return null;
             }
         }
     }

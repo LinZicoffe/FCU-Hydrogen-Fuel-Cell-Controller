@@ -99,15 +99,21 @@ namespace FCU_氢燃料电池控.Protocol
         /// </summary>
         public const byte FUNC_SET_DEVICE_ADDRESS = 0x0C;
 
-        #region 兼容常量（旧版本，不推荐继续使用）
+        /// <summary>功能码：在线测试氢阀、排水阀和吹扫</summary>
+        public const byte FUNC_ONLINE_TEST = 0x0D;
+        public const byte RESP_ONLINE_TEST = 0x8D;
+
+        public const byte ONLINE_TEST_HYDROGEN_OPEN = 0x01;
+        public const byte ONLINE_TEST_HYDROGEN_CLOSE = 0x02;
+        public const byte ONLINE_TEST_DRAIN_OPEN = 0x03;
+        public const byte ONLINE_TEST_DRAIN_CLOSE = 0x04;
+        public const byte ONLINE_TEST_PURGE_START = 0x05;
+        public const byte ONLINE_TEST_PURGE_STOP = 0x06;
 
         /// <summary>
-        /// 功能码：清除故障（已废弃，协议中0x0A现为读取配置参数）
+        /// 响应功能码：读取配置参数
         /// </summary>
-        [Obsolete("协议中0x0A已改为读取配置参数，请使用FUNC_READ_CONFIG")]
-        public const byte FUNC_CLEAR_FAULT = 0x0A;
-
-        #endregion
+        public const byte RESP_READ_CONFIG = 0x8A;
 
         /// <summary>
         /// 功能码：报警信息上报
@@ -304,6 +310,36 @@ namespace FCU_氢燃料电池控.Protocol
         /// </summary>
         public const byte ERR_CRC_FAILED = 0x04;
 
+        /// <summary>
+        /// 错误码：数据长度错误
+        /// </summary>
+        public const byte ERR_DATA_LENGTH = 0x05;
+
+        /// <summary>
+        /// 错误码：地址无效
+        /// </summary>
+        public const byte ERR_ADDRESS_INVALID = 0x06;
+
+        /// <summary>
+        /// 错误码：执行失败
+        /// </summary>
+        public const byte ERR_EXECUTION_FAILED = 0x07;
+
+        /// <summary>
+        /// 错误码：设备未就绪
+        /// </summary>
+        public const byte ERR_NOT_READY = 0x08;
+
+        /// <summary>
+        /// 错误码：存储失败
+        /// </summary>
+        public const byte ERR_SAVE_FAILED = 0x09;
+
+        /// <summary>
+        /// 错误码：权限不足
+        /// </summary>
+        public const byte ERR_NO_PERMISSION = 0x0A;
+
         #endregion
 
         #region 辅助方法
@@ -329,6 +365,8 @@ namespace FCU_氢燃料电池控.Protocol
                 FUNC_READ_CONFIG => "读取配置参数",
                 FUNC_SET_GENERAL_PARAMS => "设置通用参数",
                 FUNC_SET_DEVICE_ADDRESS => "修改设备地址",
+                FUNC_ONLINE_TEST => "在线测试",
+                RESP_ONLINE_TEST => "在线测试响应",
                 FUNC_ALARM_REPORT => "报警信息上报",
                 FUNC_STATE_CHANGE_REPORT => "状态变更上报",
                 FUNC_LOAD_STATUS_REPORT => "拉载状态上报",
@@ -350,6 +388,12 @@ namespace FCU_氢燃料电池控.Protocol
                 ERR_PARAM_ERROR => "参数错误",
                 ERR_DEVICE_BUSY => "设备忙",
                 ERR_CRC_FAILED => "CRC校验失败",
+                ERR_DATA_LENGTH => "数据长度错误",
+                ERR_ADDRESS_INVALID => "地址无效",
+                ERR_EXECUTION_FAILED => "执行失败",
+                ERR_NOT_READY => "设备未就绪",
+                ERR_SAVE_FAILED => "存储失败",
+                ERR_NO_PERMISSION => "权限不足",
                 _ => $"未知错误(0x{errorCode:X2})"
             };
         }

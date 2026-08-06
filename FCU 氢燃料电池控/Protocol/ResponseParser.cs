@@ -9,6 +9,38 @@ namespace FCU_氢燃料电池控.Protocol
     /// </summary>
     public static class ResponseParser
     {
+        private const int ReadConfigParameterDataOffset = 8;
+
+        private static bool TryGetReadConfigParameterData(
+            byte[] frame,
+            ushort expectedParameterId,
+            out int dataOffset,
+            out int parameterDataLength)
+        {
+            dataOffset = ReadConfigParameterDataOffset;
+            parameterDataLength = 0;
+
+            if (frame == null || frame.Length < ProtocolConstants.MIN_FRAME_LENGTH)
+                return false;
+
+            byte dataLength = frame[4];
+            if (frame[0] != ProtocolConstants.FRAME_HEADER1 ||
+                frame[1] != ProtocolConstants.FRAME_HEADER2 ||
+                frame[3] != ProtocolConstants.RESP_READ_CONFIG ||
+                dataLength < 3 ||
+                frame.Length != ProtocolConstants.MIN_FRAME_LENGTH + dataLength)
+            {
+                return false;
+            }
+
+            ushort parameterId = (ushort)((frame[5] << 8) | frame[6]);
+            if (parameterId != expectedParameterId)
+                return false;
+
+            parameterDataLength = dataLength - 3; // parameter ID (2) + sub-index (1)
+            return true;
+        }
+
         /// <summary>
         /// 解析设备序列号（功能码0x81）
         /// </summary>
@@ -114,9 +146,9 @@ namespace FCU_氢燃料电池控.Protocol
 
             try
             {
-                // 0x8A响应帧数据域：参数类型ID(2) + 参数数据(N)
-                // offset=7: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)
-                int offset = 7;
+                if (!TryGetReadConfigParameterData(frame, ProtocolConstants.PARAM_TYPE_PRESSURE,
+                    out int offset, out int parameterDataLength) || parameterDataLength != 14)
+                    return data;
 
                 // 高压最小值
                 data.HighPressureMin = (ushort)((frame[offset] << 8) | frame[offset + 1]);
@@ -158,8 +190,9 @@ namespace FCU_氢燃料电池控.Protocol
 
             try
             {
-                // offset=7: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)
-                int offset = 7;
+                if (!TryGetReadConfigParameterData(frame, ProtocolConstants.PARAM_TYPE_VALVE,
+                    out int offset, out int parameterDataLength) || parameterDataLength != 10)
+                    return data;
 
                 data.FirstOpenTime = (ushort)((frame[offset] << 8) | frame[offset + 1]);
                 data.SecondOpenTime = (ushort)((frame[offset + 2] << 8) | frame[offset + 3]);
@@ -186,8 +219,9 @@ namespace FCU_氢燃料电池控.Protocol
 
             try
             {
-                // offset=7: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)
-                int offset = 7;
+                if (!TryGetReadConfigParameterData(frame, ProtocolConstants.PARAM_TYPE_DCDC,
+                    out int offset, out int parameterDataLength) || parameterDataLength != 4)
+                    return data;
 
                 data.MinVoltage = (ushort)((frame[offset] << 8) | frame[offset + 1]);
                 data.StopVoltage = (ushort)((frame[offset + 2] << 8) | frame[offset + 3]);
@@ -211,8 +245,9 @@ namespace FCU_氢燃料电池控.Protocol
 
             try
             {
-                // offset=7: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)
-                int offset = 7;
+                if (!TryGetReadConfigParameterData(frame, ProtocolConstants.PARAM_TYPE_FAN_TEMP,
+                    out int offset, out int parameterDataLength) || parameterDataLength != 9)
+                    return data;
 
                 data.LowSpeedDuty = frame[offset];
                 data.TempMin = (ushort)((frame[offset + 1] << 8) | frame[offset + 2]);
@@ -239,8 +274,9 @@ namespace FCU_氢燃料电池控.Protocol
 
             try
             {
-                // offset=7: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)
-                int offset = 7;
+                if (!TryGetReadConfigParameterData(frame, ProtocolConstants.PARAM_TYPE_GENERAL,
+                    out int offset, out int parameterDataLength) || parameterDataLength != 2)
+                    return data;
 
                 data.ScanPeriod = (ushort)((frame[offset] << 8) | frame[offset + 1]);
             }
@@ -331,15 +367,21 @@ namespace FCU_氢燃料电池控.Protocol
 
             try
             {
-                // offset=7: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)
-                int offset = 7;
+                if (!TryGetReadConfigParameterData(frame, ProtocolConstants.PARAM_TYPE_LOAD_SEQUENCE,
+                    out int offset, out int parameterDataLength) ||
+                    parameterDataLength % 4 != 0)
+                {
+                    return data;
+                }
 
-                data.SequenceCount = frame[offset];
-                int count = Math.Min((int)data.SequenceCount, 15);
+                // The firmware response omits a count byte. Each sequence occupies four bytes,
+                // so the count is derived from the V4.3 response data length.
+                int count = Math.Min(parameterDataLength / 4, data.Currents.Length);
+                data.SequenceCount = (byte)count;
 
                 for (int i = 0; i < count; i++)
                 {
-                    int seqOffset = offset + 1 + i * 4;
+                    int seqOffset = offset + i * 4;
                     data.Currents[i] = (ushort)((frame[seqOffset] << 8) | frame[seqOffset + 1]);
                     data.Times[i] = (ushort)((frame[seqOffset + 2] << 8) | frame[seqOffset + 3]);
                 }
@@ -363,8 +405,9 @@ namespace FCU_氢燃料电池控.Protocol
 
             try
             {
-                // offset=7: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)
-                int offset = 7;
+                if (!TryGetReadConfigParameterData(frame, ProtocolConstants.PARAM_TYPE_LOAD_CONTROL,
+                    out int offset, out int parameterDataLength) || parameterDataLength != 9)
+                    return data;
 
                 data.PeakCurrent = (ushort)((frame[offset] << 8) | frame[offset + 1]);
                 data.LockFactor = (ushort)((frame[offset + 2] << 8) | frame[offset + 3]);
@@ -391,8 +434,9 @@ namespace FCU_氢燃料电池控.Protocol
 
             try
             {
-                // offset=7: 跳过帧头(2)+地址(1)+功能码(1)+长度(1)+参数类型ID(2)
-                int offset = 7;
+                if (!TryGetReadConfigParameterData(frame, ProtocolConstants.PARAM_TYPE_LOAD_STARTUP,
+                    out int offset, out int parameterDataLength) || parameterDataLength != 5)
+                    return data;
 
                 data.FirstCount = frame[offset];
                 data.FirstInterval = (ushort)((frame[offset + 1] << 8) | frame[offset + 2]);
@@ -503,7 +547,10 @@ namespace FCU_氢燃料电池控.Protocol
         {
             try
             {
-                if (frame.Length >= 7)
+                if (frame.Length >= ProtocolConstants.MIN_FRAME_LENGTH &&
+                    frame[3] == ProtocolConstants.RESP_READ_CONFIG &&
+                    frame[4] >= 3 &&
+                    frame.Length == ProtocolConstants.MIN_FRAME_LENGTH + frame[4])
                     return (ushort)((frame[5] << 8) | frame[6]);
             }
             catch

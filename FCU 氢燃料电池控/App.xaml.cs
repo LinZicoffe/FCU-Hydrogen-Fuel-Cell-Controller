@@ -16,7 +16,9 @@ namespace FCU_氢燃料电池控
     {
         #region 私有字段
 
+#if ENABLE_LICENSE_FEATURE
         private LicenseService? _licenseService;
+#endif
 
         #endregion
 
@@ -25,15 +27,33 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 应用程序启动事件
         /// </summary>
-        private async void Application_Startup(object sender, StartupEventArgs e)
+        private void Application_Startup(object sender, StartupEventArgs e)
         {
             try
             {
+                // 注册窗口关闭时主窗口尚未创建，启动阶段必须由代码显式控制退出。
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+                var registrationService = new RegistrationService();
+                var registration = registrationService.LoadRegistration();
+                if (registration == null)
+                {
+                    var registrationWindow = new RegistrationWindow(registrationService);
+                    if (registrationWindow.ShowDialog() != true || registrationWindow.Registration == null)
+                    {
+                        Shutdown();
+                        return;
+                    }
+
+                    registration = registrationWindow.Registration;
+                }
+
+#if ENABLE_LICENSE_FEATURE
                 // 初始化许可证服务
                 _licenseService = new LicenseService();
 
                 // 验证许可证
-                var validationResult = await _licenseService.ValidateLicenseAsync();
+                var validationResult = _licenseService.ValidateLicense();
 
                 // 根据验证结果决定启动流程
                 if (!HandleLicenseValidation(validationResult))
@@ -45,9 +65,16 @@ namespace FCU_氢燃料电池控
 
                 // 更新最后运行时间
                 _licenseService.UpdateLastRunTime();
+#endif
 
                 // 启动主窗口
-                var mainWindow = new MainWindow(_licenseService);
+#if ENABLE_LICENSE_FEATURE
+                var mainWindow = new MainWindow(registration.CompanyName, _licenseService);
+#else
+                var mainWindow = new MainWindow(registration.CompanyName);
+#endif
+                MainWindow = mainWindow;
+                ShutdownMode = ShutdownMode.OnMainWindowClose;
                 mainWindow.Show();
             }
             catch (Exception ex)
@@ -61,6 +88,7 @@ namespace FCU_氢燃料电池控
 
         #region 私有方法
 
+#if ENABLE_LICENSE_FEATURE
         /// <summary>
         /// 处理许可证验证结果
         /// </summary>
@@ -165,6 +193,7 @@ namespace FCU_氢燃料电池控
 
             licenseWindow.ShowDialog();
         }
+#endif
 
         #endregion
     }

@@ -262,15 +262,6 @@ namespace FCU_氢燃料电池控.Managers
             return SendReadCommand(ProtocolConstants.FUNC_STOP_STACK, "停止电堆");
         }
 
-        /// <summary>
-        /// 清除故障
-        /// </summary>
-        /// <returns>是否发送成功</returns>
-        public bool ClearFault()
-        {
-            return SendReadCommand(ProtocolConstants.FUNC_CLEAR_FAULT, "清除故障");
-        }
-
         #endregion
     }
 }
