@@ -29,6 +29,18 @@ namespace FCU_氢燃料电池控.Protocol
         private byte[] _receiveBuffer = new byte[300];
         private int _bufferIndex = 0;
         private int _dataLength = 0;
+        private int _lastByteTick = 0;
+
+        /// <summary>
+        /// 帧接收超时(毫秒)。与下位机 FCU_RS_485_FRAME_TIMEOUT_MS 保持一致。
+        /// 超时后丢弃残帧，避免半截帧把后续帧的前几字节吃掉造成连续解析失败。
+        /// </summary>
+        private const int FrameTimeoutMs = 1000;
+
+        /// <summary>
+        /// 当前是否处于帧接收空闲状态。可用于总线仲裁判断，避免在半接收状态下插入其它协议的请求。
+        /// </summary>
+        public bool IsIdle => _state == ReceiveState.Idle;
 
         /// <summary>
         /// 帧接收完成事件
@@ -48,6 +60,17 @@ namespace FCU_氢燃料电池控.Protocol
         {
             try
             {
+                // 帧间超时自愈: 上一帧被截断(掉线/干扰)时状态机会停在中途，
+                // 若不复位，下一帧的前几字节会被当作残帧的数据域吞掉，导致连续多帧失败。
+                // 下位机 fcu_process_rx_state_machine() 有同样的 1000ms 超时保护。
+                int now = Environment.TickCount;
+                if (_state != ReceiveState.Idle &&
+                    unchecked(now - _lastByteTick) > FrameTimeoutMs)
+                {
+                    Reset();
+                }
+                _lastByteTick = now;
+
                 switch (_state)
                 {
                     case ReceiveState.Idle:

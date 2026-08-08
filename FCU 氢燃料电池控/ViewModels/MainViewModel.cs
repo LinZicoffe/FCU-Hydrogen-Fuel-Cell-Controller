@@ -252,11 +252,13 @@ namespace FCU_氢燃料电池控.ViewModels
 
         #region 压力参数属性
 
-        private string _highPressureMin = "100";
+        // 默认值与下位机 fcu_protocol.c 的 g_pressure_params 保持一致。
+        // 注意：固件 fcu_protocol.h 的字段注释仍是旧版附录A的值(100/35/65)，以 .c 的实际初始化为准。
+        private string _highPressureMin = "300";      // 固件 [需求1.2] 高压最小值 300 KPA (原100)
         private string _highPressureRed = "250";
         private string _highPressureYellow = "500";
-        private string _lowPressureMin = "35";
-        private string _lowPressureMax = "65";
+        private string _lowPressureMin = "30";        // 固件 [需求2.3] 低压下限值 30 KPA (原35)
+        private string _lowPressureMax = "80";        // 固件 [需求2.3] 低压上限值 80 KPA (原65)
         private string _highPressureRange = "5000";
         private string _lowPressureRange = "250";
 
@@ -463,7 +465,7 @@ namespace FCU_氢燃料电池控.ViewModels
         {
             try
             {
-                // 构建压力参数数据
+                // 构建压力参数数据（内部含合法性校验，非法时抛异常）
                 byte[] data = BuildPressureParamsData();
                 _parameterManager.SetPressureParameter(data, parameterName);
             }
@@ -473,15 +475,48 @@ namespace FCU_氢燃料电池控.ViewModels
             }
         }
 
+        /// <summary>
+        /// 解析压力参数字段并做范围校验。
+        /// 下位机 fcu_handle_set_pressure() 只校验红警/黄警序，其余字段不校验直接落 Flash，
+        /// 量程为 0 会导致压力读数恒为 0 且重启不恢复，因此必须在上位机侧拦住。
+        /// </summary>
+        private static ushort ParsePressureField(string text, string fieldName, int min)
+        {
+            if (!ushort.TryParse(text?.Trim(), out ushort value))
+            {
+                throw new ArgumentException($"{fieldName}「{text}」不是合法整数");
+            }
+            if (value < min)
+            {
+                throw new ArgumentException($"{fieldName}不能小于 {min}（当前 {value} KPA）");
+            }
+            return value;
+        }
+
         private byte[] BuildPressureParamsData()
         {
-            ushort highPressureMin = ushort.Parse(HighPressureMin);
-            ushort highPressureRed = ushort.Parse(HighPressureRed);
-            ushort highPressureYellow = ushort.Parse(HighPressureYellow);
-            ushort lowPressureMin = ushort.Parse(LowPressureMin);
-            ushort lowPressureMax = ushort.Parse(LowPressureMax);
-            ushort highPressureRange = ushort.Parse(HighPressureRange);
-            ushort lowPressureRange = ushort.Parse(LowPressureRange);
+            // 量程为 0 会被固件静默接受并写入 Flash，导致压力恒为 0，必须拦截
+            ushort highPressureMin = ParsePressureField(HighPressureMin, "高压最小值", 1);
+            ushort highPressureRed = ParsePressureField(HighPressureRed, "高压红警值", 1);
+            ushort highPressureYellow = ParsePressureField(HighPressureYellow, "高压黄警值", 1);
+            ushort lowPressureMin = ParsePressureField(LowPressureMin, "低压下限值", 1);
+            ushort lowPressureMax = ParsePressureField(LowPressureMax, "低压上限值", 1);
+            ushort highPressureRange = ParsePressureField(HighPressureRange, "高压量程", 1);
+            ushort lowPressureRange = ParsePressureField(LowPressureRange, "低压量程", 1);
+
+            // 固件 fcu_handle_set_pressure() 唯一会拒绝的条件，先在本地给出明确原因
+            if (highPressureRed >= highPressureYellow)
+            {
+                throw new ArgumentException(
+                    $"高压红警值({highPressureRed})必须小于高压黄警值({highPressureYellow})，固件会拒绝整帧");
+            }
+
+            // 固件不校验但会导致低压区间检查永久失败
+            if (lowPressureMax <= lowPressureMin)
+            {
+                throw new ArgumentException(
+                    $"低压上限值({lowPressureMax})必须大于低压下限值({lowPressureMin})");
+            }
 
             byte[] data = new byte[ProtocolConstants.PRESSURE_PARAMS_DATA_LENGTH];
             data[0] = 0x01; data[1] = 0x01;

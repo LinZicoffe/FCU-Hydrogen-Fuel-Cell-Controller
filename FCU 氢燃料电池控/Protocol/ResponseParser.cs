@@ -42,6 +42,78 @@ namespace FCU_氢燃料电池控.Protocol
         }
 
         /// <summary>
+        /// 0x8A 读配置响应中，各参数ID对应的参数数据域期望长度（不含参数ID与子索引）。
+        /// 长度值与下位机 fcu_handle_read_config() 各分支的 data_len 一一对应。
+        /// 0x0501 拉载时序为变长（时序数×4），以 -1 表示，另做整除校验。
+        /// </summary>
+        private static int GetExpectedParameterDataLength(ushort parameterId)
+        {
+            return parameterId switch
+            {
+                ProtocolConstants.PARAM_TYPE_PRESSURE => 14,
+                ProtocolConstants.PARAM_TYPE_VALVE => 10,
+                ProtocolConstants.PARAM_TYPE_DCDC => 4,
+                ProtocolConstants.PARAM_TYPE_FAN_TEMP => 9,
+                ProtocolConstants.PARAM_TYPE_LOAD_SEQUENCE => -1,   // 变长: 时序数 × 4
+                ProtocolConstants.PARAM_TYPE_LOAD_CONTROL => 9,
+                ProtocolConstants.PARAM_TYPE_LOAD_STARTUP => 5,
+                ProtocolConstants.PARAM_TYPE_FLOW => 12,
+                ProtocolConstants.PARAM_TYPE_GENERAL => 2,
+                _ => -2                                             // 未知参数ID
+            };
+        }
+
+        /// <summary>
+        /// 校验 0x8A 读配置响应是否可被正常解析。
+        /// 各 Parse*Params 方法在长度不符时会静默返回全 0 对象，若 UI 直接展示，
+        /// 用户会看到一片 0 并被告知「读取成功」，无从判断是真实值还是解析失败。
+        /// 因此 UI 侧必须先调用本方法，失败时给出明确原因而不是更新界面。
+        /// </summary>
+        /// <param name="frame">完整响应帧</param>
+        /// <param name="parameterId">期望的参数类型ID</param>
+        /// <param name="failReason">校验失败原因，成功时为空字符串</param>
+        /// <returns>true 表示可安全解析</returns>
+        public static bool TryValidateReadConfigResponse(byte[] frame, ushort parameterId,
+            out string failReason)
+        {
+            failReason = string.Empty;
+
+            int expected = GetExpectedParameterDataLength(parameterId);
+            if (expected == -2)
+            {
+                failReason = $"未知参数类型ID 0x{parameterId:X4}";
+                return false;
+            }
+
+            if (!TryGetReadConfigParameterData(frame, parameterId,
+                    out _, out int actualLength))
+            {
+                failReason = "帧头/响应码/参数ID或帧长不匹配";
+                return false;
+            }
+
+            if (expected == -1)
+            {
+                // 拉载时序变长: 必须是 4 的整数倍且至少 1 条
+                if (actualLength == 0 || actualLength % 4 != 0)
+                {
+                    failReason = $"拉载时序数据域长度 {actualLength} 不是 4 的整数倍";
+                    return false;
+                }
+                return true;
+            }
+
+            if (actualLength != expected)
+            {
+                failReason = $"数据域长度 {actualLength} 与期望值 {expected} 不符"
+                           + "（可能是下位机协议版本与上位机不一致）";
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// 解析设备序列号（功能码0x81）
         /// </summary>
         /// <param name="frame">完整帧数据</param>
@@ -113,11 +185,13 @@ namespace FCU_氢燃料电池控.Protocol
                 // 字节15-16: 风扇转速
                 data.FanSpeed = (ushort)((frame[offset + 15] << 8) | frame[offset + 16]);
 
-                // 字节17-18: 电堆温度
-                data.StackTemperature = (ushort)((frame[offset + 17] << 8) | frame[offset + 18]);
+                // 字节17-18: 电堆温度 (有符号, 0.1℃)
+                // 下位机 fcu_sensor.c 允许温度低至 -40℃，编码时按二进制补码塞进 uint16，
+                // 因此必须按 short 解析，否则 -40.0℃ 会被读成 65136 → 显示 6513.6℃
+                data.StackTemperature = (short)((frame[offset + 17] << 8) | frame[offset + 18]);
 
-                // 字节19-20: FCU控制器温度
-                data.FCUTemperature = (ushort)((frame[offset + 19] << 8) | frame[offset + 20]);
+                // 字节19-20: FCU控制器温度 (有符号, 0.1℃)
+                data.FCUTemperature = (short)((frame[offset + 19] << 8) | frame[offset + 20]);
 
                 // 字节21-24: 累计运行时间 (大端序, 4字节)
                 data.RunTime = (uint)((frame[offset + 21] << 24) | (frame[offset + 22] << 16) |

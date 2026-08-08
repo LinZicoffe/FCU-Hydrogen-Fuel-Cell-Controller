@@ -49,6 +49,15 @@ namespace FCU_氢燃料电池控.Services
         /// </summary>
         public byte SlaveAddress { get; set; } = 1;
 
+        /// <summary>
+        /// AA55 帧接收是否空闲的判定回调（由 MainWindow 注入 ProtocolHandler.IsIdle）。
+        /// 与固件 fcu_modbus.c 的三条件仲裁对齐：使能 + 接收状态机空闲 + 总线静默。
+        /// 缺少此条件时，Modbus 请求可能在 AA55 帧半接收状态下插入，
+        /// 被状态机吃进帧体导致该 AA55 帧 CRC 失败。
+        /// 未注入(null)时退化为原有的两条件判定。
+        /// </summary>
+        public Func<bool>? IsAa55Idle { get; set; }
+
         /// <summary>最新一帧解析结果</summary>
         public BmsData Data { get; } = new BmsData();
 
@@ -250,6 +259,12 @@ namespace FCU_氢燃料电池控.Services
                 MosWriteCompleted?.Invoke(false, "总线忙, 请稍候");
                 return;
             }
+            // 与读请求同样的仲裁条件，避免在 AA55 帧半接收状态下插入 Modbus 写
+            if (!IsBusAvailable())
+            {
+                MosWriteCompleted?.Invoke(false, "总线忙(FCU 通信中), 请稍候重试");
+                return;
+            }
 
             byte[] req = ModbusRtu.BuildWriteSingleReg(SlaveAddress, reg, on ? MOS_ON : MOS_OFF);
             _pendingWriteReq = req;
@@ -283,8 +298,9 @@ namespace FCU_氢燃料电池控.Services
                 return;   // 上一次尚未完成, 本轮跳过
             }
 
-            // 总线静默检查: 距上次 RX < 20ms 则推迟30ms重试一次, 仍忙则放弃本轮
-            if ((DateTime.Now - _lastRxTime) < BusSilentRequired)
+            // 仲裁条件: 总线静默 ≥20ms 且 AA55 接收状态机空闲 (与固件三条件对齐)
+            // 任一不满足则推迟30ms重试一次, 仍忙则放弃本轮
+            if (!IsBusAvailable())
             {
                 if (_retryTimer != null)
                 {
@@ -295,7 +311,7 @@ namespace FCU_氢燃料电池控.Services
                 {
                     _retryTimer?.Stop();
                     _retryTimer = null;
-                    if ((DateTime.Now - _lastRxTime) >= BusSilentRequired)
+                    if (IsBusAvailable())
                     {
                         SendReadFrame();
                     }
@@ -305,6 +321,27 @@ namespace FCU_氢燃料电池控.Services
             }
 
             SendReadFrame();
+        }
+
+        /// <summary>
+        /// 总线是否可发起 Modbus 请求。
+        /// 条件一: 距上次收到任意字节 ≥ BusSilentRequired(20ms)
+        /// 条件二: AA55 帧接收状态机处于空闲 (未注入回调时跳过该条件)
+        /// </summary>
+        private bool IsBusAvailable()
+        {
+            if ((DateTime.Now - _lastRxTime) < BusSilentRequired)
+            {
+                return false;
+            }
+
+            // AA55 半接收状态下发 Modbus 请求，会让那一帧 AA55 吃进异物而 CRC 失败
+            if (IsAa55Idle != null && !IsAa55Idle())
+            {
+                return false;
+            }
+
+            return true;
         }
 
         private void SendReadFrame()

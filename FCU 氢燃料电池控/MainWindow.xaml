@@ -505,7 +505,7 @@
                                     <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_TempMin" Style="{StaticResource StandardTextBoxStyle}" Text="400" Margin="4"/>
 
                                     <Label Grid.Row="2" Grid.Column="0" Content="温度上限 (0.1℃):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="2" Grid.Column="1" Name="tbx_TempMax" Style="{StaticResource StandardTextBoxStyle}" Text="650" Margin="4"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Name="tbx_TempMax" Style="{StaticResource StandardTextBoxStyle}" Text="600" Margin="4"/>
 
                                     <Label Grid.Row="3" Grid.Column="0" Content="全速运行时长 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="3" Grid.Column="1" Name="tbx_FanFullSpeedTime" Style="{StaticResource StandardTextBoxStyle}" Text="200" Margin="4"/>
@@ -591,7 +591,7 @@
                                     Click="btn_ReadLoadParams_Click"/>
 
                             <!-- 拉载时序参数 -->
-                            <GroupBox Header="拉载时序参数" Visibility="Collapsed" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                            <GroupBox Header="拉载时序参数" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="1.2*"/>
@@ -620,78 +620,78 @@
 
                                     <Label Grid.Row="0" Grid.Column="0" Content="时序1电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_Seq1_Current" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
-                                    <Label Grid.Row="0" Grid.Column="2" Content="时序1时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="0" Grid.Column="3" Name="tbx_Seq1_Time" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+                                    <Label Grid.Row="0" Grid.Column="2" Content="时序1时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="0" Grid.Column="3" Name="tbx_Seq1_Time" Style="{StaticResource StandardTextBoxStyle}" Text="50" Margin="4"/>
 
                                     <Label Grid.Row="1" Grid.Column="0" Content="时序2电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_Seq2_Current" Style="{StaticResource StandardTextBoxStyle}" Text="10" Margin="4"/>
-                                    <Label Grid.Row="1" Grid.Column="2" Content="时序2时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="1" Grid.Column="3" Name="tbx_Seq2_Time" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+                                    <Label Grid.Row="1" Grid.Column="2" Content="时序2时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="1" Grid.Column="3" Name="tbx_Seq2_Time" Style="{StaticResource StandardTextBoxStyle}" Text="50" Margin="4"/>
 
                                     <Label Grid.Row="2" Grid.Column="0" Content="时序3电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="2" Grid.Column="1" Name="tbx_Seq3_Current" Style="{StaticResource StandardTextBoxStyle}" Text="20" Margin="4"/>
-                                    <Label Grid.Row="2" Grid.Column="2" Content="时序3时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="2" Grid.Column="3" Name="tbx_Seq3_Time" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+                                    <Label Grid.Row="2" Grid.Column="2" Content="时序3时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="2" Grid.Column="3" Name="tbx_Seq3_Time" Style="{StaticResource StandardTextBoxStyle}" Text="50" Margin="4"/>
 
                                     <Label Grid.Row="3" Grid.Column="0" Content="时序4电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="3" Grid.Column="1" Name="tbx_Seq4_Current" Style="{StaticResource StandardTextBoxStyle}" Text="40" Margin="4"/>
-                                    <Label Grid.Row="3" Grid.Column="2" Content="时序4时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="3" Grid.Column="3" Name="tbx_Seq4_Time" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+                                    <Label Grid.Row="3" Grid.Column="2" Content="时序4时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="3" Grid.Column="3" Name="tbx_Seq4_Time" Style="{StaticResource StandardTextBoxStyle}" Text="50" Margin="4"/>
 
                                     <Label Grid.Row="4" Grid.Column="0" Content="时序5电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="4" Grid.Column="1" Name="tbx_Seq5_Current" Style="{StaticResource StandardTextBoxStyle}" Text="70" Margin="4"/>
-                                    <Label Grid.Row="4" Grid.Column="2" Content="时序5时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="4" Grid.Column="3" Name="tbx_Seq5_Time" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+                                    <Label Grid.Row="4" Grid.Column="2" Content="时序5时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="4" Grid.Column="3" Name="tbx_Seq5_Time" Style="{StaticResource StandardTextBoxStyle}" Text="50" Margin="4"/>
 
                                     <Label Grid.Row="5" Grid.Column="0" Content="时序6电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="5" Grid.Column="1" Name="tbx_Seq6_Current" Style="{StaticResource StandardTextBoxStyle}" Text="110" Margin="4"/>
-                                    <Label Grid.Row="5" Grid.Column="2" Content="时序6时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="5" Grid.Column="3" Name="tbx_Seq6_Time" Style="{StaticResource StandardTextBoxStyle}" Text="7" Margin="4"/>
+                                    <Label Grid.Row="5" Grid.Column="2" Content="时序6时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="5" Grid.Column="3" Name="tbx_Seq6_Time" Style="{StaticResource StandardTextBoxStyle}" Text="70" Margin="4"/>
 
                                     <Label Grid.Row="6" Grid.Column="0" Content="时序7电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="6" Grid.Column="1" Name="tbx_Seq7_Current" Style="{StaticResource StandardTextBoxStyle}" Text="150" Margin="4"/>
-                                    <Label Grid.Row="6" Grid.Column="2" Content="时序7时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="6" Grid.Column="3" Name="tbx_Seq7_Time" Style="{StaticResource StandardTextBoxStyle}" Text="7" Margin="4"/>
+                                    <Label Grid.Row="6" Grid.Column="2" Content="时序7时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="6" Grid.Column="3" Name="tbx_Seq7_Time" Style="{StaticResource StandardTextBoxStyle}" Text="70" Margin="4"/>
 
                                     <Label Grid.Row="7" Grid.Column="0" Content="时序8电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="7" Grid.Column="1" Name="tbx_Seq8_Current" Style="{StaticResource StandardTextBoxStyle}" Text="210" Margin="4"/>
-                                    <Label Grid.Row="7" Grid.Column="2" Content="时序8时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="7" Grid.Column="3" Name="tbx_Seq8_Time" Style="{StaticResource StandardTextBoxStyle}" Text="10" Margin="4"/>
+                                    <Label Grid.Row="7" Grid.Column="2" Content="时序8时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="7" Grid.Column="3" Name="tbx_Seq8_Time" Style="{StaticResource StandardTextBoxStyle}" Text="100" Margin="4"/>
 
                                     <Label Grid.Row="8" Grid.Column="0" Content="时序9电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="8" Grid.Column="1" Name="tbx_Seq9_Current" Style="{StaticResource StandardTextBoxStyle}" Text="280" Margin="4"/>
-                                    <Label Grid.Row="8" Grid.Column="2" Content="时序9时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="8" Grid.Column="3" Name="tbx_Seq9_Time" Style="{StaticResource StandardTextBoxStyle}" Text="10" Margin="4"/>
+                                    <Label Grid.Row="8" Grid.Column="2" Content="时序9时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="8" Grid.Column="3" Name="tbx_Seq9_Time" Style="{StaticResource StandardTextBoxStyle}" Text="100" Margin="4"/>
 
                                     <Label Grid.Row="9" Grid.Column="0" Content="时序10电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="9" Grid.Column="1" Name="tbx_Seq10_Current" Style="{StaticResource StandardTextBoxStyle}" Text="340" Margin="4"/>
-                                    <Label Grid.Row="9" Grid.Column="2" Content="时序10时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="9" Grid.Column="3" Name="tbx_Seq10_Time" Style="{StaticResource StandardTextBoxStyle}" Text="10" Margin="4"/>
+                                    <Label Grid.Row="9" Grid.Column="2" Content="时序10时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="9" Grid.Column="3" Name="tbx_Seq10_Time" Style="{StaticResource StandardTextBoxStyle}" Text="100" Margin="4"/>
 
                                     <Label Grid.Row="10" Grid.Column="0" Content="时序11电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="10" Grid.Column="1" Name="tbx_Seq11_Current" Style="{StaticResource StandardTextBoxStyle}" Text="360" Margin="4"/>
-                                    <Label Grid.Row="10" Grid.Column="2" Content="时序11时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="10" Grid.Column="3" Name="tbx_Seq11_Time" Style="{StaticResource StandardTextBoxStyle}" Text="10" Margin="4"/>
+                                    <Label Grid.Row="10" Grid.Column="2" Content="时序11时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="10" Grid.Column="3" Name="tbx_Seq11_Time" Style="{StaticResource StandardTextBoxStyle}" Text="100" Margin="4"/>
 
                                     <Label Grid.Row="11" Grid.Column="0" Content="时序12电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="11" Grid.Column="1" Name="tbx_Seq12_Current" Style="{StaticResource StandardTextBoxStyle}" Text="380" Margin="4"/>
-                                    <Label Grid.Row="11" Grid.Column="2" Content="时序12时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="11" Grid.Column="3" Name="tbx_Seq12_Time" Style="{StaticResource StandardTextBoxStyle}" Text="2" Margin="4"/>
+                                    <Label Grid.Row="11" Grid.Column="2" Content="时序12时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="11" Grid.Column="3" Name="tbx_Seq12_Time" Style="{StaticResource StandardTextBoxStyle}" Text="20" Margin="4"/>
 
                                     <Label Grid.Row="12" Grid.Column="0" Content="时序13电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="12" Grid.Column="1" Name="tbx_Seq13_Current" Style="{StaticResource StandardTextBoxStyle}" Text="360" Margin="4"/>
-                                    <Label Grid.Row="12" Grid.Column="2" Content="时序13时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="12" Grid.Column="3" Name="tbx_Seq13_Time" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+                                    <Label Grid.Row="12" Grid.Column="2" Content="时序13时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="12" Grid.Column="3" Name="tbx_Seq13_Time" Style="{StaticResource StandardTextBoxStyle}" Text="50" Margin="4"/>
 
                                     <Label Grid.Row="13" Grid.Column="0" Content="时序14电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="13" Grid.Column="1" Name="tbx_Seq14_Current" Style="{StaticResource StandardTextBoxStyle}" Text="340" Margin="4"/>
-                                    <Label Grid.Row="13" Grid.Column="2" Content="时序14时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="13" Grid.Column="3" Name="tbx_Seq14_Time" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+                                    <Label Grid.Row="13" Grid.Column="2" Content="时序14时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="13" Grid.Column="3" Name="tbx_Seq14_Time" Style="{StaticResource StandardTextBoxStyle}" Text="50" Margin="4"/>
 
                                     <Label Grid.Row="14" Grid.Column="0" Content="时序15电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="14" Grid.Column="1" Name="tbx_Seq15_Current" Style="{StaticResource StandardTextBoxStyle}" Text="1000" Margin="4"/>
-                                    <Label Grid.Row="14" Grid.Column="2" Content="时序15时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="14" Grid.Column="3" Name="tbx_Seq15_Time" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="4"/>
+                                    <TextBox Grid.Row="14" Grid.Column="1" Name="tbx_Seq15_Current" Style="{StaticResource StandardTextBoxStyle}" Text="500" Margin="4"/>
+                                    <Label Grid.Row="14" Grid.Column="2" Content="时序15时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <TextBox Grid.Row="14" Grid.Column="3" Name="tbx_Seq15_Time" Style="{StaticResource StandardTextBoxStyle}" Text="50" Margin="4"/>
 
                                     <Button Grid.Row="15" Grid.Column="0" Grid.ColumnSpan="4"
                                             Name="btn_SetLoadSequenceParams"
@@ -704,7 +704,7 @@
                             </GroupBox>
 
                             <!-- 拉载控制参数 -->
-                            <GroupBox Header="拉载控制参数" Visibility="Collapsed" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                            <GroupBox Header="拉载控制参数" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="1.5*"/>
@@ -742,7 +742,7 @@
                             </GroupBox>
 
                             <!-- 拉载启动参数 -->
-                            <GroupBox Header="拉载启动参数" Visibility="Collapsed" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,0">
+                            <GroupBox Header="拉载启动参数" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,0">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="1.5*"/>
@@ -768,6 +768,15 @@
                                     <Button Grid.Row="2" Grid.Column="2" Content="修改" Style="{StaticResource StandardButtonStyle}" Width="80" Margin="4" Click="btn_SetLoadNormalInterval_Click"/>
                                 </Grid>
                             </GroupBox>
+
+                            <!-- BMS 拉载阻断提示: 下位机命中 BMS 保护关键位或 MOS 关断时会静默拒绝拉载指令 -->
+                            <Border Name="bd_LoadBlockBanner" CornerRadius="4" Padding="10,6"
+                                    Background="#FFEBEE" BorderBrush="#F44336" BorderThickness="1"
+                                    Margin="0,0,0,10" Visibility="Collapsed">
+                                <TextBlock Name="tbk_LoadBlockReason" TextWrapping="Wrap"
+                                           FontWeight="SemiBold" Foreground="#C62828"
+                                           Text="BMS 阻断拉载"/>
+                            </Border>
 
                             <!-- 拉载状态实时显示 -->
                             <GroupBox Header="拉载状态实时显示" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
@@ -1038,7 +1047,15 @@
                                                 Content="应用"
                                                 Style="{StaticResource StandardButtonStyle}"
                                                 Width="60"
+                                                Margin="0,0,6,0"
                                                 Click="btn_ApplyBmsAddress_Click"/>
+                                        <!-- 固件把轮询使能持久化到Flash: 上位机异常退出会残留en=0导致FCU重启后永久不轮询BMS -->
+                                        <Button Name="btn_ReturnBmsPoll"
+                                                Content="归还FCU轮询"
+                                                Style="{StaticResource WarningButtonStyle}"
+                                                Width="110"
+                                                ToolTip="向FCU发送 0x0D en=1，恢复固件自身的BMS轮询。用于上位机异常退出后，FCU侧轮询使能残留为关闭的情况。"
+                                                Click="btn_ReturnBmsPoll_Click"/>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0">
                                             <Button Name="btn_ReadBMS"
                                                     Content="读取一次"
@@ -1093,8 +1110,13 @@
                                             <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
 
-                                        <Label Grid.Row="0" Grid.Column="0" Content="SOC (%):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                        <TextBlock Grid.Row="0" Grid.Column="1" Name="tbk_BMS_SOC" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                        <Label Grid.Row="0" Grid.Column="0" Content="SOC (%):" Style="{StaticResource LabelStyle}" Margin="4"
+                                               ToolTip="下位机硬编码门控：SOC&gt;90% 拒绝启动电堆，SOC&gt;85% 运行中自动停机（不触发报警上报，仅状态变更）"/>
+                                        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+                                            <TextBlock Name="tbk_BMS_SOC" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="  (&gt;90 拒启 / &gt;85 停机)" VerticalAlignment="Center"
+                                                       FontSize="11" Foreground="#757575"/>
+                                        </StackPanel>
 
                                         <Label Grid.Row="0" Grid.Column="2" Content="剩余容量 (Ah):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                         <TextBlock Grid.Row="0" Grid.Column="3" Name="tbk_BMS_RemainCapacity" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
@@ -1420,77 +1442,77 @@
 
                                             <Label Grid.Row="0" Grid.Column="0" Content="时序1电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_RecipeSeq1_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
-                                            <Label Grid.Row="0" Grid.Column="2" Content="时序1时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <Label Grid.Row="0" Grid.Column="2" Content="时序1时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="0" Grid.Column="3" Name="tbx_RecipeSeq1_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
 
                                             <Label Grid.Row="1" Grid.Column="0" Content="时序2电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_RecipeSeq2_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
-                                            <Label Grid.Row="1" Grid.Column="2" Content="时序2时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <Label Grid.Row="1" Grid.Column="2" Content="时序2时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="1" Grid.Column="3" Name="tbx_RecipeSeq2_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
 
                                             <Label Grid.Row="2" Grid.Column="0" Content="时序3电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="2" Grid.Column="1" Name="tbx_RecipeSeq3_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
-                                            <Label Grid.Row="2" Grid.Column="2" Content="时序3时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <Label Grid.Row="2" Grid.Column="2" Content="时序3时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="2" Grid.Column="3" Name="tbx_RecipeSeq3_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
 
                                             <Label Grid.Row="3" Grid.Column="0" Content="时序4电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="3" Grid.Column="1" Name="tbx_RecipeSeq4_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
-                                            <Label Grid.Row="3" Grid.Column="2" Content="时序4时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <Label Grid.Row="3" Grid.Column="2" Content="时序4时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="3" Grid.Column="3" Name="tbx_RecipeSeq4_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
 
                                             <Label Grid.Row="4" Grid.Column="0" Content="时序5电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="4" Grid.Column="1" Name="tbx_RecipeSeq5_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
-                                            <Label Grid.Row="4" Grid.Column="2" Content="时序5时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <Label Grid.Row="4" Grid.Column="2" Content="时序5时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="4" Grid.Column="3" Name="tbx_RecipeSeq5_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
 
                                             <Label Grid.Row="5" Grid.Column="0" Content="时序6电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="5" Grid.Column="1" Name="tbx_RecipeSeq6_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
-                                            <Label Grid.Row="5" Grid.Column="2" Content="时序6时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <Label Grid.Row="5" Grid.Column="2" Content="时序6时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="5" Grid.Column="3" Name="tbx_RecipeSeq6_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
 
                                             <Label Grid.Row="6" Grid.Column="0" Content="时序7电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="6" Grid.Column="1" Name="tbx_RecipeSeq7_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
-                                            <Label Grid.Row="6" Grid.Column="2" Content="时序7时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <Label Grid.Row="6" Grid.Column="2" Content="时序7时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="6" Grid.Column="3" Name="tbx_RecipeSeq7_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
 
                                             <Label Grid.Row="7" Grid.Column="0" Content="时序8电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="7" Grid.Column="1" Name="tbx_RecipeSeq8_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
-                                            <Label Grid.Row="7" Grid.Column="2" Content="时序8时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <Label Grid.Row="7" Grid.Column="2" Content="时序8时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="7" Grid.Column="3" Name="tbx_RecipeSeq8_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
 
                                             <Label Grid.Row="8" Grid.Column="0" Content="时序9电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="8" Grid.Column="1" Name="tbx_RecipeSeq9_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
-                                            <Label Grid.Row="8" Grid.Column="2" Content="时序9时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <Label Grid.Row="8" Grid.Column="2" Content="时序9时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="8" Grid.Column="3" Name="tbx_RecipeSeq9_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
 
                                             <Label Grid.Row="9" Grid.Column="0" Content="时序10电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="9" Grid.Column="1" Name="tbx_RecipeSeq10_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
-                                            <Label Grid.Row="9" Grid.Column="2" Content="时序10时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <Label Grid.Row="9" Grid.Column="2" Content="时序10时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="9" Grid.Column="3" Name="tbx_RecipeSeq10_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
 
                                             <Label Grid.Row="10" Grid.Column="0" Content="时序11电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="10" Grid.Column="1" Name="tbx_RecipeSeq11_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
-                                            <Label Grid.Row="10" Grid.Column="2" Content="时序11时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <Label Grid.Row="10" Grid.Column="2" Content="时序11时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="10" Grid.Column="3" Name="tbx_RecipeSeq11_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
 
                                             <Label Grid.Row="11" Grid.Column="0" Content="时序12电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="11" Grid.Column="1" Name="tbx_RecipeSeq12_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
-                                            <Label Grid.Row="11" Grid.Column="2" Content="时序12时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <Label Grid.Row="11" Grid.Column="2" Content="时序12时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="11" Grid.Column="3" Name="tbx_RecipeSeq12_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
 
                                             <Label Grid.Row="12" Grid.Column="0" Content="时序13电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="12" Grid.Column="1" Name="tbx_RecipeSeq13_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
-                                            <Label Grid.Row="12" Grid.Column="2" Content="时序13时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <Label Grid.Row="12" Grid.Column="2" Content="时序13时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="12" Grid.Column="3" Name="tbx_RecipeSeq13_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
 
                                             <Label Grid.Row="13" Grid.Column="0" Content="时序14电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="13" Grid.Column="1" Name="tbx_RecipeSeq14_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
-                                            <Label Grid.Row="13" Grid.Column="2" Content="时序14时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <Label Grid.Row="13" Grid.Column="2" Content="时序14时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="13" Grid.Column="3" Name="tbx_RecipeSeq14_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
 
                                             <Label Grid.Row="14" Grid.Column="0" Content="时序15电流 (0.1A):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="14" Grid.Column="1" Name="tbx_RecipeSeq15_Current" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
-                                            <Label Grid.Row="14" Grid.Column="2" Content="时序15时间 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                            <Label Grid.Row="14" Grid.Column="2" Content="时序15时间 (0.01s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="14" Grid.Column="3" Name="tbx_RecipeSeq15_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
                                         </Grid>
                                     </GroupBox>

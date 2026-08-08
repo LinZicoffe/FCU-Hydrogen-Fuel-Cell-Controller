@@ -59,14 +59,14 @@ namespace FCU_氢燃料电池控.Models
         public ushort FanSpeed { get; set; }
 
         /// <summary>
-        /// 电堆温度 (0.1℃)
+        /// 电堆温度 (0.1℃，有符号，下位机下限 -40℃)
         /// </summary>
-        public ushort StackTemperature { get; set; }
+        public short StackTemperature { get; set; }
 
         /// <summary>
-        /// FCU控制器温度 (0.1℃)
+        /// FCU控制器温度 (0.1℃，有符号，下位机下限 -40℃)
         /// </summary>
-        public ushort FCUTemperature { get; set; }
+        public short FCUTemperature { get; set; }
 
         /// <summary>
         /// 累计运行时间 (秒)
@@ -287,15 +287,33 @@ namespace FCU_氢燃料电池控.Models
         }
 
         /// <summary>
-        /// 获取报警数值描述
-        /// 0x0008(BMS故障): AlarmValue为BMS故障位图(reg139), 按附表3解码 [上位机优化计划 h-t6]
-        /// 其余类型: 返回原始数值
+        /// 获取报警数值描述。
+        /// AlarmValue 的单位随报警类型而变，需分别换算，下位机 fcu_control.c 的实际口径：
+        ///   0x0001/0x0003 压力类  → KPA 原值        (fcu_control.c:220,327,350,362)
+        ///   0x0002        温度过高 → 温度×10 (0.1℃)  (fcu_control.c:380)
+        ///   0x0006        DCDC异常 → 电压×10 (0.1V)  (fcu_control.c:194,420)
+        ///   0x0008        BMS故障  → reg139 故障位图  (fcu_control.c:109)
+        /// 0x0005(电压异常)/0x0009(FCU过热) 固件当前无触发点，按同类语义预置换算。
         /// </summary>
         public string GetAlarmValueDescription()
         {
-            return AlarmType == 0x0008
-                ? BmsBitDecoder.DecodeFault(AlarmValue)
-                : AlarmValue.ToString();
+            return AlarmType switch
+            {
+                // 压力类：固件直接送 KPA 原值，不缩放
+                0x0001 or 0x0003 => $"{AlarmValue} KPA",
+
+                // 温度类：固件送 温度×10，按有符号还原（下位机允许负温）
+                0x0002 or 0x0009 => $"{(short)AlarmValue / 10.0:F1} ℃",
+
+                // 电压类：固件送 电压×10
+                0x0005 or 0x0006 => $"{AlarmValue / 10.0:F1} V",
+
+                // BMS故障：AlarmValue 为 BMS 故障位图(reg139), 按附表3解码 [上位机优化计划 h-t6]
+                0x0008 => BmsBitDecoder.DecodeFault(AlarmValue),
+
+                // 0x0004 风扇异常 / 0x0007 阀门异常：固件无触发点，单位未定义，原值输出
+                _ => AlarmValue.ToString()
+            };
         }
 
         /// <summary>

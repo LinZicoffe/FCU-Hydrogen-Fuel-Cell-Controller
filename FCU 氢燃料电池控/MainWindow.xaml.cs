@@ -125,6 +125,8 @@ namespace FCU_氢燃料电池控
 
             // BMS Modbus 主站服务初始化 [上位机优化计划 h-t4]
             _bmsService = new BmsService(serialPortManager);
+            // 总线仲裁第二条件: 与固件 fcu_modbus.c 对齐，AA55 半接收状态下不插入 Modbus 请求
+            _bmsService.IsAa55Idle = () => _protocolHandler?.IsIdle ?? true;
             _bmsService.DataUpdated += OnBmsDataUpdated;
             _bmsService.StatusChanged += msg => Dispatcher.Invoke(() => UpdateStatus(msg));
             _bmsService.ErrorOccurred += msg => Dispatcher.Invoke(() => { HC.Growl.Warning(msg); UpdateStatus(msg); });
@@ -822,11 +824,24 @@ namespace FCU_氢燃料电池控
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
 
-                byte lowDuty = byte.Parse(tbx_FanLowDuty.Text);
-                ushort tempMin = ushort.Parse(tbx_TempMin.Text);
-                ushort tempMax = ushort.Parse(tbx_TempMax.Text);
-                ushort fullSpeedTime = ushort.Parse(tbx_FanFullSpeedTime.Text);
-                ushort lowTempCheckTime = ushort.Parse(tbx_LowTempCheckTime.Text);
+                // 下位机 fcu_handle_set_fan_temp() 要求：占空比≤100、各项非0、温度下限<上限，
+                // 命中任一条则整帧 5 个字段全部不生效
+                if (!TryParseRange(tbx_FanLowDuty, "低速占空比", 0, 100, "%", out ushort lowDutyValue) ||
+                    !TryParseRange(tbx_TempMin, "温度下限", 1, ushort.MaxValue, "0.1℃", out ushort tempMin) ||
+                    !TryParseRange(tbx_TempMax, "温度上限", 1, ushort.MaxValue, "0.1℃", out ushort tempMax) ||
+                    !TryParseRange(tbx_FanFullSpeedTime, "全速运行时长", 1, ushort.MaxValue, "0.1s", out ushort fullSpeedTime) ||
+                    !TryParseRange(tbx_LowTempCheckTime, "低温检测时长", 1, ushort.MaxValue, "0.1s", out ushort lowTempCheckTime))
+                {
+                    return;
+                }
+
+                if (tempMin >= tempMax)
+                {
+                    HC.Growl.Warning($"温度下限({tempMin})必须小于温度上限({tempMax})，固件会拒绝整帧");
+                    return;
+                }
+
+                byte lowDuty = (byte)lowDutyValue;
 
                 byte[] data = new byte[11];
                 data[0] = 0x04; data[1] = 0x01;
@@ -867,27 +882,28 @@ namespace FCU_氢燃料电池控
                 data[1] = 0x01; // 参数类型ID 低字节
                 data[2] = 15;   // 时序总数
 
-                ushort[] currents = {
-                    ushort.Parse(tbx_Seq1_Current.Text), ushort.Parse(tbx_Seq2_Current.Text),
-                    ushort.Parse(tbx_Seq3_Current.Text), ushort.Parse(tbx_Seq4_Current.Text),
-                    ushort.Parse(tbx_Seq5_Current.Text), ushort.Parse(tbx_Seq6_Current.Text),
-                    ushort.Parse(tbx_Seq7_Current.Text), ushort.Parse(tbx_Seq8_Current.Text),
-                    ushort.Parse(tbx_Seq9_Current.Text), ushort.Parse(tbx_Seq10_Current.Text),
-                    ushort.Parse(tbx_Seq11_Current.Text), ushort.Parse(tbx_Seq12_Current.Text),
-                    ushort.Parse(tbx_Seq13_Current.Text), ushort.Parse(tbx_Seq14_Current.Text),
-                    ushort.Parse(tbx_Seq15_Current.Text)
+                TextBox[] currentBoxes = {
+                    tbx_Seq1_Current, tbx_Seq2_Current, tbx_Seq3_Current,
+                    tbx_Seq4_Current, tbx_Seq5_Current, tbx_Seq6_Current,
+                    tbx_Seq7_Current, tbx_Seq8_Current, tbx_Seq9_Current,
+                    tbx_Seq10_Current, tbx_Seq11_Current, tbx_Seq12_Current,
+                    tbx_Seq13_Current, tbx_Seq14_Current, tbx_Seq15_Current
+                };
+                TextBox[] timeBoxes = {
+                    tbx_Seq1_Time, tbx_Seq2_Time, tbx_Seq3_Time,
+                    tbx_Seq4_Time, tbx_Seq5_Time, tbx_Seq6_Time,
+                    tbx_Seq7_Time, tbx_Seq8_Time, tbx_Seq9_Time,
+                    tbx_Seq10_Time, tbx_Seq11_Time, tbx_Seq12_Time,
+                    tbx_Seq13_Time, tbx_Seq14_Time, tbx_Seq15_Time
                 };
 
-                ushort[] times = {
-                    ushort.Parse(tbx_Seq1_Time.Text), ushort.Parse(tbx_Seq2_Time.Text),
-                    ushort.Parse(tbx_Seq3_Time.Text), ushort.Parse(tbx_Seq4_Time.Text),
-                    ushort.Parse(tbx_Seq5_Time.Text), ushort.Parse(tbx_Seq6_Time.Text),
-                    ushort.Parse(tbx_Seq7_Time.Text), ushort.Parse(tbx_Seq8_Time.Text),
-                    ushort.Parse(tbx_Seq9_Time.Text), ushort.Parse(tbx_Seq10_Time.Text),
-                    ushort.Parse(tbx_Seq11_Time.Text), ushort.Parse(tbx_Seq12_Time.Text),
-                    ushort.Parse(tbx_Seq13_Time.Text), ushort.Parse(tbx_Seq14_Time.Text),
-                    ushort.Parse(tbx_Seq15_Time.Text)
-                };
+                // 下位机对时序表整帧校验，任一步非法则 15 步全部不生效，
+                // 因此发送前先逐步校验并明确指出出错的时序编号
+                if (!TryParseLoadSequences(currentBoxes, timeBoxes,
+                        out ushort[] currents, out ushort[] times))
+                {
+                    return;
+                }
 
                 for (int i = 0; i < 15; i++)
                 {
@@ -962,11 +978,20 @@ namespace FCU_氢燃料电池控
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
 
-                ushort peakCurrent = ushort.Parse(tbx_LoadPeakCurrent.Text);
-                ushort lockFactor = ushort.Parse(tbx_LoadLockFactor.Text);
+                // 下位机 fcu_protocol_set_load_control() 的校验范围，发送前先本地拦截
+                if (!TryParseRange(tbx_LoadPeakCurrent, "峰值电流",
+                        1, LoadMaxCurrent0P1A, "0.1A", out ushort peakCurrent) ||
+                    !TryParseRange(tbx_LoadLockFactor, "锁定系数",
+                        0, 1000, "0.001", out ushort lockFactor) ||
+                    !TryParseRange(tbx_LoadMinVoltage, "最低电压",
+                        1, ushort.MaxValue, "0.1V", out ushort minVoltage) ||
+                    !TryParseRange(tbx_LoadCurrentStep, "电流步长",
+                        1, ushort.MaxValue, "0.1A", out ushort currentStep))
+                {
+                    return;
+                }
+
                 byte lockFlag = (byte)(chk_LoadLockFlag.IsChecked == true ? 1 : 0);
-                ushort minVoltage = ushort.Parse(tbx_LoadMinVoltage.Text);
-                ushort currentStep = ushort.Parse(tbx_LoadCurrentStep.Text);
 
                 byte[] data = new byte[11];
                 data[0] = 0x05; data[1] = 0x02;
@@ -1025,9 +1050,25 @@ namespace FCU_氢燃料电池控
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
 
-                byte firstCount = byte.Parse(tbx_LoadFirstCount.Text);
-                ushort firstInterval = ushort.Parse(tbx_LoadFirstInterval.Text);
-                ushort normalInterval = ushort.Parse(tbx_LoadNormalInterval.Text);
+                // 下位机 fcu_control_set_load_startup_params() 的校验范围，发送前先本地拦截
+                if (!TryParseRange(tbx_LoadFirstCount, "首次拉载次数",
+                        1, 255, "次", out ushort firstCountValue) ||
+                    !TryParseRange(tbx_LoadFirstInterval, "首次拉载间隔",
+                        1, ushort.MaxValue, "分钟", out ushort firstInterval) ||
+                    !TryParseRange(tbx_LoadNormalInterval, "正常拉载间隔",
+                        1, ushort.MaxValue, "分钟", out ushort normalInterval))
+                {
+                    return;
+                }
+
+                // 下位机要求 normal_interval > first_interval，否则整帧被拒
+                if (normalInterval <= firstInterval)
+                {
+                    HC.Growl.Warning($"正常拉载间隔({normalInterval}分钟)必须大于首次拉载间隔({firstInterval}分钟)");
+                    return;
+                }
+
+                byte firstCount = (byte)firstCountValue;
 
                 byte[] data = new byte[7];
                 data[0] = 0x05; data[1] = 0x03;
@@ -1110,7 +1151,13 @@ namespace FCU_氢燃料电池控
                 }
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
-                ushort scanPeriod = ushort.Parse(tbx_ScanPeriod.Text);
+
+                // 下位机 fcu_handle_set_general() 拒绝 scan_period == 0
+                if (!TryParseRange(tbx_ScanPeriod, "扫描周期",
+                        1, ushort.MaxValue, "0.1s", out ushort scanPeriod))
+                {
+                    return;
+                }
 
                 byte[] data = new byte[4];
                 data[0] = 0x09; data[1] = 0x01;
@@ -1125,6 +1172,114 @@ namespace FCU_氢燃料电池控
                 HC.Growl.Error($"设置失败: {ex.Message}");
             }
         }
+
+        #region 参数前端校验
+
+        /// <summary>
+        /// 拉载电流上限（0.1A），对应下位机 FCU_DCDC_MAX_CURRENT_0P1A = 500（50.0A）
+        /// </summary>
+        private const ushort LoadMaxCurrent0P1A = 500;
+
+        /// <summary>
+        /// 解析文本框并做范围校验，非法时抛 ArgumentException。
+        /// 供 SetParameter() 的 dataBuilder 委托使用——那里已有统一的 try-catch 展示错误信息。
+        /// </summary>
+        /// <param name="box">待校验的文本框</param>
+        /// <param name="fieldName">字段显示名</param>
+        /// <param name="min">允许的最小值（含）</param>
+        /// <param name="max">允许的最大值（含）</param>
+        /// <param name="unit">单位说明</param>
+        private static ushort ParseRequiredField(TextBox box, string fieldName,
+            int min, int max, string unit)
+        {
+            if (!ushort.TryParse(box.Text?.Trim(), out ushort value))
+            {
+                box.Focus();
+                box.SelectAll();
+                throw new ArgumentException($"{fieldName}「{box.Text}」不是合法整数");
+            }
+
+            if (value < min || value > max)
+            {
+                box.Focus();
+                box.SelectAll();
+                throw new ArgumentException(
+                    $"{fieldName}超出范围：{value}，允许 {min}~{max}（{unit}）");
+            }
+
+            return value;
+        }
+
+        /// <summary>
+        /// 解析文本框中的 ushort 并做范围校验，失败时给出明确提示并聚焦到出错控件
+        /// </summary>
+        /// <param name="box">待校验的文本框</param>
+        /// <param name="fieldName">字段显示名，用于提示信息</param>
+        /// <param name="min">允许的最小值（含）</param>
+        /// <param name="max">允许的最大值（含）</param>
+        /// <param name="unit">单位说明，用于提示信息</param>
+        /// <param name="value">解析成功后的值</param>
+        /// <returns>校验通过返回 true</returns>
+        private static bool TryParseRange(TextBox box, string fieldName,
+            int min, int max, string unit, out ushort value)
+        {
+            value = 0;
+
+            if (!ushort.TryParse(box.Text?.Trim(), out ushort parsed))
+            {
+                HC.Growl.Warning($"{fieldName}「{box.Text}」不是合法整数");
+                box.Focus();
+                box.SelectAll();
+                return false;
+            }
+
+            if (parsed < min || parsed > max)
+            {
+                HC.Growl.Warning($"{fieldName}超出范围：{parsed}，允许 {min}~{max}（{unit}）");
+                box.Focus();
+                box.SelectAll();
+                return false;
+            }
+
+            value = parsed;
+            return true;
+        }
+
+        /// <summary>
+        /// 校验并解析 15 组拉载时序。下位机对时序表整帧校验（电流 1~500、时间 ≥1），
+        /// 任一步非法会导致整张表都不生效，因此这里逐步校验并指明出错的时序编号。
+        /// </summary>
+        /// <param name="currentBoxes">15 个电流文本框</param>
+        /// <param name="timeBoxes">15 个时间文本框</param>
+        /// <param name="currents">解析出的电流数组（0.1A）</param>
+        /// <param name="times">解析出的时间数组（0.01s）</param>
+        /// <returns>全部校验通过返回 true</returns>
+        private static bool TryParseLoadSequences(TextBox[] currentBoxes, TextBox[] timeBoxes,
+            out ushort[] currents, out ushort[] times)
+        {
+            int count = currentBoxes.Length;
+            currents = new ushort[count];
+            times = new ushort[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                if (!TryParseRange(currentBoxes[i], $"时序{i + 1}电流",
+                        1, LoadMaxCurrent0P1A, "0.1A", out currents[i]))
+                {
+                    return false;
+                }
+
+                if (!TryParseRange(timeBoxes[i], $"时序{i + 1}时间",
+                        1, ushort.MaxValue, "0.01s", out times[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        #endregion
 
         #region 拉载手动控制
 
@@ -1322,39 +1477,31 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 读取所有压力参数并构建数据帧（16字节）- 从ViewModel获取
         /// </summary>
-        private byte[] BuildPressureParamsData()
-        {
-            ushort highPressureMin = ushort.Parse(_viewModel?.HighPressureMin ?? "100");
-            ushort highPressureRed = ushort.Parse(_viewModel?.HighPressureRed ?? "250");
-            ushort highPressureYellow = ushort.Parse(_viewModel?.HighPressureYellow ?? "500");
-            ushort lowPressureMin = ushort.Parse(_viewModel?.LowPressureMin ?? "35");
-            ushort lowPressureMax = ushort.Parse(_viewModel?.LowPressureMax ?? "65");
-            ushort highPressureRange = ushort.Parse(_viewModel?.HighPressureRange ?? "5000");
-            ushort lowPressureRange = ushort.Parse(_viewModel?.LowPressureRange ?? "250");
-
-            byte[] data = new byte[ProtocolConstants.PRESSURE_PARAMS_DATA_LENGTH];
-            data[0] = 0x01; data[1] = 0x01;
-            data[2] = (byte)(highPressureMin >> 8); data[3] = (byte)(highPressureMin & 0xFF);
-            data[4] = (byte)(highPressureRed >> 8); data[5] = (byte)(highPressureRed & 0xFF);
-            data[6] = (byte)(highPressureYellow >> 8); data[7] = (byte)(highPressureYellow & 0xFF);
-            data[8] = (byte)(lowPressureMin >> 8); data[9] = (byte)(lowPressureMin & 0xFF);
-            data[10] = (byte)(lowPressureMax >> 8); data[11] = (byte)(lowPressureMax & 0xFF);
-            data[12] = (byte)(highPressureRange >> 8); data[13] = (byte)(highPressureRange & 0xFF);
-            data[14] = (byte)(lowPressureRange >> 8); data[15] = (byte)(lowPressureRange & 0xFF);
-
-            return data;
-        }
+        // 压力参数帧构建已统一到 ViewModels/MainViewModel.BuildPressureParamsData()（含合法性校验），
+        // 此处原有的同名重复实现已删除，避免默认值两处维护而不一致。
 
         /// <summary>
         /// 读取所有阀门参数并构建数据帧（12字节）
         /// </summary>
         private byte[] BuildValveParamsData()
         {
-            ushort firstOpen = ushort.Parse(tbx_ValveFirstOpen.Text);
-            ushort secondOpen = ushort.Parse(tbx_ValveSecondOpen.Text);
-            ushort normalInterval = ushort.Parse(tbx_ValveNormalInterval.Text);
-            ushort normalOpen = ushort.Parse(tbx_ValveNormalOpen.Text);
-            ushort shutdownOpen = ushort.Parse(tbx_ValveShutdownOpen.Text);
+            // 下位机 fcu_handle_set_valve() 的校验条件，命中则整帧 5 个字段全部不生效
+            ushort firstOpen = ParseRequiredField(tbx_ValveFirstOpen, "开机第一次时长", 1, ushort.MaxValue, "0.1s");
+            ushort secondOpen = ParseRequiredField(tbx_ValveSecondOpen, "开机第二次时长", 1, ushort.MaxValue, "0.1s");
+            ushort normalInterval = ParseRequiredField(tbx_ValveNormalInterval, "正常周期间隔", 1, ushort.MaxValue, "0.1s");
+            ushort normalOpen = ParseRequiredField(tbx_ValveNormalOpen, "正常打开时长", 1, ushort.MaxValue, "0.1s");
+            ushort shutdownOpen = ParseRequiredField(tbx_ValveShutdownOpen, "关机打开时长", 1, ushort.MaxValue, "0.1s");
+
+            if (normalInterval <= normalOpen)
+            {
+                throw new ArgumentException(
+                    $"正常周期间隔({normalInterval})必须大于正常打开时长({normalOpen})，固件会拒绝整帧");
+            }
+            if (secondOpen <= firstOpen)
+            {
+                throw new ArgumentException(
+                    $"开机第二次时长({secondOpen})必须大于开机第一次时长({firstOpen})，固件会拒绝整帧");
+            }
 
             byte[] data = new byte[12];
             data[0] = 0x02; data[1] = 0x01;
@@ -1372,8 +1519,15 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private byte[] BuildDCDCParamsData()
         {
-            ushort minVoltage = ushort.Parse(tbx_DCDCMinVoltage.Text);
-            ushort stopVoltage = ushort.Parse(tbx_DCDCStopVoltage.Text);
+            // 下位机 fcu_handle_set_dcdc() 要求两者非 0 且 最低工作电压 > 放电截至电压
+            ushort minVoltage = ParseRequiredField(tbx_DCDCMinVoltage, "最低工作电压", 1, ushort.MaxValue, "0.1V");
+            ushort stopVoltage = ParseRequiredField(tbx_DCDCStopVoltage, "放电截至电压", 1, ushort.MaxValue, "0.1V");
+
+            if (minVoltage <= stopVoltage)
+            {
+                throw new ArgumentException(
+                    $"最低工作电压({minVoltage})必须大于放电截至电压({stopVoltage})，固件会拒绝整帧");
+            }
 
             byte[] data = new byte[6];
             data[0] = 0x03; data[1] = 0x01;
@@ -1468,9 +1622,10 @@ namespace FCU_氢燃料电池控
                     Dispatcher.BeginInvoke(() => _bmsService.AppendReceivedBytes(copy));
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // 异常时忽略
+                // 串口拔出、句柄失效等会走到这里，静默会让用户以为设备还在通信
+                Dispatcher.BeginInvoke(() => UpdateStatus($"串口接收异常: {ex.Message}"));
             }
         }
 
@@ -1481,9 +1636,10 @@ namespace FCU_氢燃料电池控
         {
             AppendCommunicationFrame(CommunicationDirection.Rx, frame);
 
+            byte functionCode = 0;
             try
             {
-                byte functionCode = ResponseParser.GetFunctionCode(frame);
+                functionCode = ResponseParser.GetFunctionCode(frame);
 
                 switch (functionCode)
                 {
@@ -1534,11 +1690,17 @@ namespace FCU_氢燃料电池控
                     case 0xF2: // 拉载状态上报
                         HandleLoadStatusReport(frame);
                         break;
+
+                    default:
+                        UpdateStatus($"收到未知响应码 0x{functionCode:X2}，已忽略");
+                        break;
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // 异常时忽略
+                // 不能静默吞掉：这层 catch 之下是全部响应解析与 UI 更新，
+                // 静默会表现为「点了读取但某几个框不更新」且无任何线索，极难定位
+                UpdateStatus($"响应处理异常 (功能码 0x{functionCode:X2}): {ex.Message}");
             }
         }
 
@@ -1621,13 +1783,32 @@ namespace FCU_氢燃料电池控
                 string message = result switch
                 {
                     0x00 => "电堆启动成功",
-                    0x01 => "启动失败：压力不足",
-                    0x02 => "启动失败：设备忙",
-                    0x03 => "启动失败：其他原因",
+                    0x01 => "启动失败：高压压力低于高压最小值",
+                    0x02 => "启动失败：设备忙（非关机态）",
+                    // 下位机 fcu_control_check_start_conditions() 有三条路径都返回 0x03，
+                    // 协议无法区分，这里把三种可能都列出，并在 SOC 已知超限时直接点名
+                    0x03 => BuildStartFail03Message(),
                     _ => $"启动响应异常 (错误码: 0x{result:X2})"
                 };
                 UpdateStatus(message);
             });
+        }
+
+        /// <summary>
+        /// 组装启动失败 0x03 的提示文案。
+        /// 下位机 0x03 覆盖三种条件（低压超区间 / 电堆温度≥风扇上限 / SOC&gt;90），
+        /// 响应码本身无法区分，若已知 SOC 超限则直接点名，否则列出全部可能。
+        /// </summary>
+        private string BuildStartFail03Message()
+        {
+            var bms = _bmsService?.Data;
+            if (bms != null && bms.Online && bms.Soc > SocStartMax)
+            {
+                return $"启动失败：SOC={bms.Soc}% 超过下位机门控上限 {SocStartMax}%";
+            }
+
+            return "启动失败：启动条件不满足（低压超出上下限 / 电堆温度≥风扇温度上限 / "
+                 + $"SOC>{SocStartMax}%），请检查「系统监控」中的压力与温度";
         }
 
         /// <summary>
@@ -1716,6 +1897,57 @@ namespace FCU_氢燃料电池控
         }
 
         /// <summary>
+        /// 手动归还 BMS 总线给 FCU (0x0D en=1)。
+        /// 固件把该使能位持久化到 Flash，上位机若异常退出(崩溃/掉线)，en=0 会残留，
+        /// 导致 FCU 重启后仍不轮询 BMS，SOC 门控与 BMS 故障耦合永久静默失效。
+        /// 此按钮提供在正常关闭路径之外的自救手段。
+        /// </summary>
+        private void btn_ReturnBmsPoll_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_isSerialOpen)
+            {
+                HC.Growl.Warning("请先打开串口");
+                return;
+            }
+
+            var confirm = MessageBox.Show(
+                "将向 FCU 发送「启用 BMS 轮询」(0x0D en=1)，恢复固件自身的 BMS Modbus 轮询。\n\n" +
+                "注意：\n" +
+                "· 固件会写 Flash（整页擦写），请勿频繁操作\n" +
+                "· 恢复后 FCU 与上位机会同时读 BMS，可能出现总线竞争\n" +
+                "· 建议仅在上位机异常退出后、需要恢复 FCU 侧门控时使用\n\n" +
+                "确定继续？",
+                "归还 BMS 总线", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+
+            if (confirm != MessageBoxResult.OK)
+                return;
+
+            // 停止上位机自身轮询，避免归还后双主站同时抢总线
+            _bmsService?.StopPolling();
+
+            _bmsPollAckReceived = false;
+            SendBmsPollEnable(1);
+
+            int start = Environment.TickCount;
+            while (!_bmsPollAckReceived && Environment.TickCount - start < 300)
+            {
+                DoEvents();
+                Thread.Sleep(10);
+            }
+
+            if (_bmsPollAckReceived)
+            {
+                UpdateStatus("已归还 BMS 总线，FCU 侧轮询已启用");
+                HC.Growl.Success("FCU 已确认启用 BMS 轮询");
+            }
+            else
+            {
+                UpdateStatus("归还 BMS 总线：未收到 FCU 确认");
+                HC.Growl.Warning("未收到 FCU 的 0x8D 确认，请检查连接后重试");
+            }
+        }
+
+        /// <summary>
         /// 关闭串口前: 归还 BMS 总线 (发 en=1 并等 0x8D 确认, 最多300ms)
         /// [R6] 未确认则警告, 防"以为恢复了其实没有"
         /// </summary>
@@ -1780,6 +2012,17 @@ namespace FCU_氢燃料电池控
 
             Dispatcher.Invoke(() =>
             {
+                // 先校验再解析：Parse*Params 在长度不符时会静默返回全 0 对象，
+                // 若直接更新 UI，用户会看到一片 0 却被告知「读取成功」，无法察觉解析失败
+                if (!ResponseParser.TryValidateReadConfigResponse(frame, paramTypeID,
+                        out string failReason))
+                {
+                    string msg = $"配置参数 0x{paramTypeID:X4} 解析失败：{failReason}";
+                    UpdateStatus(msg);
+                    HC.Growl.Warning(msg);
+                    return;
+                }
+
                 switch (paramTypeID)
                 {
                     case 0x0101: // 压力参数
@@ -1827,9 +2070,14 @@ namespace FCU_氢燃料电池控
                         var generalParams = ResponseParser.ParseGeneralParams(frame);
                         UpdateGeneralParams(generalParams);
                         break;
+
+                    default:
+                        // 校验已通过但此处无分支，说明新增了参数ID却漏了 UI 更新
+                        UpdateStatus($"参数 0x{paramTypeID:X4} 已收到但无对应界面更新逻辑");
+                        return;
                 }
 
-                UpdateStatus("配置参数读取成功");
+                UpdateStatus($"配置参数 0x{paramTypeID:X4} 读取成功");
             });
         }
 
@@ -1862,22 +2110,31 @@ namespace FCU_氢燃料电池控
         #region UI更新方法
 
         /// <summary>
-        /// 更新ViewModel中的电堆信息（MVVM模式）
+        /// 电堆工作状态码转中文。对应下位机 fcu_control.h 的 FCU_CTRL_STATE_* 定义。
+        /// 供 0x87 电堆信息响应与 0xF1 状态变更上报共用。
         /// </summary>
-        private void UpdateViewModelStackInfo(StackInfoData data)
+        private static string GetStackStateName(byte state)
         {
-            if (_viewModel == null) return;
-            
-            _viewModel.StackState = data.WorkState switch
+            return state switch
             {
                 0 => "关机",
                 1 => "启动中",
                 2 => "运行",
                 3 => "故障",
                 4 => "关机中",
-                _ => "未知"
+                _ => $"未知({state})"
             };
-            
+        }
+
+        /// <summary>
+        /// 更新ViewModel中的电堆信息（MVVM模式）
+        /// </summary>
+        private void UpdateViewModelStackInfo(StackInfoData data)
+        {
+            if (_viewModel == null) return;
+
+            _viewModel.StackState = GetStackStateName(data.WorkState);
+
             _viewModel.HighPressure = data.HighPressure.ToString();
             _viewModel.LowPressure = data.LowPressure.ToString();
             _viewModel.HydrogenValveState = data.HydrogenValveState == 1 ? "打开" : "关闭";
@@ -2010,27 +2267,27 @@ namespace FCU_氢燃料电池控
                     return;
                 }
 
+                // 固件 fcu_protocol_set_flow_params() 要求四个 purge 时长均 ≥1，否则整帧 7 个字段全不生效
+                if (!TryParseRange(tbx_PurgeH2Open1, "purge进氢第一次开", 1, ushort.MaxValue, "0.1s", out ushort purgeOpen1) ||
+                    !TryParseRange(tbx_PurgeH2Close, "purge进氢关断", 1, ushort.MaxValue, "0.1s", out ushort purgeClose) ||
+                    !TryParseRange(tbx_PurgeH2Open2, "purge进氢第二次开", 1, ushort.MaxValue, "0.1s", out ushort purgeOpen2) ||
+                    !TryParseRange(tbx_PurgeDrainHold, "关机排水保持", 1, ushort.MaxValue, "0.1s", out ushort purgeDrainHold) ||
+                    !TryParseRange(tbx_LowNormalRef, "低压反馈排水阈值", 1, ushort.MaxValue, "kPa", out ushort lowNormalRef) ||
+                    !TryParseRange(tbx_LoadDuty, "拉载风扇占空比", 0, 100, "%", out ushort loadDuty))
+                {
+                    return;
+                }
+
                 var p = new FlowParams
                 {
-                    PurgeH2Open1 = ushort.Parse(tbx_PurgeH2Open1.Text),
-                    PurgeH2Close = ushort.Parse(tbx_PurgeH2Close.Text),
-                    PurgeH2Open2 = ushort.Parse(tbx_PurgeH2Open2.Text),
-                    PurgeDrainHold = ushort.Parse(tbx_PurgeDrainHold.Text),
+                    PurgeH2Open1 = purgeOpen1,
+                    PurgeH2Close = purgeClose,
+                    PurgeH2Open2 = purgeOpen2,
+                    PurgeDrainHold = purgeDrainHold,
                     DrainMode = (byte)(cbx_DrainMode.SelectedIndex == 1 ? 1 : 0),
-                    LowNormalRef = ushort.Parse(tbx_LowNormalRef.Text),
-                    LoadDuty = byte.Parse(tbx_LoadDuty.Text)
+                    LowNormalRef = lowNormalRef,
+                    LoadDuty = (byte)loadDuty
                 };
-
-                if (p.LowNormalRef == 0)
-                {
-                    HC.Growl.Warning("低压反馈排水阈值必须 ≥1 kPa (固件将拒绝0)");
-                    return;
-                }
-                if (p.LoadDuty > 100)
-                {
-                    HC.Growl.Warning("拉载风扇占空比必须 ≤100%");
-                    return;
-                }
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
                 byte[] data = ResponseParser.BuildFlowParamsData(p);
@@ -2207,6 +2464,22 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void ShowStateChange(StateChangeData stateChange)
         {
+            // 0x0101 电堆工作状态：下位机只在状态跳变时上报，是关闭轮询时唯一的实时状态通道，
+            // 因此必须同步刷新主界面状态显示，否则会一直停留在上次 0x87 响应的旧值
+            if (stateChange.StateType == 0x0101)
+            {
+                string oldName = GetStackStateName(stateChange.OldState);
+                string newName = GetStackStateName(stateChange.NewState);
+
+                if (_viewModel != null)
+                {
+                    _viewModel.StackState = newName;
+                }
+
+                UpdateStatus($"状态变更：{stateChange.GetStateTypeName()}: {oldName} → {newName}");
+                return;
+            }
+
             string message = $"{stateChange.GetStateTypeName()}: {stateChange.OldState} → {stateChange.NewState}";
             UpdateStatus($"状态变更：{message}");
         }
@@ -2442,7 +2715,13 @@ namespace FCU_氢燃料电池控
                 return;
             }
 
+            // SOC 条件着色: 下位机 fcu_control.c 硬编码 SOC>90 拒绝启动、SOC>85 运行中自动停机
             tbk_BMS_SOC.Text = data.Soc.ToString();
+            tbk_BMS_SOC.Foreground = data.Soc > SocStartMax
+                ? new SolidColorBrush(Color.FromRgb(0xF4, 0x43, 0x36))   // 红: 拒绝启动
+                : data.Soc > SocStopHigh
+                    ? new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00)) // 橙: 运行中会自动停机
+                    : new SolidColorBrush(Color.FromRgb(0x21, 0x21, 0x21));
             tbk_BMS_SOH.Text = data.Soh.ToString();
             tbk_BMS_RemainCapacity.Text = data.RemainCapacity.ToString("F2");
             tbk_BMS_RatedCapacity.Text = data.RatedCapacity.ToString("F2");
@@ -2463,12 +2742,62 @@ namespace FCU_氢燃料电池控
             tbk_BMS_SeriesCells.Text = data.SeriesCells.ToString();
 
             // 故障信息区: reg137告警/138保护/139故障 位解码 [BMS协议 附表1/2/3]
+            // 保护位中带「⚠」的会阻断 FCU 拉载 (对应固件 FCU_BMS_PROTECT_CRITICAL_MASK)
             tbx_BMS_CurrentFault.Text =
                 $"告警: {BmsBitDecoder.DecodeAlarm(data.AlarmStatus)}\n" +
                 $"保护: {BmsBitDecoder.DecodeProtect(data.ProtectStatus)}\n" +
                 $"故障: {BmsBitDecoder.DecodeFault(data.FaultStatus)}";
             // 历史记录需读reg2400+, 本期不支持
             tbx_BMS_HistoryFault.Text = "--";
+
+            UpdateLoadBlockBanner(data);
+        }
+
+        /// <summary>
+        /// 下位机 fcu_control.c 的 SOC 门控阈值 (硬编码, 协议层无法查询):
+        /// FCU_SOC_START_MAX = 90 → SOC>90 拒绝启动电堆 (0x88 返回 0x03「其他原因」)
+        /// </summary>
+        private const int SocStartMax = 90;
+
+        /// <summary>
+        /// FCU_SOC_STOP_HIGH = 85 → 运行中 SOC>85 自动停机 (不触发 0xF0 报警, 仅 0xF1 状态变更)
+        /// </summary>
+        private const int SocStopHigh = 85;
+
+        /// <summary>
+        /// 刷新拉载控制 Tab 顶部的 BMS 阻断提示条。
+        /// 下位机 fcu_control_start_load() 等入口在 BMS 阻断时是静默 return，
+        /// 0x82 响应仍回 0x00 成功，上位机会显示「设置成功」而拉载实际没启动，
+        /// 因此必须把阻断状态与原因主动呈现出来。
+        /// </summary>
+        private void UpdateLoadBlockBanner(BmsData data)
+        {
+            var reasons = new List<string>();
+
+            if (BmsBitDecoder.IsLoadBlocked(data.ProtectStatus, data.SystemStatus, out string bmsReason))
+            {
+                reasons.Add(bmsReason);
+            }
+
+            if (data.Soc > SocStartMax)
+            {
+                reasons.Add($"SOC={data.Soc}% > {SocStartMax}%，下位机拒绝启动电堆");
+            }
+            else if (data.Soc > SocStopHigh)
+            {
+                reasons.Add($"SOC={data.Soc}% > {SocStopHigh}%，运行中会被自动停机");
+            }
+
+            if (reasons.Count > 0)
+            {
+                tbk_LoadBlockReason.Text = "⚠ BMS 阻断拉载 — " + string.Join("; ", reasons)
+                    + "（下位机会静默拒绝拉载指令，仍回「设置成功」）";
+                bd_LoadBlockBanner.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                bd_LoadBlockBanner.Visibility = Visibility.Collapsed;
+            }
         }
 
         /// <summary>
@@ -2489,6 +2818,7 @@ namespace FCU_氢燃料电池控
         private void ResetBmsDisplay()
         {
             tbk_BMS_SOC.Text = "--";
+            tbk_BMS_SOC.Foreground = new SolidColorBrush(Color.FromRgb(0x21, 0x21, 0x21));
             tbk_BMS_SOH.Text = "--";
             tbk_BMS_RemainCapacity.Text = "--";
             tbk_BMS_RatedCapacity.Text = "--";
@@ -2507,6 +2837,13 @@ namespace FCU_氢燃料电池控
             tbk_BMS_SeriesCells.Text = "--";
             tbx_BMS_CurrentFault.Text = "--";
             tbx_BMS_HistoryFault.Text = "--";
+
+            // BMS 数据不可用时，下位机侧的 SOC 门控与 BMS 故障耦合同样处于失效状态
+            // (fcu_control_bms_couple() 在 !online 时清零 s_bms_load_block)，这是安全相关的降级
+            tbk_LoadBlockReason.Text =
+                "⚠ BMS 数据不可用 — 下位机侧 SOC 门控与 BMS 故障耦合已失效，"
+                + "电堆可在 SOC 过高或 BMS 保护状态下被启动";
+            bd_LoadBlockBanner.Visibility = Visibility.Visible;
         }
 
         #endregion
@@ -2934,14 +3271,18 @@ namespace FCU_氢燃料电池控
                     tbx_RecipeSeq13_Time, tbx_RecipeSeq14_Time, tbx_RecipeSeq15_Time
                 };
 
+                if (!TryParseLoadSequences(currentBoxes, timeBoxes,
+                        out ushort[] currents, out ushort[] times))
+                {
+                    return;
+                }
+
                 for (int i = 0; i < 15; i++)
                 {
-                    ushort current = ushort.Parse(currentBoxes[i].Text);
-                    ushort time = ushort.Parse(timeBoxes[i].Text);
-                    data[3 + i * 4] = (byte)(current >> 8);
-                    data[4 + i * 4] = (byte)(current & 0xFF);
-                    data[5 + i * 4] = (byte)(time >> 8);
-                    data[6 + i * 4] = (byte)(time & 0xFF);
+                    data[3 + i * 4] = (byte)(currents[i] >> 8);
+                    data[4 + i * 4] = (byte)(currents[i] & 0xFF);
+                    data[5 + i * 4] = (byte)(times[i] >> 8);
+                    data[6 + i * 4] = (byte)(times[i] & 0xFF);
                 }
 
                 byte[] frame = BuildFrame(deviceAddress, ProtocolConstants.FUNC_SET_LOAD_PARAMS, data);
