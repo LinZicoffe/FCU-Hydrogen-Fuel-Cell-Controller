@@ -825,8 +825,8 @@ namespace FCU_氢燃料电池控
                 // 风扇温度数据域13B：参数ID + 5个原有字段 + fan_min_rpm。
                 // fan_min_rpm=0 表示不启用堵转检测。
                 if (!TryParseRange(tbx_FanLowDuty, "低速占空比", 0, 100, "%", out ushort lowDutyValue) ||
-                    !TryParseRange(tbx_TempMin, "温度下限", 1, ushort.MaxValue, "0.1℃", out ushort tempMin) ||
-                    !TryParseRange(tbx_TempMax, "温度上限", 1, ushort.MaxValue, "0.1℃", out ushort tempMax) ||
+                    !TryParseScaledRange(tbx_TempMin, "温度下限", 10m, 1, ushort.MaxValue, "℃", out ushort tempMin) ||
+                    !TryParseScaledRange(tbx_TempMax, "温度上限", 10m, 1, ushort.MaxValue, "℃", out ushort tempMax) ||
                     !TryParseRange(tbx_FanFullSpeedTime, "全速运行时长", 1, ushort.MaxValue, "0.1s", out ushort fullSpeedTime) ||
                     !TryParseRange(tbx_LowTempCheckTime, "低温检测时长", 1, ushort.MaxValue, "0.1s", out ushort lowTempCheckTime) ||
                     !TryParseRange(tbx_FanMinRpm, "风扇最低转速", 0, ushort.MaxValue, "RPM", out ushort fanMinRpm))
@@ -836,7 +836,7 @@ namespace FCU_氢燃料电池控
 
                 if (tempMin >= tempMax)
                 {
-                    HC.Growl.Warning($"温度下限({tempMin})必须小于温度上限({tempMax})，固件会拒绝整帧");
+                    HC.Growl.Warning($"温度下限({tempMin / 10m:0.0}℃)必须小于温度上限({tempMax / 10m:0.0}℃)，固件会拒绝整帧");
                     return;
                 }
 
@@ -2236,27 +2236,39 @@ namespace FCU_氢燃料电池控
             rpm = 0;
             duty = 0;
 
-            if (!int.TryParse(tbx_FanLowDuty.Text, out int lowDuty) || lowDuty < 0 || lowDuty > 100 ||
-                !int.TryParse(tbx_TempMin.Text, out int tempMinRaw) ||
-                !int.TryParse(tbx_TempMax.Text, out int tempMaxRaw) || tempMinRaw >= tempMaxRaw ||
+            bool parsedTempMin = decimal.TryParse(tbx_TempMin.Text, NumberStyles.Number,
+                    CultureInfo.CurrentCulture, out decimal tempMinDisplay)
+                || decimal.TryParse(tbx_TempMin.Text, NumberStyles.Number,
+                    CultureInfo.InvariantCulture, out tempMinDisplay);
+            bool parsedTempMax = decimal.TryParse(tbx_TempMax.Text, NumberStyles.Number,
+                    CultureInfo.CurrentCulture, out decimal tempMaxDisplay)
+                || decimal.TryParse(tbx_TempMax.Text, NumberStyles.Number,
+                    CultureInfo.InvariantCulture, out tempMaxDisplay);
+
+            if (!int.TryParse(tbx_Fan2MinDuty.Text, out int minDuty) || minDuty < 0 || minDuty > 100 ||
+                !int.TryParse(tbx_Fan2MaxDuty.Text, out int maxDuty) || maxDuty < minDuty || maxDuty > 100 ||
+                !parsedTempMin || !parsedTempMax || tempMinDisplay >= tempMaxDisplay ||
                 !int.TryParse(tbx_Fan2MaxRpm.Text, out int maxRpm) || maxRpm <= 0)
             {
                 return false;
             }
 
+            int tempMinRaw = (int)decimal.Round(tempMinDisplay * 10m, 0, MidpointRounding.AwayFromZero);
+            int tempMaxRaw = (int)decimal.Round(tempMaxDisplay * 10m, 0, MidpointRounding.AwayFromZero);
             int tempRaw = data.StackTemperature;
             if (tempRaw >= tempMaxRaw)
             {
-                duty = 100;
+                duty = maxDuty;
             }
             else if (tempRaw <= tempMinRaw)
             {
-                duty = lowDuty;
+                duty = minDuty;
             }
             else
             {
                 double ratio = (double)(tempRaw - tempMinRaw) / (tempMaxRaw - tempMinRaw);
-                duty = lowDuty + (int)((100 - lowDuty) * ratio);
+                duty = minDuty + (int)Math.Round((maxDuty - minDuty) * ratio,
+                    MidpointRounding.AwayFromZero);
             }
 
             rpm = (int)Math.Round(maxRpm * duty / 100.0, MidpointRounding.AwayFromZero);
@@ -2323,8 +2335,8 @@ namespace FCU_氢燃料电池控
         private void UpdateFanTempParams(FanTempParams data)
         {
             tbx_FanLowDuty.Text = data.LowSpeedDuty.ToString();
-            tbx_TempMin.Text = data.TempMin.ToString();
-            tbx_TempMax.Text = data.TempMax.ToString();
+            tbx_TempMin.Text = (data.TempMin / 10m).ToString("0.0", CultureInfo.CurrentCulture);
+            tbx_TempMax.Text = (data.TempMax / 10m).ToString("0.0", CultureInfo.CurrentCulture);
             tbx_FanFullSpeedTime.Text = data.FullSpeedTime.ToString();
             tbx_LowTempCheckTime.Text = data.LowTempCheckTime.ToString();
             tbx_FanMinRpm.Text = data.FanMinRpm.ToString();
@@ -2837,6 +2849,8 @@ namespace FCU_氢燃料电池控
                 : data.Soc > SocStopHigh
                     ? new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00)) // 橙: 运行中会自动停机
                     : new SolidColorBrush(Color.FromRgb(0x21, 0x21, 0x21));
+            tbk_OverviewBmsSoc.Text = data.Soc.ToString();
+            tbk_OverviewBmsSoc.Foreground = tbk_BMS_SOC.Foreground;
             tbk_BMS_SOH.Text = data.Soh.ToString();
             tbk_BMS_RemainCapacity.Text = data.RemainCapacity.ToString("F2");
             tbk_BMS_RatedCapacity.Text = data.RatedCapacity.ToString("F2");
@@ -2938,6 +2952,8 @@ namespace FCU_氢燃料电池控
         {
             tbk_BMS_SOC.Text = "--";
             tbk_BMS_SOC.Foreground = new SolidColorBrush(Color.FromRgb(0x21, 0x21, 0x21));
+            tbk_OverviewBmsSoc.Text = "--";
+            tbk_OverviewBmsSoc.Foreground = new SolidColorBrush(Color.FromRgb(0x21, 0x21, 0x21));
             tbk_BMS_SOH.Text = "--";
             tbk_BMS_RemainCapacity.Text = "--";
             tbk_BMS_RatedCapacity.Text = "--";
