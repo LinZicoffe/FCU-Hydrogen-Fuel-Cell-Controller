@@ -12,6 +12,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.IO.Ports;
+using System.Globalization;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -70,8 +71,8 @@ namespace FCU_氢燃料电池控
         private double _currentOutputVoltage = 0;
         private double _currentOutputCurrent = 0;
 
-        // 拉载配方相关字段
-        private RecipeService? _recipeService;
+        // 历史配方页已隐藏且不再初始化；仅保留字段供旧代码可编译回退。
+        private RecipeService? _recipeService = null;
         private string? _selectedRecipeId;
 
 #if ENABLE_POWER_CHART_TEST
@@ -141,9 +142,6 @@ namespace FCU_氢燃料电池控
             Loaded += MainWindow_Loaded;
 #endif
 
-            // 拉载配方服务初始化
-            _recipeService = new RecipeService();
-            LoadRecipeList();
         }
         
         /// <summary>
@@ -660,11 +658,11 @@ namespace FCU_氢燃料电池控
                 // 读取拉载启动参数 (0x0503)
                 SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_LOAD_STARTUP >> 8), (byte)(ProtocolConstants.PARAM_TYPE_LOAD_STARTUP & 0xFF));
 
-                UpdateStatus("已发送读取拉载参数命令");
+                UpdateStatus("已发送读取整套电流参数命令");
             }
             catch (Exception ex)
             {
-                HC.Growl.Error($"读取拉载参数失败: {ex.Message}");
+                HC.Growl.Error($"读取电流参数失败: {ex.Message}");
             }
         }
 
@@ -932,6 +930,14 @@ namespace FCU_氢燃料电池控
         }
 
         /// <summary>
+        /// 一次写入唯一一套电流运行参数。
+        /// </summary>
+        private void btn_SetLoadControlParams_Click(object sender, RoutedEventArgs e)
+        {
+            SetLoadControlParamHelper("运行参数");
+        }
+
+        /// <summary>
         /// 设置锁定系数
         /// </summary>
         private void btn_SetLoadLockFactor_Click(object sender, RoutedEventArgs e)
@@ -979,14 +985,14 @@ namespace FCU_氢燃料电池控
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
 
                 // 下位机 fcu_protocol_set_load_control() 的校验范围，发送前先本地拦截
-                if (!TryParseRange(tbx_LoadPeakCurrent, "峰值电流",
-                        1, LoadMaxCurrent0P1A, "0.1A", out ushort peakCurrent) ||
-                    !TryParseRange(tbx_LoadLockFactor, "锁定系数",
-                        0, 1000, "0.001", out ushort lockFactor) ||
-                    !TryParseRange(tbx_LoadMinVoltage, "最低电压",
-                        1, ushort.MaxValue, "0.1V", out ushort minVoltage) ||
-                    !TryParseRange(tbx_LoadCurrentStep, "电流步长",
-                        1, ushort.MaxValue, "0.1A", out ushort currentStep))
+                if (!TryParseScaledRange(tbx_LoadPeakCurrent, "峰值电流",
+                        10m, 1, LoadMaxCurrent0P1A, "A", out ushort peakCurrent) ||
+                    !TryParseScaledRange(tbx_LoadLockFactor, "正常运行系数",
+                        1000m, 0, 1000, string.Empty, out ushort lockFactor) ||
+                    !TryParseScaledRange(tbx_LoadMinVoltage, "最低电压",
+                        10m, 1, ushort.MaxValue, "V", out ushort minVoltage) ||
+                    !TryParseScaledRange(tbx_LoadCurrentStep, "电流步长",
+                        10m, 1, ushort.MaxValue, "A", out ushort currentStep))
                 {
                     return;
                 }
@@ -1033,6 +1039,14 @@ namespace FCU_氢燃料电池控
         private void btn_SetLoadNormalInterval_Click(object sender, RoutedEventArgs e)
         {
             SetLoadStartParamHelper("正常拉载间隔");
+        }
+
+        /// <summary>
+        /// 一次写入唯一一套电流执行周期参数。
+        /// </summary>
+        private void btn_SetLoadStartParams_Click(object sender, RoutedEventArgs e)
+        {
+            SetLoadStartParamHelper("执行周期参数");
         }
 
         /// <summary>
@@ -1246,6 +1260,50 @@ namespace FCU_氢燃料电池控
         }
 
         /// <summary>
+        /// 按界面工程单位解析小数，并转换为下位机协议整数。
+        /// </summary>
+        private static bool TryParseScaledRange(TextBox box, string fieldName,
+            decimal scale, int minRaw, int maxRaw, string unit, out ushort rawValue)
+        {
+            rawValue = 0;
+            string text = box.Text?.Trim() ?? string.Empty;
+
+            bool parsed = decimal.TryParse(text, NumberStyles.Number, CultureInfo.CurrentCulture, out decimal displayValue)
+                || decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out displayValue);
+            if (!parsed)
+            {
+                HC.Growl.Warning($"{fieldName}「{text}」不是合法数值");
+                box.Focus();
+                box.SelectAll();
+                return false;
+            }
+
+            decimal scaled = displayValue * scale;
+            decimal rounded = decimal.Round(scaled, 0, MidpointRounding.AwayFromZero);
+            if (scaled != rounded)
+            {
+                int decimalPlaces = scale == 1000m ? 3 : scale == 100m ? 2 : 1;
+                HC.Growl.Warning($"{fieldName}最多支持 {decimalPlaces} 位小数");
+                box.Focus();
+                box.SelectAll();
+                return false;
+            }
+
+            if (rounded < minRaw || rounded > maxRaw)
+            {
+                decimal minDisplay = minRaw / scale;
+                decimal maxDisplay = maxRaw / scale;
+                HC.Growl.Warning($"{fieldName}超出范围：{displayValue}，允许 {minDisplay}~{maxDisplay}{unit}");
+                box.Focus();
+                box.SelectAll();
+                return false;
+            }
+
+            rawValue = (ushort)rounded;
+            return true;
+        }
+
+        /// <summary>
         /// 校验并解析 15 组拉载时序。下位机对时序表整帧校验（电流 1~500、时间 ≥1），
         /// 任一步非法会导致整张表都不生效，因此这里逐步校验并指明出错的时序编号。
         /// </summary>
@@ -1263,14 +1321,14 @@ namespace FCU_氢燃料电池控
 
             for (int i = 0; i < count; i++)
             {
-                if (!TryParseRange(currentBoxes[i], $"时序{i + 1}电流",
-                        1, LoadMaxCurrent0P1A, "0.1A", out currents[i]))
+                if (!TryParseScaledRange(currentBoxes[i], $"时序{i + 1}电流",
+                        10m, 1, LoadMaxCurrent0P1A, "A", out currents[i]))
                 {
                     return false;
                 }
 
-                if (!TryParseRange(timeBoxes[i], $"时序{i + 1}时间",
-                        1, ushort.MaxValue, "0.01s", out times[i]))
+                if (!TryParseScaledRange(timeBoxes[i], $"时序{i + 1}时间",
+                        100m, 1, ushort.MaxValue, "s", out times[i]))
                 {
                     return false;
                 }
@@ -1377,7 +1435,11 @@ namespace FCU_氢燃料电池控
         {
             try
             {
-                ushort current = ushort.Parse(tbx_TargetCurrent.Text);
+                if (!TryParseScaledRange(tbx_TargetCurrent, "目标电流",
+                        10m, 1, LoadMaxCurrent0P1A, "A", out ushort current))
+                {
+                    return;
+                }
                 byte[] paramData = new byte[] { (byte)(current >> 8), (byte)(current & 0xFF) };
                 SendLoadControlCommand(ProtocolConstants.LOAD_CMD_SET_CURRENT, paramData);
                 UpdateStatus($"已发送设置目标电流{(current / 10.0):F1}A指令");
@@ -2144,10 +2206,49 @@ namespace FCU_氢燃料电池控
             _viewModel.DCDCOutputVoltage = (data.DCDCOutputVoltage / 10.0).ToString("F1");
             _viewModel.DCDCOutputCurrent = (data.DCDCOutputCurrent / 10.0).ToString("F1");
             _viewModel.FanSpeed = data.FanSpeed.ToString();
+            _viewModel.Fan2EstimatedSpeed = TryEstimateFan2Speed(data, out int estimatedRpm, out int estimatedDuty)
+                ? $"{estimatedRpm} ({estimatedDuty}%)"
+                : "--";
             _viewModel.StackTemperature = (data.StackTemperature / 10.0).ToString("F1");
             _viewModel.FCUTemperature = (data.FCUTemperature / 10.0).ToString("F1");
             _viewModel.RunTime = data.RunTime.ToString();
             _viewModel.FaultCode = data.FaultCode == 0 ? "无故障" : $"0x{data.FaultCode:X2}";
+        }
+
+        /// <summary>
+        /// 风扇2没有FG转速反馈。两路风扇共用一个占空比，这里复制固件正常温控插值公式，
+        /// 再用界面设定的模拟满速换算。固件强制全速计时和瞬时拉载占空比未随状态帧上报，故只能标注为估算。
+        /// </summary>
+        private bool TryEstimateFan2Speed(StackInfoData data, out int rpm, out int duty)
+        {
+            rpm = 0;
+            duty = 0;
+
+            if (!int.TryParse(tbx_FanLowDuty.Text, out int lowDuty) || lowDuty < 0 || lowDuty > 100 ||
+                !int.TryParse(tbx_TempMin.Text, out int tempMinRaw) ||
+                !int.TryParse(tbx_TempMax.Text, out int tempMaxRaw) || tempMinRaw >= tempMaxRaw ||
+                !int.TryParse(tbx_Fan2MaxRpm.Text, out int maxRpm) || maxRpm <= 0)
+            {
+                return false;
+            }
+
+            int tempRaw = data.StackTemperature;
+            if (tempRaw >= tempMaxRaw)
+            {
+                duty = 100;
+            }
+            else if (tempRaw <= tempMinRaw)
+            {
+                duty = lowDuty;
+            }
+            else
+            {
+                double ratio = (double)(tempRaw - tempMinRaw) / (tempMaxRaw - tempMinRaw);
+                duty = lowDuty + (int)((100 - lowDuty) * ratio);
+            }
+
+            rpm = (int)Math.Round(maxRpm * duty / 100.0, MidpointRounding.AwayFromZero);
+            return true;
         }
 
         /// <summary>
@@ -2344,8 +2445,8 @@ namespace FCU_氢燃料电池控
 
                 for (int i = 0; i < count; i++)
                 {
-                    currentBoxes[i].Text = data.Currents[i].ToString();
-                    timeBoxes[i].Text = data.Times[i].ToString();
+                    currentBoxes[i].Text = (data.Currents[i] / 10m).ToString("0.0", CultureInfo.CurrentCulture);
+                    timeBoxes[i].Text = (data.Times[i] / 100m).ToString("0.00", CultureInfo.CurrentCulture);
                 }
             }
             catch
@@ -2361,11 +2462,11 @@ namespace FCU_氢燃料电池控
         {
             try
             {
-                tbx_LoadPeakCurrent.Text = data.PeakCurrent.ToString();
-                tbx_LoadLockFactor.Text = data.LockFactor.ToString();
+                tbx_LoadPeakCurrent.Text = (data.PeakCurrent / 10m).ToString("0.0", CultureInfo.CurrentCulture);
+                tbx_LoadLockFactor.Text = (data.LockFactor / 1000m).ToString("0.000", CultureInfo.CurrentCulture);
                 chk_LoadLockFlag.IsChecked = data.LockFlag == 1;
-                tbx_LoadMinVoltage.Text = data.MinVoltage.ToString();
-                tbx_LoadCurrentStep.Text = data.CurrentStep.ToString();
+                tbx_LoadMinVoltage.Text = (data.MinVoltage / 10m).ToString("0.0", CultureInfo.CurrentCulture);
+                tbx_LoadCurrentStep.Text = (data.CurrentStep / 10m).ToString("0.0", CultureInfo.CurrentCulture);
             }
             catch
             {
@@ -2765,7 +2866,12 @@ namespace FCU_氢燃料电池控
         private const int SocStopHigh = 85;
 
         /// <summary>
-        /// 刷新拉载控制 Tab 顶部的 BMS 阻断提示条。
+        /// FCU_SOC_STOP_MIN = 60 → 手动停机时 SOC&lt;60 先保持电堆运行并充电，到60后再继续关机序列。
+        /// </summary>
+        private const int SocStopMin = 60;
+
+        /// <summary>
+        /// 刷新电流设置 Tab 顶部的 BMS / SOC 运行限制提示条。
         /// 下位机 fcu_control_start_load() 等入口在 BMS 阻断时是静默 return，
         /// 0x82 响应仍回 0x00 成功，上位机会显示「设置成功」而拉载实际没启动，
         /// 因此必须把阻断状态与原因主动呈现出来。
@@ -2776,22 +2882,21 @@ namespace FCU_氢燃料电池控
 
             if (BmsBitDecoder.IsLoadBlocked(data.ProtectStatus, data.SystemStatus, out string bmsReason))
             {
-                reasons.Add(bmsReason);
+                reasons.Add($"BMS保护阻断设流：{bmsReason}");
             }
 
             if (data.Soc > SocStartMax)
             {
-                reasons.Add($"SOC={data.Soc}% > {SocStartMax}%，下位机拒绝启动电堆");
+                reasons.Add($"SOC={data.Soc}% > {SocStartMax}%：电堆启动会被拒绝（不是拉载指令阻断）");
             }
             else if (data.Soc > SocStopHigh)
             {
-                reasons.Add($"SOC={data.Soc}% > {SocStopHigh}%，运行中会被自动停机");
+                reasons.Add($"SOC={data.Soc}% > {SocStopHigh}%：电堆运行中会自动停机");
             }
 
             if (reasons.Count > 0)
             {
-                tbk_LoadBlockReason.Text = "⚠ BMS 阻断拉载 — " + string.Join("; ", reasons)
-                    + "（下位机会静默拒绝拉载指令，仍回「设置成功」）";
+                tbk_LoadBlockReason.Text = "⚠ BMS / SOC 运行限制 — " + string.Join("; ", reasons);
                 bd_LoadBlockBanner.Visibility = Visibility.Visible;
             }
             else

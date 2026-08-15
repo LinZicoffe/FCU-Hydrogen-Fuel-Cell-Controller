@@ -159,6 +159,7 @@ namespace FCU_氢燃料电池控.ViewModels
         private string _dcdcOutputVoltage = "--";
         private string _dcdcOutputCurrent = "--";
         private string _fanSpeed = "--";
+        private string _fan2EstimatedSpeed = "--";
         private string _stackTemperature = "--";
         private string _fcuTemperature = "--";
         private string _runTime = "--";
@@ -222,6 +223,15 @@ namespace FCU_氢燃料电池控.ViewModels
         {
             get => _fanSpeed;
             set => SetProperty(ref _fanSpeed, value);
+        }
+
+        /// <summary>
+        /// 风扇2无转速反馈，此值仅为上位机按估算占空比换算的显示值。
+        /// </summary>
+        public string Fan2EstimatedSpeed
+        {
+            get => _fan2EstimatedSpeed;
+            set => SetProperty(ref _fan2EstimatedSpeed, value);
         }
 
         public string StackTemperature
