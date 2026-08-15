@@ -670,6 +670,45 @@
                                     <TextBlock Text="风扇1为实测转速；风扇2无转速反馈，当前值按百分比模拟。独立两路最低/最高占空比待固件协议接入。"
                                                FontSize="11" Foreground="#757575" Margin="4,6,4,0" TextWrapping="Wrap"/>
 
+                                    <!-- 0x0F运行控制：不写Flash，重启或恢复自动后由PEM温度闭环接管 -->
+                                    <Border CornerRadius="4" Padding="10,8" Background="#F5F9FF"
+                                            BorderBrush="#90CAF9" BorderThickness="1" Margin="4,10,4,0">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="150"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+
+                                            <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="5"
+                                                       Text="风扇手动控制（运行态）" FontWeight="SemiBold" Foreground="#1565C0" Margin="0,0,0,6"/>
+                                            <Label Grid.Row="1" Grid.Column="0" Content="手动占空比:" Style="{StaticResource LabelStyle}" Margin="0,2,4,2"/>
+                                            <Grid Grid.Row="1" Grid.Column="1" Margin="0,2,8,2">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <TextBox Grid.Column="0" Name="tbx_FanManualDuty" Style="{StaticResource StandardTextBoxStyle}" Text="60"
+                                                         ToolTip="允许0～100%；仅在启用手动控制时生效"/>
+                                                <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
+                                            </Grid>
+                                            <Button Grid.Row="1" Grid.Column="2" Name="btn_EnableFanManual"
+                                                    Content="启用手动占空比" Style="{StaticResource StandardButtonStyle}"
+                                                    Width="140" Margin="4,2" Click="btn_EnableFanManual_Click"/>
+                                            <Button Grid.Row="1" Grid.Column="3" Name="btn_RestoreFanAutomatic"
+                                                    Content="恢复自动温控" Style="{StaticResource SuccessButtonStyle}"
+                                                    Width="130" Margin="4,2" Click="btn_RestoreFanAutomatic_Click"/>
+                                            <StackPanel Grid.Row="1" Grid.Column="4" Margin="12,2,0,2" VerticalAlignment="Center">
+                                                <TextBlock Name="tbk_FanManualMode" Text="自动温控（上电默认）" FontWeight="SemiBold" Foreground="#2E7D32"/>
+                                                <TextBlock Text="命令不写Flash；设备重启恢复自动。电堆超温时下位机会强制全速并退出手动。"
+                                                           FontSize="11" Foreground="#616161" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+
                                     <Expander Header="保护与时序参数" Margin="4,8,4,0">
                                         <Grid Margin="8,4,0,0">
                                             <Grid.ColumnDefinitions>
@@ -922,12 +961,6 @@
 
                             <TextBlock Text="输入框初始数值仅作界面示例；连接设备后请先点击「读取整套电流参数」，以FCU回读值为准。"
                                        Foreground="#616161" Margin="4,0,4,10" TextWrapping="Wrap"/>
-
-                            <Border CornerRadius="4" Padding="10,6" Background="#FFF8E1"
-                                    BorderBrush="#FFB300" BorderThickness="1" Margin="0,0,0,15">
-                                <TextBlock TextWrapping="Wrap" Foreground="#8D6E00"
-                                           Text="电流核准需要多点标定表。当前固件尚未提供标定点读写协议，本版不在上位机伪造标定写入；协议定稿后在此接入唯一一张多点标定表。"/>
-                            </Border>
 
                             <!-- 拉载时序参数 -->
                             <GroupBox Header="电流执行时序（唯一一套）" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">

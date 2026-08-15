@@ -57,6 +57,10 @@ namespace FCU_氢燃料电池控
 
         // BMS 总线仲裁 (0x0D set_bms_poll) [SOC计划 §1.3]
         private volatile bool _bmsPollAckReceived;
+
+        // 风扇手动运行控制(0x0F)：记录最近一次待确认命令，成功响应后再更新界面状态。
+        private bool? _pendingFanManualEnable;
+        private byte _pendingFanManualDuty;
 #if ENABLE_LICENSE_FEATURE
         private readonly LicenseService? _licenseService;
 #endif
@@ -174,6 +178,9 @@ namespace FCU_氢燃料电池控
                 // 停止BMS Modbus轮询并清显示
                 _bmsService?.StopPolling();
                 ResetBmsDisplay();
+                _pendingFanManualEnable = null;
+                tbk_FanManualMode.Text = "未连接（设备重启后自动温控）";
+                tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0x75, 0x75, 0x75));
             }
         }
 
@@ -683,6 +690,58 @@ namespace FCU_氢燃料电池控
         private void btn_SetFanTempParams_Click(object sender, RoutedEventArgs e)
         {
             SetFanTempParamHelper("风扇温度参数并固化到FCU");
+        }
+
+        /// <summary>
+        /// 启用风扇手动占空比（0x0F，数据域 enable=1、duty=0~100）。
+        /// 该命令仅影响运行态，不写入Flash。
+        /// </summary>
+        private void btn_EnableFanManual_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryParseRange(tbx_FanManualDuty, "手动风扇占空比", 0, 100, "%", out ushort duty))
+            {
+                return;
+            }
+
+            SendFanManualControl(true, (byte)duty);
+        }
+
+        /// <summary>
+        /// 退出手动控制并恢复PEM温度闭环（0x0F，enable=0、duty=0）。
+        /// </summary>
+        private void btn_RestoreFanAutomatic_Click(object sender, RoutedEventArgs e)
+        {
+            SendFanManualControl(false, 0);
+        }
+
+        private void SendFanManualControl(bool enable, byte duty)
+        {
+            if (!_isSerialOpen)
+            {
+                HC.Growl.Warning("请先打开串口");
+                return;
+            }
+
+            if (!SerialPortHelper.TryParseDeviceAddress(GetDeviceAddress(), out byte deviceAddress))
+            {
+                return;
+            }
+
+            byte wireDuty = enable ? duty : (byte)0;
+            _pendingFanManualEnable = enable;
+            _pendingFanManualDuty = wireDuty;
+
+            SendFrame(ProtocolHandler.BuildRequestFrame(deviceAddress,
+                ProtocolConstants.FUNC_SET_FAN_MANUAL,
+                new[] { enable ? (byte)1 : (byte)0, wireDuty }));
+
+            tbk_FanManualMode.Text = enable
+                ? $"等待FCU确认：手动 {wireDuty}%"
+                : "等待FCU确认：恢复自动温控";
+            tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x6C, 0x00));
+            UpdateStatus(enable
+                ? $"已发送风扇手动控制命令：{wireDuty}%"
+                : "已发送恢复风扇自动温控命令");
         }
 
         // ❌ 已删除：在线测试(0x0D)相关方法与6个按钮事件
@@ -1753,6 +1812,10 @@ namespace FCU_氢燃料电池控
                         HandleSetParamResponse(frame);
                         break;
 
+                    case ProtocolConstants.RESP_FAN_MANUAL: // 风扇手动运行控制响应(1B结果码)
+                        HandleFanManualResponse(frame);
+                        break;
+
                     case 0xF0: // 报警信息上报
                         HandleAlarmReport(frame);
                         break;
@@ -1842,6 +1905,51 @@ namespace FCU_氢燃料电池控
                 else
                 {
                     UpdateStatus($"参数设置失败: {ProtocolConstants.GetErrorCodeDescription(result)}");
+                }
+            });
+        }
+
+        /// <summary>
+        /// 处理风扇手动运行控制响应（0x8F，数据域1B结果码）。
+        /// 只有FCU确认成功后才把界面状态切换为手动或自动。
+        /// </summary>
+        private void HandleFanManualResponse(byte[] frame)
+        {
+            byte result = ResponseParser.ParseFanManualResponse(frame);
+            bool? requestedEnable = _pendingFanManualEnable;
+            byte requestedDuty = _pendingFanManualDuty;
+            _pendingFanManualEnable = null;
+
+            Dispatcher.Invoke(() =>
+            {
+                if (result == ProtocolConstants.ERR_SUCCESS)
+                {
+                    if (requestedEnable == null)
+                    {
+                        tbk_FanManualMode.Text = "FCU已确认控制（当前模式无回读）";
+                        tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0x61, 0x61, 0x61));
+                        UpdateStatus("风扇运行控制成功，但未找到对应的待确认请求");
+                    }
+                    else if (requestedEnable == true)
+                    {
+                        tbk_FanManualMode.Text = $"已确认手动请求：{requestedDuty}%（无状态回读）";
+                        tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x6C, 0x00));
+                        UpdateStatus($"风扇手动控制已生效：{requestedDuty}%");
+                    }
+                    else
+                    {
+                        tbk_FanManualMode.Text = "自动温控（PEM闭环）";
+                        tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
+                        UpdateStatus("风扇已恢复自动温控");
+                    }
+                }
+                else
+                {
+                    string message = ProtocolConstants.GetErrorCodeDescription(result);
+                    tbk_FanManualMode.Text = $"控制失败：{message}";
+                    tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
+                    HC.Growl.Error($"风扇控制失败：{message}");
+                    UpdateStatus($"风扇控制失败：{message}");
                 }
             });
         }

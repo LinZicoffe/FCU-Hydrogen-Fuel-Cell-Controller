@@ -121,6 +121,17 @@ namespace FCU_氢燃料电池控.Protocol
         public const byte RESP_FLOW_PARAMS = 0x8E;
 
         /// <summary>
+        /// 功能码：风扇手动运行控制（数据域2B：enable、duty）。
+        /// 该指令只控制本次运行，不写入Flash；enable=0时duty被忽略。
+        /// </summary>
+        public const byte FUNC_SET_FAN_MANUAL = 0x0F;
+
+        /// <summary>
+        /// 响应功能码：风扇手动运行控制结果（数据域1B结果码）
+        /// </summary>
+        public const byte RESP_FAN_MANUAL = 0x8F;
+
+        /// <summary>
         /// 响应功能码：读取配置参数
         /// </summary>
         public const byte RESP_READ_CONFIG = 0x8A;
@@ -384,6 +395,8 @@ namespace FCU_氢燃料电池控.Protocol
                 RESP_BMS_POLL => "BMS轮询使能响应",
                 FUNC_SET_FLOW_PARAMS => "设置工作流程参数",
                 RESP_FLOW_PARAMS => "工作流程参数响应",
+                FUNC_SET_FAN_MANUAL => "风扇手动运行控制",
+                RESP_FAN_MANUAL => "风扇手动运行控制响应",
                 FUNC_ALARM_REPORT => "报警信息上报",
                 FUNC_STATE_CHANGE_REPORT => "状态变更上报",
                 FUNC_LOAD_STATUS_REPORT => "拉载状态上报",

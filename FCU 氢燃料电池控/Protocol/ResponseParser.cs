@@ -656,6 +656,21 @@ namespace FCU_氢燃料电池控.Protocol
         }
 
         /// <summary>
+        /// 解析风扇手动运行控制响应（功能码0x8F，数据域1B结果码）。
+        /// </summary>
+        public static byte ParseFanManualResponse(byte[] frame)
+        {
+            if (frame == null ||
+                frame.Length < ProtocolConstants.MIN_FRAME_LENGTH + 1 ||
+                frame[3] != ProtocolConstants.RESP_FAN_MANUAL)
+            {
+                return 0xFF;
+            }
+
+            return ParseSetParamResponse(frame);
+        }
+
+        /// <summary>
         /// 获取功能码
         /// </summary>
         /// <param name="frame">完整帧数据</param>
