@@ -1,7 +1,7 @@
 ; === FCU 氢燃料电池控制器上位机 安装包脚本 ===
 
 #define MyAppName "FCU氢燃料电池控制器"
-#define MyAppVersion "1.4.1"
+#define MyAppVersion "1.4.2"
 #define MyAppPublisher "FCU"
 #define MyAppExeName "FCU 氢燃料电池控.exe"
 #define MyAppCopyright "Copyright (C) 2026"
@@ -44,8 +44,8 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 
 ; === 安装文件 ===
 [Files]
-; 自包含发布：使用 v1.4.1 独立目录，避免混入旧版文件
-Source: "publish_v1.4.1\*"; DestDir: "{app}"; Excludes: "*.pdb,*.xml"; Flags: ignoreversion recursesubdirs createallsubdirs
+; 自包含发布：使用 v1.4.2 独立目录，避免混入旧版文件
+Source: "publish_v1.4.2\*"; DestDir: "{app}"; Excludes: "*.pdb,*.xml"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; === 快捷方式 ===
 [Icons]
