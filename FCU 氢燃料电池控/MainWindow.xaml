@@ -165,29 +165,6 @@
             <Setter Property="Margin" Value="4,4,12,4"/>
         </Style>
 
-        <!--
-            下位机固件暂未实现的字段占位框：置灰 + 禁用。
-            固件 fcu_pressure_params_t 补上对应字段后，把这里换成正常 TextBox 并加绑定即可。
-        -->
-        <Style x:Key="PressureMissingBoxStyle" TargetType="Border">
-            <Setter Property="Height" Value="32"/>
-            <Setter Property="Margin" Value="4"/>
-            <Setter Property="CornerRadius" Value="4"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#D5D5D5"/>
-            <Setter Property="Background" Value="#F0F0F0"/>
-            <Setter Property="Padding" Value="8,0"/>
-        </Style>
-
-        <Style x:Key="PressureMissingTextStyle" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="{DynamicResource FontFamily}"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Foreground" Value="#9E9E9E"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="HorizontalAlignment" Value="Center"/>
-            <Setter Property="Text" Value="—"/>
-        </Style>
-
         <!-- 实时值显示框：外观对齐输入框，但只读且用主题色区分 -->
         <Style x:Key="PressureLiveBoxStyle" TargetType="Border">
             <Setter Property="Height" Value="32"/>
@@ -413,13 +390,12 @@
                                 <Button Content="写入FCU并固化" Command="{Binding SetHighPressureMinCommand}" Style="{StaticResource SuccessButtonStyle}" Width="150" Margin="4"/>
                                 </StackPanel>
 
-                                <!-- 表格式布局：列头为备注，行头为传感器，最后一列为实时值(只读) -->
+                                <!-- 表格式布局：保留核心设定项，最后一列为实时值(只读) -->
                                 <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <!-- 行头 | 低限告警值 | 正常区间(双框) | 上限值 | 量程 | 实时值 -->
+                                        <!-- 行头 | 下限值 | 上限值 | 量程 | 实时值 -->
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="1*"/>
-                                        <ColumnDefinition Width="2.1*"/>
                                         <ColumnDefinition Width="1*"/>
                                         <ColumnDefinition Width="1*"/>
                                         <ColumnDefinition Width="1*"/>
@@ -432,19 +408,16 @@
 
                                     <!-- ===== 列头（备注） ===== -->
                                     <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource PressureHeaderStyle}"
-                                               Text="低限告警值"
-                                               ToolTip="压力低于此值触发告警。高压侧同时是启动门限：低于该值禁止启动电堆"/>
+                                               Text="下限值"
+                                               ToolTip="高压侧为启动门槛；低压侧为低限告警值"/>
                                     <TextBlock Grid.Row="0" Grid.Column="2" Style="{StaticResource PressureHeaderStyle}"
-                                               Text="正常区间"
-                                               ToolTip="正常工作压力区间。左=红警值(停机级告警下限)，右=黄警值(提示级告警下限)。固件校验 红警 &lt; 黄警，否则整帧参数被拒"/>
-                                    <TextBlock Grid.Row="0" Grid.Column="3" Style="{StaticResource PressureHeaderStyle}"
                                                Text="上限值"
                                                ToolTip="压力允许区间上限。高压超过设定值触发 CRITICAL 停机；低压超过设定值同样触发 CRITICAL 停机"/>
-                                    <TextBlock Grid.Row="0" Grid.Column="4" Style="{StaticResource PressureHeaderStyle}"
-                                               Text="量程"
+                                    <TextBlock Grid.Row="0" Grid.Column="3" Style="{StaticResource PressureHeaderStyle}"
+                                               Text="传感器量程"
                                                ToolTip="传感器满量程。写 0 会被固件静默接受并固化，导致压力读数恒为 0 且重启不恢复"/>
-                                    <TextBlock Grid.Row="0" Grid.Column="5" Style="{StaticResource PressureHeaderStyle}"
-                                               Text="实时值"
+                                    <TextBlock Grid.Row="0" Grid.Column="4" Style="{StaticResource PressureHeaderStyle}"
+                                               Text="实时压力"
                                                Foreground="#2196F3"
                                                ToolTip="电堆信息(0x07)上报的实测压力，只读"/>
 
@@ -457,40 +430,21 @@
                                              Style="{StaticResource StandardTextBoxStyle}"
                                              ToolTip="高压最小值，固件默认 300 KPA"/>
 
-                                    <!-- 正常区间：红警值 ~ 黄警值 并排，中间短横线分隔 -->
-                                    <Grid Grid.Row="1" Grid.Column="2">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBox Grid.Column="0" Margin="4"
-                                                 Text="{Binding HighPressureRed, UpdateSourceTrigger=PropertyChanged}"
-                                                 Style="{StaticResource StandardTextBoxStyle}"
-                                                 ToolTip="高压红警值，固件默认 250 KPA"/>
-                                        <TextBlock Grid.Column="1" Text="~" VerticalAlignment="Center" Margin="2,0"
-                                                   Foreground="{DynamicResource SecondaryTextBrush}"/>
-                                        <TextBox Grid.Column="2" Margin="4"
-                                                 Text="{Binding HighPressureYellow, UpdateSourceTrigger=PropertyChanged}"
-                                                 Style="{StaticResource StandardTextBoxStyle}"
-                                                 ToolTip="高压黄警值，固件默认 500 KPA，须大于红警值"/>
-                                    </Grid>
-
-                                    <TextBox Grid.Row="1" Grid.Column="3" Margin="4"
+                                    <TextBox Grid.Row="1" Grid.Column="2" Margin="4"
                                              Text="{Binding HighPressureMax, UpdateSourceTrigger=PropertyChanged}"
                                              Style="{StaticResource StandardTextBoxStyle}"
                                              ToolTip="高压上限告警值，高于此值触发 CRITICAL 停机。建议初值 5000 KPA（等于量程），联调后按实际安全值下调"/>
 
-                                    <TextBox Grid.Row="1" Grid.Column="4" Margin="4"
+                                    <TextBox Grid.Row="1" Grid.Column="3" Margin="4"
                                              Text="{Binding HighPressureRange, UpdateSourceTrigger=PropertyChanged}"
                                              Style="{StaticResource StandardTextBoxStyle}"
                                              ToolTip="高压量程，固件默认 5000 KPA"/>
 
-                                    <Border Grid.Row="1" Grid.Column="5" Style="{StaticResource PressureLiveBoxStyle}">
+                                    <Border Grid.Row="1" Grid.Column="4" Style="{StaticResource PressureLiveBoxStyle}">
                                         <TextBlock Text="{Binding HighPressure}" Style="{StaticResource PressureLiveTextStyle}"/>
                                     </Border>
 
-                                    <!-- ===== 第2行：低压传感器（固件无低压红警字段，该格只放上限值） ===== -->
+                                    <!-- ===== 第2行：低压传感器 ===== -->
                                     <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource PressureRowHeaderStyle}"
                                                Text="低压传感器"/>
 
@@ -499,47 +453,20 @@
                                              Style="{StaticResource StandardTextBoxStyle}"
                                              ToolTip="低压下限值，固件默认 30 KPA"/>
 
-                                    <!-- 固件无低压红警/黄警字段：置灰占位，形状与高压行对齐 -->
-                                    <Grid Grid.Row="2" Grid.Column="2">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Border Grid.Column="0" Style="{StaticResource PressureMissingBoxStyle}"
-                                                ToolTip="下位机固件 fcu_pressure_params_t 无「低压红警值」字段，待固件新增后再放开">
-                                            <TextBlock Style="{StaticResource PressureMissingTextStyle}"/>
-                                        </Border>
-                                        <TextBlock Grid.Column="1" Text="~" VerticalAlignment="Center" Margin="2,0" Foreground="#9E9E9E"/>
-                                        <Border Grid.Column="2" Style="{StaticResource PressureMissingBoxStyle}"
-                                                ToolTip="下位机固件 fcu_pressure_params_t 无「低压黄警值」字段，待固件新增后再放开">
-                                            <TextBlock Style="{StaticResource PressureMissingTextStyle}"/>
-                                        </Border>
-                                    </Grid>
-
-                                    <TextBox Grid.Row="2" Grid.Column="3" Margin="4"
+                                    <TextBox Grid.Row="2" Grid.Column="2" Margin="4"
                                              Text="{Binding LowPressureMax, UpdateSourceTrigger=PropertyChanged}"
                                              Style="{StaticResource StandardTextBoxStyle}"
                                              ToolTip="低压上限值，固件默认 80 KPA，须大于下限值。低压超出 [下限, 上限] 区间时禁止启动电堆"/>
 
-                                    <TextBox Grid.Row="2" Grid.Column="4" Margin="4"
+                                    <TextBox Grid.Row="2" Grid.Column="3" Margin="4"
                                              Text="{Binding LowPressureRange, UpdateSourceTrigger=PropertyChanged}"
                                              Style="{StaticResource StandardTextBoxStyle}"
                                              ToolTip="低压量程，固件默认 250 KPA"/>
 
-                                    <Border Grid.Row="2" Grid.Column="5" Style="{StaticResource PressureLiveBoxStyle}">
+                                    <Border Grid.Row="2" Grid.Column="4" Style="{StaticResource PressureLiveBoxStyle}">
                                         <TextBlock Text="{Binding LowPressure}" Style="{StaticResource PressureLiveTextStyle}"/>
                                     </Border>
                                 </Grid>
-
-                                <!-- 图例：说明灰色格的含义 -->
-                                <StackPanel Orientation="Horizontal" Margin="4,10,4,0">
-                                    <Border Width="16" Height="16" CornerRadius="3" BorderThickness="1"
-                                            BorderBrush="#D5D5D5" Background="#F0F0F0" VerticalAlignment="Center"/>
-                                    <TextBlock Text="灰色 = 当前协议无该字段（鼠标悬停看说明）"
-                                               FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center"
-                                               Foreground="{DynamicResource SecondaryTextBrush}"/>
-                                </StackPanel>
                             </StackPanel>
                         </GroupBox>
 
