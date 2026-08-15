@@ -248,9 +248,9 @@ namespace FCU_氢燃料电池控.Protocol
         #region 数据长度常量
 
         /// <summary>
-        /// 压力参数数据长度（字节）- 含参数类型ID共16字节
+        /// 压力参数数据长度（字节）- 含参数类型ID共18字节
         /// </summary>
-        public const int PRESSURE_PARAMS_DATA_LENGTH = 16;
+        public const int PRESSURE_PARAMS_DATA_LENGTH = 18;
 
         /// <summary>
         /// 阀门参数数据长度（字节）- 含参数类型ID共12字节
@@ -263,9 +263,9 @@ namespace FCU_氢燃料电池控.Protocol
         public const int DCDC_PARAMS_DATA_LENGTH = 6;
 
         /// <summary>
-        /// 风扇及温度参数数据长度（字节）- 含参数类型ID共11字节
+        /// 风扇及温度参数数据长度（字节）- 含参数类型ID共13字节
         /// </summary>
-        public const int FAN_TEMP_PARAMS_DATA_LENGTH = 11;
+        public const int FAN_TEMP_PARAMS_DATA_LENGTH = 13;
 
         /// <summary>
         /// 通用参数数据长度（字节）- 含参数类型ID共4字节

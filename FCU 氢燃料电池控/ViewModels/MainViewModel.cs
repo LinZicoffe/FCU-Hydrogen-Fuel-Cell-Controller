@@ -267,6 +267,7 @@ namespace FCU_氢燃料电池控.ViewModels
         private string _highPressureMin = "300";      // 固件 [需求1.2] 高压最小值 300 KPA (原100)
         private string _highPressureRed = "250";
         private string _highPressureYellow = "500";
+        private string _highPressureMax = "5000";
         private string _lowPressureMin = "30";        // 固件 [需求2.3] 低压下限值 30 KPA (原35)
         private string _lowPressureMax = "80";        // 固件 [需求2.3] 低压上限值 80 KPA (原65)
         private string _highPressureRange = "5000";
@@ -275,6 +276,7 @@ namespace FCU_氢燃料电池控.ViewModels
         public string HighPressureMin { get => _highPressureMin; set => SetProperty(ref _highPressureMin, value); }
         public string HighPressureRed { get => _highPressureRed; set => SetProperty(ref _highPressureRed, value); }
         public string HighPressureYellow { get => _highPressureYellow; set => SetProperty(ref _highPressureYellow, value); }
+        public string HighPressureMax { get => _highPressureMax; set => SetProperty(ref _highPressureMax, value); }
         public string LowPressureMin { get => _lowPressureMin; set => SetProperty(ref _lowPressureMin, value); }
         public string LowPressureMax { get => _lowPressureMax; set => SetProperty(ref _lowPressureMax, value); }
         public string HighPressureRange { get => _highPressureRange; set => SetProperty(ref _highPressureRange, value); }
@@ -509,6 +511,7 @@ namespace FCU_氢燃料电池控.ViewModels
             ushort highPressureMin = ParsePressureField(HighPressureMin, "高压最小值", 1);
             ushort highPressureRed = ParsePressureField(HighPressureRed, "高压红警值", 1);
             ushort highPressureYellow = ParsePressureField(HighPressureYellow, "高压黄警值", 1);
+            ushort highPressureMax = ParsePressureField(HighPressureMax, "高压上限告警值", 1);
             ushort lowPressureMin = ParsePressureField(LowPressureMin, "低压下限值", 1);
             ushort lowPressureMax = ParsePressureField(LowPressureMax, "低压上限值", 1);
             ushort highPressureRange = ParsePressureField(HighPressureRange, "高压量程", 1);
@@ -519,6 +522,18 @@ namespace FCU_氢燃料电池控.ViewModels
             {
                 throw new ArgumentException(
                     $"高压红警值({highPressureRed})必须小于高压黄警值({highPressureYellow})，固件会拒绝整帧");
+            }
+
+            if (highPressureMax <= highPressureYellow)
+            {
+                throw new ArgumentException(
+                    $"高压上限告警值({highPressureMax})必须大于高压黄警值({highPressureYellow})");
+            }
+
+            if (highPressureMax > highPressureRange)
+            {
+                throw new ArgumentException(
+                    $"高压上限告警值({highPressureMax})不能超过高压传感器量程({highPressureRange})");
             }
 
             // 固件不校验但会导致低压区间检查永久失败
@@ -533,10 +548,11 @@ namespace FCU_氢燃料电池控.ViewModels
             data[2] = (byte)(highPressureMin >> 8); data[3] = (byte)(highPressureMin & 0xFF);
             data[4] = (byte)(highPressureRed >> 8); data[5] = (byte)(highPressureRed & 0xFF);
             data[6] = (byte)(highPressureYellow >> 8); data[7] = (byte)(highPressureYellow & 0xFF);
-            data[8] = (byte)(lowPressureMin >> 8); data[9] = (byte)(lowPressureMin & 0xFF);
-            data[10] = (byte)(lowPressureMax >> 8); data[11] = (byte)(lowPressureMax & 0xFF);
-            data[12] = (byte)(highPressureRange >> 8); data[13] = (byte)(highPressureRange & 0xFF);
-            data[14] = (byte)(lowPressureRange >> 8); data[15] = (byte)(lowPressureRange & 0xFF);
+            data[8] = (byte)(highPressureMax >> 8); data[9] = (byte)(highPressureMax & 0xFF);
+            data[10] = (byte)(lowPressureMin >> 8); data[11] = (byte)(lowPressureMin & 0xFF);
+            data[12] = (byte)(lowPressureMax >> 8); data[13] = (byte)(lowPressureMax & 0xFF);
+            data[14] = (byte)(highPressureRange >> 8); data[15] = (byte)(highPressureRange & 0xFF);
+            data[16] = (byte)(lowPressureRange >> 8); data[17] = (byte)(lowPressureRange & 0xFF);
 
             return data;
         }

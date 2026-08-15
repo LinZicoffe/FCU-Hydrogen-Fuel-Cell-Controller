@@ -81,7 +81,7 @@ namespace FCU_氢燃料电池控.Models
 
     /// <summary>
     /// 压力参数结构
-    /// 对应协议4.2节（V4.2数据域16字节）
+    /// 对应压力参数数据域18字节（含参数ID）
     /// </summary>
     public class PressureParams
     {
@@ -99,6 +99,11 @@ namespace FCU_氢燃料电池控.Models
         /// 高压黄警值 (KPA)
         /// </summary>
         public ushort HighPressureYellow { get; set; }
+
+        /// <summary>
+        /// 高压上限告警值 (KPA)，超过时触发 CRITICAL 停机
+        /// </summary>
+        public ushort HighPressureMax { get; set; }
 
         /// <summary>
         /// 低压下限值 (KPA)
@@ -197,6 +202,11 @@ namespace FCU_氢燃料电池控.Models
         /// 低温检测时长 (0.1s)
         /// </summary>
         public ushort LowTempCheckTime { get; set; }
+
+        /// <summary>
+        /// 风扇最低转速 (RPM)，0 表示不启用堵转检测
+        /// </summary>
+        public ushort FanMinRpm { get; set; }
     }
 
     /// <summary>

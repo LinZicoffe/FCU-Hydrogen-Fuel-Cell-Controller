@@ -50,10 +50,10 @@ namespace FCU_氢燃料电池控.Protocol
         {
             return parameterId switch
             {
-                ProtocolConstants.PARAM_TYPE_PRESSURE => 14,
+                ProtocolConstants.PARAM_TYPE_PRESSURE => 16,
                 ProtocolConstants.PARAM_TYPE_VALVE => 10,
                 ProtocolConstants.PARAM_TYPE_DCDC => 4,
-                ProtocolConstants.PARAM_TYPE_FAN_TEMP => 9,
+                ProtocolConstants.PARAM_TYPE_FAN_TEMP => 11,
                 ProtocolConstants.PARAM_TYPE_LOAD_SEQUENCE => -1,   // 变长: 时序数 × 4
                 ProtocolConstants.PARAM_TYPE_LOAD_CONTROL => 9,
                 ProtocolConstants.PARAM_TYPE_LOAD_STARTUP => 5,
@@ -210,7 +210,7 @@ namespace FCU_氢燃料电池控.Protocol
 
         /// <summary>
         /// 解析压力参数（参数类型ID 0x0101）
-        /// V4.2协议数据域16字节
+        /// 新协议 SET 数据域18字节；0x8A回读参数数据16字节
         /// </summary>
         /// <param name="frame">完整帧数据</param>
         /// <returns>压力参数</returns>
@@ -221,7 +221,7 @@ namespace FCU_氢燃料电池控.Protocol
             try
             {
                 if (!TryGetReadConfigParameterData(frame, ProtocolConstants.PARAM_TYPE_PRESSURE,
-                    out int offset, out int parameterDataLength) || parameterDataLength != 14)
+                    out int offset, out int parameterDataLength) || parameterDataLength != 16)
                     return data;
 
                 // 高压最小值
@@ -233,17 +233,20 @@ namespace FCU_氢燃料电池控.Protocol
                 // 高压黄警值
                 data.HighPressureYellow = (ushort)((frame[offset + 4] << 8) | frame[offset + 5]);
 
+                // 高压上限告警值
+                data.HighPressureMax = (ushort)((frame[offset + 6] << 8) | frame[offset + 7]);
+
                 // 低压下限值
-                data.LowPressureMin = (ushort)((frame[offset + 6] << 8) | frame[offset + 7]);
+                data.LowPressureMin = (ushort)((frame[offset + 8] << 8) | frame[offset + 9]);
 
                 // 低压上限值
-                data.LowPressureMax = (ushort)((frame[offset + 8] << 8) | frame[offset + 9]);
+                data.LowPressureMax = (ushort)((frame[offset + 10] << 8) | frame[offset + 11]);
 
-                // 高压量程 (V4.2新增)
-                data.HighPressureRange = (ushort)((frame[offset + 10] << 8) | frame[offset + 11]);
+                // 高压量程
+                data.HighPressureRange = (ushort)((frame[offset + 12] << 8) | frame[offset + 13]);
 
-                // 低压量程 (V4.2新增)
-                data.LowPressureRange = (ushort)((frame[offset + 12] << 8) | frame[offset + 13]);
+                // 低压量程
+                data.LowPressureRange = (ushort)((frame[offset + 14] << 8) | frame[offset + 15]);
             }
             catch
             {
@@ -320,7 +323,7 @@ namespace FCU_氢燃料电池控.Protocol
             try
             {
                 if (!TryGetReadConfigParameterData(frame, ProtocolConstants.PARAM_TYPE_FAN_TEMP,
-                    out int offset, out int parameterDataLength) || parameterDataLength != 9)
+                    out int offset, out int parameterDataLength) || parameterDataLength != 11)
                     return data;
 
                 data.LowSpeedDuty = frame[offset];
@@ -328,6 +331,7 @@ namespace FCU_氢燃料电池控.Protocol
                 data.TempMax = (ushort)((frame[offset + 3] << 8) | frame[offset + 4]);
                 data.FullSpeedTime = (ushort)((frame[offset + 5] << 8) | frame[offset + 6]);
                 data.LowTempCheckTime = (ushort)((frame[offset + 7] << 8) | frame[offset + 8]);
+                data.FanMinRpm = (ushort)((frame[offset + 9] << 8) | frame[offset + 10]);
             }
             catch
             {

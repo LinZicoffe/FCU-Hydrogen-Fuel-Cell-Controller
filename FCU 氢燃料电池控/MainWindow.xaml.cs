@@ -822,13 +822,14 @@ namespace FCU_氢燃料电池控
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
 
-                // 下位机 fcu_handle_set_fan_temp() 要求：占空比≤100、各项非0、温度下限<上限，
-                // 命中任一条则整帧 5 个字段全部不生效
+                // 风扇温度数据域13B：参数ID + 5个原有字段 + fan_min_rpm。
+                // fan_min_rpm=0 表示不启用堵转检测。
                 if (!TryParseRange(tbx_FanLowDuty, "低速占空比", 0, 100, "%", out ushort lowDutyValue) ||
                     !TryParseRange(tbx_TempMin, "温度下限", 1, ushort.MaxValue, "0.1℃", out ushort tempMin) ||
                     !TryParseRange(tbx_TempMax, "温度上限", 1, ushort.MaxValue, "0.1℃", out ushort tempMax) ||
                     !TryParseRange(tbx_FanFullSpeedTime, "全速运行时长", 1, ushort.MaxValue, "0.1s", out ushort fullSpeedTime) ||
-                    !TryParseRange(tbx_LowTempCheckTime, "低温检测时长", 1, ushort.MaxValue, "0.1s", out ushort lowTempCheckTime))
+                    !TryParseRange(tbx_LowTempCheckTime, "低温检测时长", 1, ushort.MaxValue, "0.1s", out ushort lowTempCheckTime) ||
+                    !TryParseRange(tbx_FanMinRpm, "风扇最低转速", 0, ushort.MaxValue, "RPM", out ushort fanMinRpm))
                 {
                     return;
                 }
@@ -840,14 +841,8 @@ namespace FCU_氢燃料电池控
                 }
 
                 byte lowDuty = (byte)lowDutyValue;
-
-                byte[] data = new byte[11];
-                data[0] = 0x04; data[1] = 0x01;
-                data[2] = lowDuty;
-                data[3] = (byte)(tempMin >> 8); data[4] = (byte)(tempMin & 0xFF);
-                data[5] = (byte)(tempMax >> 8); data[6] = (byte)(tempMax & 0xFF);
-                data[7] = (byte)(fullSpeedTime >> 8); data[8] = (byte)(fullSpeedTime & 0xFF);
-                data[9] = (byte)(lowTempCheckTime >> 8); data[10] = (byte)(lowTempCheckTime & 0xFF);
+                byte[] data = BuildFanTempParamsData(lowDuty, tempMin, tempMax,
+                    fullSpeedTime, lowTempCheckTime, fanMinRpm);
 
                 byte[] frame = BuildFrame(deviceAddress, ProtocolConstants.FUNC_SET_FAN_TEMP_PARAMS, data);
                 SendFrame(frame);
@@ -857,6 +852,23 @@ namespace FCU_氢燃料电池控
             {
                 HC.Growl.Error($"设置失败: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 按《FCU参数新增与建议清单》生成风扇温度13字节SET数据域（大端）。
+        /// </summary>
+        private static byte[] BuildFanTempParamsData(byte lowDuty, ushort tempMin,
+            ushort tempMax, ushort fullSpeedTime, ushort lowTempCheckTime, ushort fanMinRpm)
+        {
+            byte[] data = new byte[ProtocolConstants.FAN_TEMP_PARAMS_DATA_LENGTH];
+            data[0] = 0x04; data[1] = 0x01;
+            data[2] = lowDuty;
+            data[3] = (byte)(tempMin >> 8); data[4] = (byte)(tempMin & 0xFF);
+            data[5] = (byte)(tempMax >> 8); data[6] = (byte)(tempMax & 0xFF);
+            data[7] = (byte)(fullSpeedTime >> 8); data[8] = (byte)(fullSpeedTime & 0xFF);
+            data[9] = (byte)(lowTempCheckTime >> 8); data[10] = (byte)(lowTempCheckTime & 0xFF);
+            data[11] = (byte)(fanMinRpm >> 8); data[12] = (byte)(fanMinRpm & 0xFF);
+            return data;
         }
 
         /// <summary>
@@ -2261,6 +2273,7 @@ namespace FCU_氢燃料电池控
             _viewModel.HighPressureMin = data.HighPressureMin.ToString();
             _viewModel.HighPressureRed = data.HighPressureRed.ToString();
             _viewModel.HighPressureYellow = data.HighPressureYellow.ToString();
+            _viewModel.HighPressureMax = data.HighPressureMax.ToString();
             _viewModel.LowPressureMin = data.LowPressureMin.ToString();
             _viewModel.LowPressureMax = data.LowPressureMax.ToString();
             _viewModel.HighPressureRange = data.HighPressureRange.ToString();
@@ -2314,6 +2327,7 @@ namespace FCU_氢燃料电池控
             tbx_TempMax.Text = data.TempMax.ToString();
             tbx_FanFullSpeedTime.Text = data.FullSpeedTime.ToString();
             tbx_LowTempCheckTime.Text = data.LowTempCheckTime.ToString();
+            tbx_FanMinRpm.Text = data.FanMinRpm.ToString();
         }
 
         /// <summary>

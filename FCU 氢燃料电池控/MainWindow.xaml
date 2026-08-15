@@ -439,7 +439,7 @@
                                                ToolTip="正常工作压力区间。左=红警值(停机级告警下限)，右=黄警值(提示级告警下限)。固件校验 红警 &lt; 黄警，否则整帧参数被拒"/>
                                     <TextBlock Grid.Row="0" Grid.Column="3" Style="{StaticResource PressureHeaderStyle}"
                                                Text="上限值"
-                                               ToolTip="压力允许区间上限。高压侧固件无此字段（高压偏低才危险，超压由机械泄压阀处理）"/>
+                                               ToolTip="压力允许区间上限。高压超过设定值触发 CRITICAL 停机；低压超过设定值同样触发 CRITICAL 停机"/>
                                     <TextBlock Grid.Row="0" Grid.Column="4" Style="{StaticResource PressureHeaderStyle}"
                                                Text="量程"
                                                ToolTip="传感器满量程。写 0 会被固件静默接受并固化，导致压力读数恒为 0 且重启不恢复"/>
@@ -476,11 +476,10 @@
                                                  ToolTip="高压黄警值，固件默认 500 KPA，须大于红警值"/>
                                     </Grid>
 
-                                    <!-- 高压上限字段正在由固件增加：协议确定前不猜测写入帧 -->
-                                    <Border Grid.Row="1" Grid.Column="3" Style="{StaticResource PressureMissingBoxStyle}"
-                                            ToolTip="客户要求高压最高限制由软件执行；当前固件正在增加字段，待参数ID、字节偏移和校验范围确定后接入">
-                                        <TextBlock Text="待固件" Style="{StaticResource PressureMissingTextStyle}"/>
-                                    </Border>
+                                    <TextBox Grid.Row="1" Grid.Column="3" Margin="4"
+                                             Text="{Binding HighPressureMax, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource StandardTextBoxStyle}"
+                                             ToolTip="高压上限告警值，高于此值触发 CRITICAL 停机。建议初值 5000 KPA（等于量程），联调后按实际安全值下调"/>
 
                                     <TextBox Grid.Row="1" Grid.Column="4" Margin="4"
                                              Text="{Binding HighPressureRange, UpdateSourceTrigger=PropertyChanged}"
@@ -537,7 +536,7 @@
                                 <StackPanel Orientation="Horizontal" Margin="4,10,4,0">
                                     <Border Width="16" Height="16" CornerRadius="3" BorderThickness="1"
                                             BorderBrush="#D5D5D5" Background="#F0F0F0" VerticalAlignment="Center"/>
-                                    <TextBlock Text="灰色 = 下位机固件暂无该字段，待固件新增后放开（鼠标悬停看说明）"
+                                    <TextBlock Text="灰色 = 当前协议无该字段（鼠标悬停看说明）"
                                                FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center"
                                                Foreground="{DynamicResource SecondaryTextBrush}"/>
                                 </StackPanel>
@@ -657,6 +656,7 @@
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
 
                                     <Label Grid.Row="0" Grid.Column="0" Content="低速占空比 (%):" Style="{StaticResource LabelStyle}" Margin="4"/>
@@ -674,11 +674,17 @@
                                     <Label Grid.Row="4" Grid.Column="0" Content="低温检测时长 (0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBox Grid.Row="4" Grid.Column="1" Name="tbx_LowTempCheckTime" Style="{StaticResource StandardTextBoxStyle}" Text="1800" Margin="4"/>
 
-                                    <Label Grid.Row="5" Grid.Column="0" Content="风扇2模拟满速 (RPM):" Style="{StaticResource LabelStyle}" Margin="4"
+                                    <Label Grid.Row="5" Grid.Column="0" Content="风扇最低转速 (RPM):" Style="{StaticResource LabelStyle}" Margin="4"
+                                           ToolTip="PWM占空比 &gt; 30% 且实际转速低于此值时触发风扇故障；0 表示不启用"/>
+                                    <TextBox Grid.Row="5" Grid.Column="1" Name="tbx_FanMinRpm" Style="{StaticResource StandardTextBoxStyle}" Text="0" Margin="4"/>
+                                    <TextBlock Grid.Row="5" Grid.Column="2" Text="0 = 不启用" Foreground="#757575"
+                                               VerticalAlignment="Center" Margin="8,4"/>
+
+                                    <Label Grid.Row="6" Grid.Column="0" Content="风扇2模拟满速 (RPM):" Style="{StaticResource LabelStyle}" Margin="4"
                                            ToolTip="仅用于上位机估算显示，不写入FCU"/>
-                                    <TextBox Grid.Row="5" Grid.Column="1" Name="tbx_Fan2MaxRpm" Style="{StaticResource StandardTextBoxStyle}" Text="3000" Margin="4"
+                                    <TextBox Grid.Row="6" Grid.Column="1" Name="tbx_Fan2MaxRpm" Style="{StaticResource StandardTextBoxStyle}" Text="3000" Margin="4"
                                              ToolTip="估算转速 = 模拟满速 × 估算占空比"/>
-                                    <TextBlock Grid.Row="5" Grid.Column="2" Text="上位机显示参数" Foreground="#757575"
+                                    <TextBlock Grid.Row="6" Grid.Column="2" Text="上位机显示参数" Foreground="#757575"
                                                VerticalAlignment="Center" Margin="8,4"/>
                                 </Grid>
                             </StackPanel>
