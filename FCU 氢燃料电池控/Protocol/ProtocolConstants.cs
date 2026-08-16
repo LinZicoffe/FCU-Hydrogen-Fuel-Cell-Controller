@@ -132,6 +132,17 @@ namespace FCU_氢燃料电池控.Protocol
         public const byte RESP_FAN_MANUAL = 0x8F;
 
         /// <summary>
+        /// 功能码：设置 BMS/SOC 参数（数据域固定 5B，不含参数类型ID）。
+        /// 写入 Flash 后需重启 FCU 生效。
+        /// </summary>
+        public const byte FUNC_SET_SOC_PARAMS = 0x10;
+
+        /// <summary>
+        /// 响应功能码：BMS/SOC 参数设置结果（数据域1B结果码）。
+        /// </summary>
+        public const byte RESP_SOC_PARAMS = 0x90;
+
+        /// <summary>
         /// 响应功能码：读取配置参数
         /// </summary>
         public const byte RESP_READ_CONFIG = 0x8A;
@@ -199,6 +210,11 @@ namespace FCU_氢燃料电池控.Protocol
         /// 参数类型：工作流程参数 [SOC计划 §5.3]
         /// </summary>
         public const ushort PARAM_TYPE_FLOW = 0x0601;
+
+        /// <summary>
+        /// 参数类型：BMS/SOC 参数。
+        /// </summary>
+        public const ushort PARAM_TYPE_SOC = 0x0701;
 
         /// <summary>
         /// 参数类型：通用参数
@@ -282,6 +298,11 @@ namespace FCU_氢燃料电池控.Protocol
         /// 通用参数数据长度（字节）- 含参数类型ID共4字节
         /// </summary>
         public const int GENERAL_PARAMS_DATA_LENGTH = 4;
+
+        /// <summary>
+        /// BMS/SOC 设置参数数据长度（字节，不含参数类型ID）。
+        /// </summary>
+        public const int SOC_PARAMS_DATA_LENGTH = 5;
 
         /// <summary>
         /// 修改设备地址数据长度（字节）
@@ -397,6 +418,8 @@ namespace FCU_氢燃料电池控.Protocol
                 RESP_FLOW_PARAMS => "工作流程参数响应",
                 FUNC_SET_FAN_MANUAL => "风扇手动运行控制",
                 RESP_FAN_MANUAL => "风扇手动运行控制响应",
+                FUNC_SET_SOC_PARAMS => "设置BMS/SOC参数",
+                RESP_SOC_PARAMS => "BMS/SOC参数设置响应",
                 FUNC_ALARM_REPORT => "报警信息上报",
                 FUNC_STATE_CHANGE_REPORT => "状态变更上报",
                 FUNC_LOAD_STATUS_REPORT => "拉载状态上报",

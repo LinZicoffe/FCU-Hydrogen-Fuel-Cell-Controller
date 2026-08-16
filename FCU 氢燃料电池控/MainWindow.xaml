@@ -288,6 +288,7 @@
                             <Label Grid.Column="0" Content="从站地址(1-247):" Style="{StaticResource LabelStyle}" FontSize="10"/>
                             <TextBox Grid.Column="1"
                                      Text="{Binding DeviceAddress, UpdateSourceTrigger=PropertyChanged}"
+                                     IsEnabled="{Binding IsConnected, Converter={StaticResource InverseBoolConverter}}"
                                      Height="32"
                                      FontFamily="Microsoft YaHei UI, Segoe UI, Tahoma, sans-serif"
                                      FontSize="12"
@@ -401,6 +402,7 @@
                                         Style="{StaticResource StandardButtonStyle}"
                                         Width="150"
                                         Margin="4"
+                                        IsEnabled="{Binding IsConnected}"
                                         Click="btn_ReadPressureParams_Click"/>
                                 <!-- 旧压力协议仍包含已从客户界面移除的红/黄阈值；在新字段映射确认前禁止整帧覆盖。 -->
                                 <Button Content="写入FCU并固化（等待固件）" IsEnabled="False"
@@ -570,7 +572,7 @@
                                         <TextBlock Grid.Row="0" Grid.Column="1" Text="最低限制" Style="{StaticResource PressureHeaderStyle}"/>
                                         <TextBlock Grid.Row="0" Grid.Column="2" Text="当前温度" Style="{StaticResource PressureHeaderStyle}" Foreground="#2196F3"/>
                                         <TextBlock Grid.Row="0" Grid.Column="3" Text="最高限制" Style="{StaticResource PressureHeaderStyle}"/>
-                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="电堆温度" Style="{StaticResource PressureRowHeaderStyle}"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="电堆温度 (PT1000)" Style="{StaticResource PressureRowHeaderStyle}"/>
 
                                         <Grid Grid.Row="1" Grid.Column="1">
                                             <Grid.ColumnDefinitions>
@@ -748,7 +750,7 @@
                                 </StackPanel>
                             </GroupBox>
 
-                            <!-- BMS/SOC草图参数总览；当前权威固件仍为硬编码，暂不伪造写入 -->
+                            <!-- BMS/SOC 参数总览：0x0701回读，0x10写入并固化 -->
                             <GroupBox Header="BMS / SOC 开关机电量" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <StackPanel>
                                     <Grid>
@@ -761,16 +763,16 @@
                                             <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
 
-                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="最低开机电量" Style="{StaticResource PressureHeaderStyle}"/>
-                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="当前电量" Style="{StaticResource PressureHeaderStyle}" Foreground="#2196F3"/>
-                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="最高关机电量" Style="{StaticResource PressureHeaderStyle}"/>
-                                        <TextBlock Grid.Row="0" Grid.Column="3" Text="强启开机电量" Style="{StaticResource PressureHeaderStyle}"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="开机拒启上限" Style="{StaticResource PressureHeaderStyle}"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="当前 SOC" Style="{StaticResource PressureHeaderStyle}" Foreground="#2196F3"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="运行停机上限" Style="{StaticResource PressureHeaderStyle}"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="3" Text="关机充电下限" Style="{StaticResource PressureHeaderStyle}"/>
                                         <TextBlock Grid.Row="0" Grid.Column="4" Text="电池容量" Style="{StaticResource PressureHeaderStyle}"/>
 
                                         <Grid Grid.Row="1" Grid.Column="0">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                            <TextBox Grid.Column="0" Name="tbx_OverviewSocStart" Style="{StaticResource StandardTextBoxStyle}" Text="60" Margin="4"
-                                                     ToolTip="图纸预留；当前FCU固件未提供SOC阈值写入协议"/>
+                                            <TextBox Grid.Column="0" Name="tbx_OverviewSocStartMax" Style="{StaticResource StandardTextBoxStyle}" Text="90" Margin="4"
+                                                     ToolTip="1～100%；SOC大于该值时拒绝开机"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource PressureLiveBoxStyle}">
@@ -781,32 +783,36 @@
                                         </Border>
                                         <Grid Grid.Row="1" Grid.Column="2">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                            <TextBox Grid.Column="0" Name="tbx_OverviewSocStop" Style="{StaticResource StandardTextBoxStyle}" Text="80" Margin="4"
-                                                     ToolTip="图纸预留；当前FCU固件未提供SOC阈值写入协议"/>
+                                            <TextBox Grid.Column="0" Name="tbx_OverviewSocStopHigh" Style="{StaticResource StandardTextBoxStyle}" Text="85" Margin="4"
+                                                     ToolTip="1～100%；运行中SOC大于该值时自动停机"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Grid Grid.Row="1" Grid.Column="3">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                            <TextBox Grid.Column="0" Name="tbx_OverviewSocForceStart" Style="{StaticResource StandardTextBoxStyle}" Text="40" Margin="4"
-                                                     ToolTip="界面示例值，不是默认值；等待固件SOC阈值协议"/>
+                                            <TextBox Grid.Column="0" Name="tbx_OverviewSocStopMin" Style="{StaticResource StandardTextBoxStyle}" Text="60" Margin="4"
+                                                     ToolTip="1～100%；关机时SOC低于该值，先充电至该值"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Grid Grid.Row="1" Grid.Column="4">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_OverviewBatteryCapacity" Style="{StaticResource StandardTextBoxStyle}" Text="8" Margin="4"
-                                                     ToolTip="界面示例值，不是默认值；等待固件电池容量协议"/>
+                                                     ToolTip="FCU标称容量，正整数Ah；当前仅存储和回读，不参与SOC计算"/>
                                             <TextBlock Grid.Column="1" Text="Ah" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                     </Grid>
                                     <Grid Margin="4,8,4,0">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Name="tbk_SocValidationStatus"
-                                                   Text="图中数值仅作界面示例；当前固件仍为90/85/60硬编码。"
-                                                   Foreground="#EF6C00" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                        <Button Grid.Column="1" Content="校验SOC参数" Style="{StaticResource StandardButtonStyle}"
-                                                Width="125" Margin="4,0" Click="btn_ValidateSocParams_Click"/>
-                                        <Button Grid.Column="2" Content="写入FCU（等待固件）" IsEnabled="False"
-                                                Style="{StaticResource SuccessButtonStyle}" Width="170" Margin="4,0"/>
+                                                   Text="FCU默认值：90 / 85 / 60 / 8Ah；写入固化后需重启FCU生效。"
+                                                   Foreground="#616161" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                        <Button Grid.Column="1" Content="读取SOC参数" Style="{StaticResource StandardButtonStyle}"
+                                                Width="120" Margin="4,0" Click="btn_ReadSocParams_Click"
+                                                IsEnabled="{Binding IsConnected}"/>
+                                        <Button Grid.Column="2" Content="校验SOC参数" Style="{StaticResource StandardButtonStyle}"
+                                                Width="120" Margin="4,0" Click="btn_ValidateSocParams_Click"/>
+                                        <Button Grid.Column="3" Content="写入FCU并固化"
+                                                Style="{StaticResource SuccessButtonStyle}" Width="150" Margin="4,0" Click="btn_SetSocParams_Click"
+                                                IsEnabled="{Binding IsConnected}"/>
                                     </Grid>
                                 </StackPanel>
                             </GroupBox>
@@ -1383,7 +1389,7 @@
                                     <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding Fan2EstimatedSpeed}" Style="{StaticResource TextBlockDisplayStyle}"
                                                FontWeight="SemiBold" Foreground="#EF6C00"/>
 
-                                    <Label Grid.Row="11" Grid.Column="0" Content="电堆温度 (℃):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                    <Label Grid.Row="11" Grid.Column="0" Content="电堆温度 (PT1000, ℃):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                     <TextBlock Grid.Row="11" Grid.Column="1" Text="{Binding StackTemperature}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
 
                                     <Label Grid.Row="12" Grid.Column="0" Content="FCU温度 (℃):" Style="{StaticResource LabelStyle}" Margin="4"/>
@@ -1541,10 +1547,10 @@
                                         </Grid.RowDefinitions>
 
                                         <Label Grid.Row="0" Grid.Column="0" Content="SOC (%):" Style="{StaticResource LabelStyle}" Margin="4"
-                                               ToolTip="当前固件固定逻辑：SOC&gt;90% 拒绝启动电堆；SOC&gt;85% 运行中自动停机；手动停机时 SOC&lt;60% 先充电至60%再继续关机。当前协议不支持修改这三个阈值。"/>
+                                               ToolTip="门控阈值可在“系统监控”的BMS/SOC参数区读取和修改；写入固化后需重启FCU生效。"/>
                                         <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
                                             <TextBlock Name="tbk_BMS_SOC" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
-                                            <TextBlock Text="  (&gt;90 拒启 / &gt;85 自动停 / &lt;60 停机前充电)" VerticalAlignment="Center"
+                                            <TextBlock Name="tbk_BmsSocThresholdHint" Text="  (&gt;90 拒启 / &gt;85 自动停 / &lt;60 停机前充电)" VerticalAlignment="Center"
                                                        FontSize="11" Foreground="#757575"/>
                                         </StackPanel>
 

@@ -59,14 +59,14 @@ namespace FCU_氢燃料电池控.Models
         public ushort FanSpeed { get; set; }
 
         /// <summary>
-        /// 电堆温度 (0.1℃，有符号，下位机下限 -40℃)
+        /// 电堆温度 (PT1000，0.1℃，有符号，下位机下限 -40℃)
         /// </summary>
         public short StackTemperature { get; set; }
 
         /// <summary>
-        /// FCU控制器温度 (0.1℃，有符号，下位机下限 -40℃)
+        /// FCU控制器温度 (0.1℃，无符号)
         /// </summary>
-        public short FCUTemperature { get; set; }
+        public ushort FCUTemperature { get; set; }
 
         /// <summary>
         /// 累计运行时间 (秒)
@@ -207,6 +207,32 @@ namespace FCU_氢燃料电池控.Models
         /// 风扇最低转速 (RPM)，0 表示不启用堵转检测
         /// </summary>
         public ushort FanMinRpm { get; set; }
+    }
+
+    /// <summary>
+    /// BMS/SOC 参数结构（参数类型ID 0x0701，参数数据5字节）。
+    /// </summary>
+    public class SocParams
+    {
+        /// <summary>
+        /// SOC 大于该值时拒绝开机 (%)。
+        /// </summary>
+        public byte StartMax { get; set; }
+
+        /// <summary>
+        /// 运行中 SOC 大于该值时自动停机 (%)。
+        /// </summary>
+        public byte StopHigh { get; set; }
+
+        /// <summary>
+        /// 关机时 SOC 低于该值先充电至该值 (%)。
+        /// </summary>
+        public byte StopMin { get; set; }
+
+        /// <summary>
+        /// FCU 标称电池容量 (Ah)。
+        /// </summary>
+        public ushort BatteryCapacity { get; set; }
     }
 
     /// <summary>

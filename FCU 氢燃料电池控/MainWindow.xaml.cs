@@ -63,6 +63,20 @@ namespace FCU_氢燃料电池控
         // 风扇手动运行控制(0x0F)：记录最近一次待确认命令，成功响应后再更新界面状态。
         private bool? _pendingFanManualEnable;
         private byte _pendingFanManualDuty;
+
+        // 最近一次从 0x0701 回读到的 SOC 门控参数；默认值与固件默认配置一致。
+        private int _socStartMax = 90;
+        private int _socStopHigh = 85;
+        private int _socStopMin = 60;
+        private SocParams? _pendingSocWrite;
+        private byte? _pendingSocWriteDeviceAddress;
+        private string? _pendingSocWritePortName;
+        private byte? _pendingSocReadDeviceAddress;
+        private bool _socWriteReadbackPending;
+        private bool _socParamsAwaitingRestart;
+        private bool _socWriteResultUnknown;
+        private DispatcherTimer? _socResponseTimeoutTimer;
+        private const int SocResponseTimeoutSeconds = 5;
 #if ENABLE_LICENSE_FEATURE
         private readonly LicenseService? _licenseService;
 #endif
@@ -131,6 +145,7 @@ namespace FCU_氢燃料电池控
             
             // 轮询定时器初始化（保留）
             InitializePollingTimer();
+            InitializeSocResponseTimeoutTimer();
 
             // BMS Modbus 主站服务初始化 [上位机优化计划 h-t4]
             _bmsService = new BmsService(serialPortManager);
@@ -355,40 +370,136 @@ namespace FCU_氢燃料电池控
 
         private void btn_ValidateSocParams_Click(object sender, RoutedEventArgs e)
         {
-            if (!TryParseRange(tbx_OverviewSocForceStart, "强启开机电量", 0, 100, "%", out ushort forceStart) ||
-                !TryParseRange(tbx_OverviewSocStart, "最低开机电量", 0, 100, "%", out ushort start) ||
-                !TryParseRange(tbx_OverviewSocStop, "最高关机电量", 0, 100, "%", out ushort stop))
+            if (!TryReadSocParamsFromUi(out _))
             {
-                SetSocValidationError("SOC 电量必须是 0～100 的整数，请按提示修正");
-                return;
-            }
-
-            string capacityText = tbx_OverviewBatteryCapacity.Text?.Trim() ?? string.Empty;
-            bool capacityParsed = decimal.TryParse(capacityText, NumberStyles.Number,
-                    CultureInfo.CurrentCulture, out decimal capacity)
-                || decimal.TryParse(capacityText, NumberStyles.Number,
-                    CultureInfo.InvariantCulture, out capacity);
-            if (!capacityParsed || capacity <= 0 || capacity > 9999.99m)
-            {
-                const string error = "电池容量必须是大于0且不超过9999.99Ah的数值";
-                SetSocValidationError(error);
-                HC.Growl.Warning(error);
-                tbx_OverviewBatteryCapacity.Focus();
-                tbx_OverviewBatteryCapacity.SelectAll();
-                return;
-            }
-
-            if (forceStart > start || start >= stop)
-            {
-                const string error = "SOC参数必须满足：强启开机电量 ≤ 最低开机电量 < 最高关机电量";
-                SetSocValidationError(error);
-                HC.Growl.Warning(error);
                 return;
             }
 
             tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
-            tbk_SocValidationStatus.Text = "本地校验通过；等待固件提供SOC参数读写与实际启停逻辑。";
-            HC.Growl.Success("SOC参数本地校验通过，未写入FCU");
+            tbk_SocValidationStatus.Text = "本地校验通过；三个SOC阈值均为1～100%，电池容量为正整数Ah。";
+            HC.Growl.Success("SOC参数本地校验通过");
+        }
+
+        private bool TryReadSocParamsFromUi(out SocParams parameters)
+        {
+            parameters = new SocParams();
+
+            if (!TryParseRange(tbx_OverviewSocStartMax, "开机拒启上限", 1, 100, "%", out ushort startMax) ||
+                !TryParseRange(tbx_OverviewSocStopHigh, "运行停机上限", 1, 100, "%", out ushort stopHigh) ||
+                !TryParseRange(tbx_OverviewSocStopMin, "关机充电下限", 1, 100, "%", out ushort stopMin) ||
+                !TryParseRange(tbx_OverviewBatteryCapacity, "电池容量", 1, ushort.MaxValue, "Ah", out ushort capacity))
+            {
+                SetSocValidationError("三个SOC阈值必须是1～100的整数，电池容量必须是正整数Ah");
+                return false;
+            }
+
+            parameters.StartMax = (byte)startMax;
+            parameters.StopHigh = (byte)stopHigh;
+            parameters.StopMin = (byte)stopMin;
+            parameters.BatteryCapacity = capacity;
+            return true;
+        }
+
+        private void btn_ReadSocParams_Click(object sender, RoutedEventArgs e)
+        {
+            if (_pendingSocReadDeviceAddress.HasValue)
+            {
+                HC.Growl.Warning("已有SOC读取正在等待响应，请勿重复发送");
+                return;
+            }
+
+            if (_pendingSocWrite != null && !_socWriteReadbackPending)
+            {
+                HC.Growl.Warning("SOC写入尚未收到FCU确认，暂不发送读取命令");
+                return;
+            }
+
+            if (!SerialPortHelper.CheckSerialPortOpen(_isSerialOpen))
+            {
+                return;
+            }
+
+            byte deviceAddress;
+            if (_socWriteReadbackPending && _pendingSocWriteDeviceAddress.HasValue)
+            {
+                deviceAddress = _pendingSocWriteDeviceAddress.Value;
+            }
+            else if (!SerialPortHelper.TryParseDeviceAddress(GetDeviceAddress(), out deviceAddress))
+            {
+                return;
+            }
+
+            if (!SendSocReadConfigCommand(deviceAddress))
+            {
+                SetSocValidationError("SOC参数读取帧发送失败，未进入等待响应状态");
+                return;
+            }
+
+            UpdateStatus("已发送读取BMS/SOC参数命令");
+        }
+
+        private bool SendSocReadConfigCommand(byte deviceAddress)
+        {
+            _pendingSocReadDeviceAddress = deviceAddress;
+            bool sent = SendReadConfigCommand(deviceAddress,
+                (byte)(ProtocolConstants.PARAM_TYPE_SOC >> 8),
+                (byte)(ProtocolConstants.PARAM_TYPE_SOC & 0xFF));
+
+            if (!sent)
+            {
+                _pendingSocReadDeviceAddress = null;
+                return false;
+            }
+
+            RestartSocResponseTimeout();
+            return true;
+        }
+
+        private void btn_SetSocParams_Click(object sender, RoutedEventArgs e)
+        {
+            if (_pendingSocReadDeviceAddress.HasValue)
+            {
+                HC.Growl.Warning("SOC读取尚未完成，请等待响应后再写入");
+                return;
+            }
+
+            if (_pendingSocWrite != null)
+            {
+                HC.Growl.Warning(_socWriteReadbackPending
+                    ? "正在核对上一笔SOC写入，请等待回读完成"
+                    : "上一笔SOC写入尚未收到FCU确认，请勿重复发送");
+                return;
+            }
+
+            if (!TryReadSocParamsFromUi(out SocParams parameters))
+            {
+                return;
+            }
+
+            if (!SerialPortHelper.CheckSerialPortOpen(_isSerialOpen) ||
+                !SerialPortHelper.TryParseDeviceAddress(GetDeviceAddress(), out byte deviceAddress))
+            {
+                return;
+            }
+
+            byte[] data = ResponseParser.BuildSocParamsData(parameters);
+            _pendingSocWrite = parameters;
+            _pendingSocWriteDeviceAddress = deviceAddress;
+            _pendingSocWritePortName = _viewModel?.SelectedPortName;
+            _socWriteReadbackPending = false;
+            if (!SendFrame(BuildFrame(deviceAddress, ProtocolConstants.FUNC_SET_SOC_PARAMS, data)))
+            {
+                _pendingSocWrite = null;
+                _pendingSocWriteDeviceAddress = null;
+                _pendingSocWritePortName = null;
+                SetSocValidationError("SOC参数写入帧发送失败，未进入等待响应状态");
+                return;
+            }
+
+            RestartSocResponseTimeout();
+            tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x6C, 0x00));
+            tbk_SocValidationStatus.Text = "已发送SOC参数写入命令，等待FCU确认。";
+            UpdateStatus("已发送BMS/SOC参数写入并固化命令");
         }
 
         private void SetSocValidationError(string error)
@@ -406,6 +517,28 @@ namespace FCU_氢燃料电池控
             
             if (isConnected)
             {
+                if (_socWriteReadbackPending &&
+                    (_pendingSocWriteDeviceAddress.HasValue || _pendingSocWritePortName != null))
+                {
+                    bool samePort = string.Equals(_pendingSocWritePortName,
+                        _viewModel?.SelectedPortName, StringComparison.OrdinalIgnoreCase);
+                    bool sameAddress = _pendingSocWriteDeviceAddress.HasValue &&
+                        SerialPortHelper.TryParseDeviceAddress(GetDeviceAddress(),
+                            out byte connectedAddress, showError: false) &&
+                        connectedAddress == _pendingSocWriteDeviceAddress.Value;
+                    if (!samePort || !sameAddress)
+                    {
+                        _pendingSocWrite = null;
+                        _pendingSocWriteDeviceAddress = null;
+                        _pendingSocWritePortName = null;
+                        _pendingSocReadDeviceAddress = null;
+                        _socWriteReadbackPending = false;
+                        tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
+                        tbk_SocValidationStatus.Text =
+                            "重连的串口或设备地址与原SOC写入目标不一致，已取消自动核对；原设备参数仍待重启生效。";
+                    }
+                }
+
                 // 串口打开时，启动图表采集
                 _chartUpdateTimer?.Start();
 
@@ -415,6 +548,8 @@ namespace FCU_氢燃料电池控
             }
             else
             {
+                StopSocResponseTimeout();
+
                 // 串口关闭时，停止所有定时器
                 _chartUpdateTimer?.Stop();
                 
@@ -428,6 +563,30 @@ namespace FCU_氢燃料电池控
                 _bmsService?.StopPolling();
                 ResetBmsDisplay();
                 _pendingFanManualEnable = null;
+                if (!_socWriteReadbackPending)
+                {
+                    bool hadUnconfirmedSocWrite = _pendingSocWrite != null;
+                    _pendingSocWrite = null;
+                    _pendingSocWriteDeviceAddress = null;
+                    _pendingSocWritePortName = null;
+                    _pendingSocReadDeviceAddress = null;
+                    if (hadUnconfirmedSocWrite)
+                    {
+                        // 新一笔写入是否到达设备未知时，不能继续把更早的已确认写入
+                        // 当作唯一待重启值；下一次重启实际采用哪组 Flash 值已无法确定。
+                        _socParamsAwaitingRestart = false;
+                        _socWriteResultUnknown = true;
+                        tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
+                        tbk_SocValidationStatus.Text =
+                            "连接已断开，SOC写入未收到确认；设备结果和下次重启生效值未知，输入保持不变。";
+                    }
+                }
+                else
+                {
+                    _pendingSocReadDeviceAddress = null;
+                    tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x6C, 0x00));
+                    tbk_SocValidationStatus.Text = "SOC写入已确认，但自动回读因断线中断；重连后请点击读取SOC参数完成核对。";
+                }
                 tbk_FanManualMode.Text = "等待双路独立控制协议（未连接）";
                 tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0x75, 0x75, 0x75));
             }
@@ -467,6 +626,69 @@ namespace FCU_氢燃料电池控
             _pollingTimer.Interval = TimeSpan.FromSeconds(1); // 默认1秒
             _pollingTimer.Tick += PollingTimer_Tick;
             // 默认不启动，由用户点击按钮启动
+        }
+
+        /// <summary>
+        /// SOC 读写使用同一个单次超时计时器；响应到达、断线或窗口关闭时立即停止。
+        /// </summary>
+        private void InitializeSocResponseTimeoutTimer()
+        {
+            _socResponseTimeoutTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(SocResponseTimeoutSeconds)
+            };
+            _socResponseTimeoutTimer.Tick += SocResponseTimeoutTimer_Tick;
+        }
+
+        private void RestartSocResponseTimeout()
+        {
+            _socResponseTimeoutTimer?.Stop();
+            _socResponseTimeoutTimer?.Start();
+        }
+
+        private void StopSocResponseTimeout()
+        {
+            _socResponseTimeoutTimer?.Stop();
+        }
+
+        private void SocResponseTimeoutTimer_Tick(object? sender, EventArgs e)
+        {
+            StopSocResponseTimeout();
+
+            if (_pendingSocReadDeviceAddress.HasValue)
+            {
+                _pendingSocReadDeviceAddress = null;
+
+                if (_socWriteReadbackPending && _pendingSocWrite != null)
+                {
+                    tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x6C, 0x00));
+                    tbk_SocValidationStatus.Text =
+                        "SOC写入已确认，但自动回读5秒内未响应；写入快照已保留，可再次点击读取SOC参数核对。";
+                    UpdateStatus("BMS/SOC写入后自动回读超时，可手动重试读取");
+                    HC.Growl.Warning("SOC写入已确认，但自动回读超时；请重试读取");
+                    return;
+                }
+
+                tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
+                tbk_SocValidationStatus.Text = "读取SOC参数5秒内未收到响应，可重试读取。";
+                UpdateStatus("读取BMS/SOC参数超时");
+                HC.Growl.Warning("读取SOC参数超时");
+                return;
+            }
+
+            if (_pendingSocWrite != null && !_socWriteReadbackPending)
+            {
+                _pendingSocWrite = null;
+                _pendingSocWriteDeviceAddress = null;
+                _pendingSocWritePortName = null;
+                _socParamsAwaitingRestart = false;
+                _socWriteResultUnknown = true;
+                tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
+                tbk_SocValidationStatus.Text =
+                    "SOC写入5秒内未收到确认；设备结果和下次重启生效值未知，可重新读取Flash值核查。";
+                UpdateStatus("BMS/SOC参数写入响应超时，设备结果未知");
+                HC.Growl.Warning("SOC写入响应超时，设备结果未知");
+            }
         }
 
         /// <summary>
@@ -659,13 +881,13 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 发送读取配置命令
         /// </summary>
-        private void SendReadConfigCommand(byte deviceAddress, byte paramTypeHigh, byte paramTypeLow, byte subIndex = 0)
+        private bool SendReadConfigCommand(byte deviceAddress, byte paramTypeHigh, byte paramTypeLow, byte subIndex = 0)
         {
             // V4.3: parameter ID (2 bytes) + sub-index (1 byte).
             // A sub-index of 0 requests every parameter in the selected group.
             byte[] data = new byte[] { paramTypeHigh, paramTypeLow, subIndex };
             byte[] frame = BuildFrame(deviceAddress, ProtocolConstants.FUNC_READ_CONFIG, data);
-            SendFrame(frame);
+            return SendFrame(frame);
         }
 
         #endregion
@@ -1989,11 +2211,11 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 发送帧数据
         /// </summary>
-        private void SendFrame(byte[] frame)
+        private bool SendFrame(byte[] frame)
         {
             // 使用ViewModel的SerialPortManager发送数据
             var serialPortManager = _viewModel?.GetSerialPortManager();
-            serialPortManager?.SendData(frame);
+            return serialPortManager?.SendData(frame) == true;
         }
 
         private void OnFrameSent(byte[] frame)
@@ -2112,6 +2334,10 @@ namespace FCU_氢燃料电池控
                         HandleFanManualResponse(frame);
                         break;
 
+                    case ProtocolConstants.RESP_SOC_PARAMS: // BMS/SOC参数设置响应(1B结果码)
+                        HandleSocParamsSetResponse(frame);
+                        break;
+
                     case 0xF0: // 报警信息上报
                         HandleAlarmReport(frame);
                         break;
@@ -2206,6 +2432,80 @@ namespace FCU_氢燃料电池控
         }
 
         /// <summary>
+        /// 处理 BMS/SOC 参数设置响应（0x90）。成功表示参数已固化，需重启 FCU 生效。
+        /// </summary>
+        private void HandleSocParamsSetResponse(byte[] frame)
+        {
+            if (_pendingSocWriteDeviceAddress.HasValue &&
+                (frame.Length <= 2 || frame[2] != _pendingSocWriteDeviceAddress.Value))
+            {
+                byte actualAddress = frame.Length > 2 ? frame[2] : (byte)0;
+                Dispatcher.Invoke(() => UpdateStatus(
+                    $"忽略地址不匹配的SOC写入响应：期望{_pendingSocWriteDeviceAddress.Value}，收到{actualAddress}"));
+                return;
+            }
+
+            byte result = ResponseParser.ParseSocParamsSetResponse(frame);
+            Dispatcher.Invoke(() =>
+            {
+                if (_pendingSocWriteDeviceAddress.HasValue)
+                {
+                    StopSocResponseTimeout();
+                }
+
+                if (result != ProtocolConstants.ERR_SUCCESS)
+                {
+                    string error = ProtocolConstants.GetErrorCodeDescription(result);
+                    bool responseMalformed = result == 0xFF;
+                    if (result == 0xFF)
+                    {
+                        _socParamsAwaitingRestart = false;
+                        _socWriteResultUnknown = true;
+                    }
+                    _pendingSocWrite = null;
+                    _pendingSocWriteDeviceAddress = null;
+                    _pendingSocWritePortName = null;
+                    _pendingSocReadDeviceAddress = null;
+                    _socWriteReadbackPending = false;
+                    tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
+                    tbk_SocValidationStatus.Text = responseMalformed
+                        ? "SOC写入响应异常，设备写入结果和下次重启生效值未知。"
+                        : $"SOC参数写入失败：{error}";
+                    UpdateStatus(responseMalformed
+                        ? "BMS/SOC写入响应异常，设备结果未知"
+                        : $"BMS/SOC参数设置失败：{error}");
+                    return;
+                }
+
+                if (_pendingSocWrite == null)
+                {
+                    tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
+                    tbk_SocValidationStatus.Text = "FCU确认写入成功，但上位机没有对应的待核对参数；未自动回读。";
+                    UpdateStatus("收到无法匹配请求的BMS/SOC写入成功响应");
+                    return;
+                }
+
+                _socParamsAwaitingRestart = true;
+                _socWriteResultUnknown = false;
+                _socWriteReadbackPending = true;
+                tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x6C, 0x00));
+                tbk_SocValidationStatus.Text = "SOC参数已写入Flash；重启FCU后生效，正在自动回读核对。";
+                UpdateStatus("BMS/SOC参数已固化，重启FCU后生效；正在回读");
+
+                if (_pendingSocWriteDeviceAddress.HasValue)
+                {
+                    if (!SendSocReadConfigCommand(_pendingSocWriteDeviceAddress.Value))
+                    {
+                        tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x6C, 0x00));
+                        tbk_SocValidationStatus.Text =
+                            "SOC写入已确认，但自动回读命令发送失败；写入快照已保留，可再次点击读取SOC参数核对。";
+                        UpdateStatus("BMS/SOC写入已固化，但自动回读发送失败");
+                    }
+                }
+            });
+        }
+
+        /// <summary>
         /// 处理风扇手动运行控制响应（0x8F，数据域1B结果码）。
         /// 只有FCU确认成功后才把界面状态切换为手动或自动。
         /// </summary>
@@ -2274,19 +2574,19 @@ namespace FCU_氢燃料电池控
 
         /// <summary>
         /// 组装启动失败 0x03 的提示文案。
-        /// 下位机 0x03 覆盖三种条件（低压超区间 / 电堆温度≥风扇上限 / SOC&gt;90），
+        /// 下位机 0x03 覆盖三种条件（低压超区间 / 电堆温度≥风扇上限 / SOC超过开机拒启上限），
         /// 响应码本身无法区分，若已知 SOC 超限则直接点名，否则列出全部可能。
         /// </summary>
         private string BuildStartFail03Message()
         {
             var bms = _bmsService?.Data;
-            if (bms != null && bms.Online && bms.Soc > SocStartMax)
+            if (bms != null && bms.Online && bms.Soc > _socStartMax)
             {
-                return $"启动失败：SOC={bms.Soc}% 超过下位机门控上限 {SocStartMax}%";
+                return $"启动失败：SOC={bms.Soc}% 超过下位机门控上限 {_socStartMax}%";
             }
 
             return "启动失败：启动条件不满足（低压超出上下限 / 电堆温度≥风扇温度上限 / "
-                 + $"SOC>{SocStartMax}%），请检查「系统监控」中的压力与温度";
+                 + $"SOC>{_socStartMax}%），请检查「系统监控」中的压力与温度";
         }
 
         /// <summary>
@@ -2490,11 +2790,34 @@ namespace FCU_氢燃料电池控
 
             Dispatcher.Invoke(() =>
             {
+                if (paramTypeID == ProtocolConstants.PARAM_TYPE_SOC)
+                {
+                    if (!_pendingSocReadDeviceAddress.HasValue)
+                    {
+                        UpdateStatus("收到无对应读取请求的SOC参数响应，已忽略");
+                        return;
+                    }
+
+                    byte actualAddress = frame.Length > 2 ? frame[2] : (byte)0;
+                    if (actualAddress != _pendingSocReadDeviceAddress.Value)
+                    {
+                        UpdateStatus(
+                            $"忽略地址不匹配的SOC读取响应：期望{_pendingSocReadDeviceAddress.Value}，收到{actualAddress}");
+                        return;
+                    }
+
+                    StopSocResponseTimeout();
+                }
+
                 // 先校验再解析：Parse*Params 在长度不符时会静默返回全 0 对象，
                 // 若直接更新 UI，用户会看到一片 0 却被告知「读取成功」，无法察觉解析失败
                 if (!ResponseParser.TryValidateReadConfigResponse(frame, paramTypeID,
                         out string failReason))
                 {
+                    if (paramTypeID == ProtocolConstants.PARAM_TYPE_SOC)
+                    {
+                        _pendingSocReadDeviceAddress = null;
+                    }
                     string msg = $"配置参数 0x{paramTypeID:X4} 解析失败：{failReason}";
                     UpdateStatus(msg);
                     HC.Growl.Warning(msg);
@@ -2542,6 +2865,16 @@ namespace FCU_氢燃料电池控
                     case 0x0601: // 工作流程参数
                         var flowParams = ResponseParser.ParseFlowParams(frame);
                         UpdateFlowParams(flowParams);
+                        break;
+
+                    case ProtocolConstants.PARAM_TYPE_SOC: // BMS/SOC参数
+                        var socParams = ResponseParser.ParseSocParams(frame);
+                        bool socUpdated = UpdateSocParams(socParams);
+                        _pendingSocReadDeviceAddress = null;
+                        if (!socUpdated)
+                        {
+                            return;
+                        }
                         break;
 
                     case 0x0901: // 通用参数
@@ -2629,6 +2962,106 @@ namespace FCU_氢燃料电池控
             _viewModel.FCUTemperature = (data.FCUTemperature / 10.0).ToString("F1");
             _viewModel.RunTime = data.RunTime.ToString();
             _viewModel.FaultCode = data.FaultCode == 0 ? "无故障" : $"0x{data.FaultCode:X2}";
+        }
+
+        private bool UpdateSocParams(SocParams data)
+        {
+            if (data.StartMax is < 1 or > 100 ||
+                data.StopHigh is < 1 or > 100 ||
+                data.StopMin is < 1 or > 100 ||
+                data.BatteryCapacity == 0)
+            {
+                string error = $"FCU返回非法SOC参数：{data.StartMax}/{data.StopHigh}/{data.StopMin}/{data.BatteryCapacity}Ah";
+                SetSocValidationError(error);
+                UpdateStatus(error);
+                HC.Growl.Warning(error);
+                return false;
+            }
+
+            if (_pendingSocWrite != null && !_socWriteReadbackPending)
+            {
+                const string warning = "SOC写入尚未收到0x90确认，本次回读不作为写入核对，界面输入保持不变";
+                UpdateStatus(warning);
+                HC.Growl.Warning(warning);
+                return false;
+            }
+
+            if (_socWriteReadbackPending && _pendingSocWrite != null)
+            {
+                SocParams expected = _pendingSocWrite;
+                bool matches = data.StartMax == expected.StartMax &&
+                    data.StopHigh == expected.StopHigh &&
+                    data.StopMin == expected.StopMin &&
+                    data.BatteryCapacity == expected.BatteryCapacity;
+
+                _pendingSocWrite = null;
+                _pendingSocWriteDeviceAddress = null;
+                _pendingSocWritePortName = null;
+                _socWriteReadbackPending = false;
+
+                if (!matches)
+                {
+                    string error = "SOC写入后回读不一致：" +
+                        $"写入 {expected.StartMax}/{expected.StopHigh}/{expected.StopMin}/{expected.BatteryCapacity}Ah，" +
+                        $"设备 {data.StartMax}/{data.StopHigh}/{data.StopMin}/{data.BatteryCapacity}Ah；已保留原输入";
+                    SetSocValidationError(error);
+                    UpdateStatus(error);
+                    HC.Growl.Error(error);
+                    return false;
+                }
+
+                SetSocTextBoxes(data);
+                tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x6C, 0x00));
+                tbk_SocValidationStatus.Text =
+                    $"写入与Flash回读一致：{FormatSocParams(data)}；待重启FCU生效。当前运行提示仍按 {_socStartMax}/{_socStopHigh}/{_socStopMin}。";
+                UpdateStatus("BMS/SOC写入与回读一致；待重启FCU生效");
+                return true;
+            }
+
+            SetSocTextBoxes(data);
+            if (_socParamsAwaitingRestart || _socWriteResultUnknown)
+            {
+                tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x6C, 0x00));
+                string activationState = _socParamsAwaitingRestart
+                    ? "已确认存在待重启生效的写入"
+                    : "此前写入结果未知，重启生效值不能确认";
+                tbk_SocValidationStatus.Text =
+                    $"已回读Flash存储值：{FormatSocParams(data)}；{activationState}。当前运行提示仍按 {_socStartMax}/{_socStopHigh}/{_socStopMin}。";
+                return true;
+            }
+
+            ApplyActiveSocParams(data);
+            tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
+            tbk_SocValidationStatus.Text = $"已回读FCU当前配置值：{FormatSocParams(data)}。";
+
+            return true;
+        }
+
+        private void SetSocTextBoxes(SocParams data)
+        {
+            tbx_OverviewSocStartMax.Text = data.StartMax.ToString(CultureInfo.InvariantCulture);
+            tbx_OverviewSocStopHigh.Text = data.StopHigh.ToString(CultureInfo.InvariantCulture);
+            tbx_OverviewSocStopMin.Text = data.StopMin.ToString(CultureInfo.InvariantCulture);
+            tbx_OverviewBatteryCapacity.Text = data.BatteryCapacity.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private void ApplyActiveSocParams(SocParams data)
+        {
+            _socStartMax = data.StartMax;
+            _socStopHigh = data.StopHigh;
+            _socStopMin = data.StopMin;
+            tbk_BmsSocThresholdHint.Text =
+                $"  (>{_socStartMax} 拒启 / >{_socStopHigh} 自动停 / <{_socStopMin} 停机前充电)";
+
+            if (_bmsService?.Data is { Online: true } bms)
+            {
+                OnBmsDataUpdated(bms);
+            }
+        }
+
+        private static string FormatSocParams(SocParams data)
+        {
+            return $"{data.StartMax}/{data.StopHigh}/{data.StopMin}/{data.BatteryCapacity}Ah";
         }
 
         /// <summary>
@@ -3246,11 +3679,11 @@ namespace FCU_氢燃料电池控
                 return;
             }
 
-            // SOC 条件着色: 下位机 fcu_control.c 硬编码 SOC>90 拒绝启动、SOC>85 运行中自动停机
+            // SOC 条件着色：使用最近一次 0x0701 回读值，未回读前使用固件默认值。
             tbk_BMS_SOC.Text = data.Soc.ToString();
-            tbk_BMS_SOC.Foreground = data.Soc > SocStartMax
+            tbk_BMS_SOC.Foreground = data.Soc > _socStartMax
                 ? new SolidColorBrush(Color.FromRgb(0xF4, 0x43, 0x36))   // 红: 拒绝启动
-                : data.Soc > SocStopHigh
+                : data.Soc > _socStopHigh
                     ? new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00)) // 橙: 运行中会自动停机
                     : new SolidColorBrush(Color.FromRgb(0x21, 0x21, 0x21));
             tbk_OverviewBmsSoc.Text = data.Soc.ToString();
@@ -3287,22 +3720,6 @@ namespace FCU_氢燃料电池控
         }
 
         /// <summary>
-        /// 下位机 fcu_control.c 的 SOC 门控阈值 (硬编码, 协议层无法查询):
-        /// FCU_SOC_START_MAX = 90 → SOC>90 拒绝启动电堆 (0x88 返回 0x03「其他原因」)
-        /// </summary>
-        private const int SocStartMax = 90;
-
-        /// <summary>
-        /// FCU_SOC_STOP_HIGH = 85 → 运行中 SOC>85 自动停机 (不触发 0xF0 报警, 仅 0xF1 状态变更)
-        /// </summary>
-        private const int SocStopHigh = 85;
-
-        /// <summary>
-        /// FCU_SOC_STOP_MIN = 60 → 手动停机时 SOC&lt;60 先保持电堆运行并充电，到60后再继续关机序列。
-        /// </summary>
-        private const int SocStopMin = 60;
-
-        /// <summary>
         /// 刷新电流设置 Tab 顶部的 BMS / SOC 运行限制提示条。
         /// 下位机 fcu_control_start_load() 等入口在 BMS 阻断时是静默 return，
         /// 0x82 响应仍回 0x00 成功，上位机会显示「设置成功」而拉载实际没启动，
@@ -3317,13 +3734,13 @@ namespace FCU_氢燃料电池控
                 reasons.Add($"BMS保护阻断设流：{bmsReason}");
             }
 
-            if (data.Soc > SocStartMax)
+            if (data.Soc > _socStartMax)
             {
-                reasons.Add($"SOC={data.Soc}% > {SocStartMax}%：电堆启动会被拒绝（不是拉载指令阻断）");
+                reasons.Add($"SOC={data.Soc}% > {_socStartMax}%：电堆启动会被拒绝（不是拉载指令阻断）");
             }
-            else if (data.Soc > SocStopHigh)
+            else if (data.Soc > _socStopHigh)
             {
-                reasons.Add($"SOC={data.Soc}% > {SocStopHigh}%：电堆运行中会自动停机");
+                reasons.Add($"SOC={data.Soc}% > {_socStopHigh}%：电堆运行中会自动停机");
             }
 
             if (reasons.Count > 0)
@@ -3469,6 +3886,11 @@ namespace FCU_氢燃料电池控
             if (_chartUpdateTimer != null)
             {
                 _chartUpdateTimer.Stop();
+            }
+            if (_socResponseTimeoutTimer != null)
+            {
+                _socResponseTimeoutTimer.Stop();
+                _socResponseTimeoutTimer.Tick -= SocResponseTimeoutTimer_Tick;
             }
 
             if (_viewModel != null)

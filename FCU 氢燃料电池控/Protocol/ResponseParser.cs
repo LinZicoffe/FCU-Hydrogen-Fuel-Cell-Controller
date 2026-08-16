@@ -58,6 +58,7 @@ namespace FCU_氢燃料电池控.Protocol
                 ProtocolConstants.PARAM_TYPE_LOAD_CONTROL => 9,
                 ProtocolConstants.PARAM_TYPE_LOAD_STARTUP => 5,
                 ProtocolConstants.PARAM_TYPE_FLOW => 12,
+                ProtocolConstants.PARAM_TYPE_SOC => ProtocolConstants.SOC_PARAMS_DATA_LENGTH,
                 ProtocolConstants.PARAM_TYPE_GENERAL => 2,
                 _ => -2                                             // 未知参数ID
             };
@@ -185,13 +186,13 @@ namespace FCU_氢燃料电池控.Protocol
                 // 字节15-16: 风扇转速
                 data.FanSpeed = (ushort)((frame[offset + 15] << 8) | frame[offset + 16]);
 
-                // 字节17-18: 电堆温度 (有符号, 0.1℃)
+                // 字节17-18: PT1000 电堆温度 (有符号, 0.1℃)
                 // 下位机 fcu_sensor.c 允许温度低至 -40℃，编码时按二进制补码塞进 uint16，
                 // 因此必须按 short 解析，否则 -40.0℃ 会被读成 65136 → 显示 6513.6℃
                 data.StackTemperature = (short)((frame[offset + 17] << 8) | frame[offset + 18]);
 
-                // 字节19-20: FCU控制器温度 (有符号, 0.1℃)
-                data.FCUTemperature = (short)((frame[offset + 19] << 8) | frame[offset + 20]);
+                // 字节19-20: FCU控制器温度 (无符号, 0.1℃)
+                data.FCUTemperature = (ushort)((frame[offset + 19] << 8) | frame[offset + 20]);
 
                 // 字节21-24: 累计运行时间 (大端序, 4字节)
                 data.RunTime = (uint)((frame[offset + 21] << 24) | (frame[offset + 22] << 16) |
@@ -656,6 +657,50 @@ namespace FCU_氢燃料电池控.Protocol
         }
 
         /// <summary>
+        /// 解析 BMS/SOC 参数（0x8A响应，参数类型0x0701，参数数据5字节）。
+        /// </summary>
+        public static SocParams ParseSocParams(byte[] frame)
+        {
+            var data = new SocParams();
+
+            try
+            {
+                if (!TryGetReadConfigParameterData(frame, ProtocolConstants.PARAM_TYPE_SOC,
+                    out int offset, out int parameterDataLength) ||
+                    parameterDataLength != ProtocolConstants.SOC_PARAMS_DATA_LENGTH)
+                {
+                    return data;
+                }
+
+                data.StartMax = frame[offset];
+                data.StopHigh = frame[offset + 1];
+                data.StopMin = frame[offset + 2];
+                data.BatteryCapacity = (ushort)((frame[offset + 3] << 8) | frame[offset + 4]);
+            }
+            catch
+            {
+                // 解析异常时返回默认值
+            }
+
+            return data;
+        }
+
+        /// <summary>
+        /// 构建 BMS/SOC 参数设置数据域（0x10，固定5字节大端，不含参数类型ID）。
+        /// </summary>
+        public static byte[] BuildSocParamsData(SocParams p)
+        {
+            return new byte[]
+            {
+                p.StartMax,
+                p.StopHigh,
+                p.StopMin,
+                (byte)(p.BatteryCapacity >> 8),
+                (byte)(p.BatteryCapacity & 0xFF)
+            };
+        }
+
+        /// <summary>
         /// 解析风扇手动运行控制响应（功能码0x8F，数据域1B结果码）。
         /// </summary>
         public static byte ParseFanManualResponse(byte[] frame)
@@ -663,6 +708,21 @@ namespace FCU_氢燃料电池控.Protocol
             if (frame == null ||
                 frame.Length < ProtocolConstants.MIN_FRAME_LENGTH + 1 ||
                 frame[3] != ProtocolConstants.RESP_FAN_MANUAL)
+            {
+                return 0xFF;
+            }
+
+            return ParseSetParamResponse(frame);
+        }
+
+        /// <summary>
+        /// 解析 BMS/SOC 参数设置响应（功能码0x90，数据域1B结果码）。
+        /// </summary>
+        public static byte ParseSocParamsSetResponse(byte[] frame)
+        {
+            if (frame == null ||
+                frame.Length < ProtocolConstants.MIN_FRAME_LENGTH + 1 ||
+                frame[3] != ProtocolConstants.RESP_SOC_PARAMS)
             {
                 return 0xFF;
             }
