@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:FCU_氢燃料电池控"
+        xmlns:controls="clr-namespace:FCU_氢燃料电池控.Controls"
         xmlns:hc="https://handyorg.github.io/handycontrol"
         mc:Ignorable="d"
         Title="FCU 氢燃料电池控制系统" Height="780" Width="1280"
@@ -98,6 +99,12 @@
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Padding" Value="8,0"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+
+        <Style x:Key="TimingTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource StandardTextBoxStyle}">
+            <Setter Property="Width" Value="82"/>
+            <Setter Property="Margin" Value="4,2"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
         </Style>
 
         <!-- GroupBox样式（使用HandyControl主题资源） -->
@@ -395,18 +402,20 @@
                                         Width="150"
                                         Margin="4"
                                         Click="btn_ReadPressureParams_Click"/>
-                                <Button Content="写入FCU并固化" Command="{Binding SetHighPressureMinCommand}" Style="{StaticResource SuccessButtonStyle}" Width="150" Margin="4"/>
+                                <!-- 旧压力协议仍包含已从客户界面移除的红/黄阈值；在新字段映射确认前禁止整帧覆盖。 -->
+                                <Button Content="写入FCU并固化（等待固件）" IsEnabled="False"
+                                        Style="{StaticResource SuccessButtonStyle}" Width="200" Margin="4"/>
                                 </StackPanel>
 
                                 <!-- 按客户草图排列：最低限制 | 当前值 | 最高限制 | 量程 -->
-                                <Grid>
+                                <Grid HorizontalAlignment="Stretch">
                                     <Grid.ColumnDefinitions>
                                         <!-- 行头 | 最低限制 | 当前值 | 最高限制 | 量程 -->
-                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="85"/>
                                         <ColumnDefinition Width="1*"/>
                                         <ColumnDefinition Width="1*"/>
                                         <ColumnDefinition Width="1*"/>
-                                        <ColumnDefinition Width="1.2*"/>
+                                        <ColumnDefinition Width="1.15*"/>
                                     </Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto"/>
@@ -442,13 +451,13 @@
                                                  Text="{Binding HighPressureMin, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource StandardTextBoxStyle}"
                                                  ToolTip="高压最小值，固件默认 300 KPA"/>
-                                        <TextBlock Grid.Column="1" Text="KPA" Style="{StaticResource PressureUnitStyle}"/>
+                                        <TextBlock Grid.Column="1" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
                                     </Grid>
 
                                     <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource PressureLiveBoxStyle}">
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                             <TextBlock Text="{Binding HighPressure}" Style="{StaticResource PressureLiveTextStyle}"/>
-                                            <TextBlock Text=" KPA" Style="{StaticResource PressureUnitStyle}" Margin="2,0,0,0"/>
+                                            <TextBlock Text=" kPa" Style="{StaticResource PressureUnitStyle}" Margin="2,0,0,0"/>
                                         </StackPanel>
                                     </Border>
 
@@ -461,7 +470,7 @@
                                                  Text="{Binding HighPressureMax, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource StandardTextBoxStyle}"
                                                  ToolTip="高压上限告警值，高于此值触发 CRITICAL 停机。建议初值 5000 KPA（等于量程），联调后按实际安全值下调"/>
-                                        <TextBlock Grid.Column="1" Text="KPA" Style="{StaticResource PressureUnitStyle}"/>
+                                        <TextBlock Grid.Column="1" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
                                     </Grid>
 
                                     <Grid Grid.Row="1" Grid.Column="4">
@@ -475,7 +484,7 @@
                                                  Text="{Binding HighPressureRange, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource StandardTextBoxStyle}"
                                                  ToolTip="高压量程上限，固件默认 5000 KPA，可修改"/>
-                                        <TextBlock Grid.Column="2" Text="KPA" Style="{StaticResource PressureUnitStyle}"/>
+                                        <TextBlock Grid.Column="2" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
                                     </Grid>
 
                                     <!-- ===== 第2行：低压传感器 ===== -->
@@ -491,13 +500,13 @@
                                                  Text="{Binding LowPressureMin, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource StandardTextBoxStyle}"
                                                  ToolTip="低压下限值，固件默认 30 KPA"/>
-                                        <TextBlock Grid.Column="1" Text="KPA" Style="{StaticResource PressureUnitStyle}"/>
+                                        <TextBlock Grid.Column="1" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
                                     </Grid>
 
                                     <Border Grid.Row="2" Grid.Column="2" Style="{StaticResource PressureLiveBoxStyle}">
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                             <TextBlock Text="{Binding LowPressure}" Style="{StaticResource PressureLiveTextStyle}"/>
-                                            <TextBlock Text=" KPA" Style="{StaticResource PressureUnitStyle}" Margin="2,0,0,0"/>
+                                            <TextBlock Text=" kPa" Style="{StaticResource PressureUnitStyle}" Margin="2,0,0,0"/>
                                         </StackPanel>
                                     </Border>
 
@@ -510,7 +519,7 @@
                                                  Text="{Binding LowPressureMax, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource StandardTextBoxStyle}"
                                                  ToolTip="低压上限值，固件默认 80 KPA，须大于下限值。低压超出 [下限, 上限] 区间时禁止启动电堆"/>
-                                        <TextBlock Grid.Column="1" Text="KPA" Style="{StaticResource PressureUnitStyle}"/>
+                                        <TextBlock Grid.Column="1" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
                                     </Grid>
 
                                     <Grid Grid.Row="2" Grid.Column="4">
@@ -524,7 +533,7 @@
                                                  Text="{Binding LowPressureRange, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource StandardTextBoxStyle}"
                                                  ToolTip="低压量程上限，固件默认 250 KPA，可修改"/>
-                                        <TextBlock Grid.Column="2" Text="KPA" Style="{StaticResource PressureUnitStyle}"/>
+                                        <TextBlock Grid.Column="2" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
                                     </Grid>
                                 </Grid>
                             </StackPanel>
@@ -535,14 +544,14 @@
                                 <StackPanel>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,8">
                                         <Button Name="btn_ReadFanTempParams"
-                                                Content="读取温度/风扇参数"
+                                                Content="读取设备参数（等待固件）"
                                                 Style="{StaticResource StandardButtonStyle}"
-                                                Width="170" Margin="4"
-                                                Click="btn_ReadFanTempParams_Click"/>
-                                        <Button Content="写入FCU并固化"
+                                                Width="190" Margin="4"
+                                                IsEnabled="False"/>
+                                        <Button Content="写入FCU并固化（等待固件）"
                                                 Style="{StaticResource SuccessButtonStyle}"
-                                                Width="150" Margin="4"
-                                                Click="btn_SetFanTempParams_Click"/>
+                                                Width="200" Margin="4"
+                                                IsEnabled="False"/>
                                     </StackPanel>
 
                                     <!-- 温度：最低限制 | 当前温度 | 最高限制 -->
@@ -569,7 +578,7 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_TempMin" Style="{StaticResource StandardTextBoxStyle}"
-                                                     Text="40.0" Margin="4" ToolTip="协议单位0.1℃，界面按℃显示"/>
+                                                     Text="-40.0" Margin="4" ToolTip="支持负温度；按0.1℃显示，等待固件确认有符号协议"/>
                                             <TextBlock Grid.Column="1" Text="℃" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
 
@@ -608,18 +617,18 @@
                                             <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
 
-                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="最低转速" Style="{StaticResource PressureHeaderStyle}"
-                                                   ToolTip="按图纸使用PWM百分比设定"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="待机占空比" Style="{StaticResource PressureHeaderStyle}"
+                                                   ToolTip="待机状态使用的PWM百分比"/>
                                         <TextBlock Grid.Row="0" Grid.Column="2" Text="当前转速" Style="{StaticResource PressureHeaderStyle}" Foreground="#2196F3"/>
-                                        <TextBlock Grid.Row="0" Grid.Column="3" Text="最高转速" Style="{StaticResource PressureHeaderStyle}"
-                                                   ToolTip="按图纸使用PWM百分比设定"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="3" Text="拉载占空比" Style="{StaticResource PressureHeaderStyle}"
+                                                   ToolTip="进入拉载状态时使用的PWM百分比"/>
                                         <TextBlock Grid.Row="0" Grid.Column="4" Text="转速量程" Style="{StaticResource PressureHeaderStyle}"/>
 
                                         <TextBlock Grid.Row="1" Grid.Column="0" Text="风扇1" Style="{StaticResource PressureRowHeaderStyle}"/>
                                         <Grid Grid.Row="1" Grid.Column="1">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_FanLowDuty" Style="{StaticResource StandardTextBoxStyle}" Text="20" Margin="4"
-                                                     ToolTip="当前FCU协议的公共低速占空比，两路风扇共用"/>
+                                                     ToolTip="风扇1待机占空比；等待独立双路协议"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource PressureLiveBoxStyle}">
@@ -631,7 +640,7 @@
                                         <Grid Grid.Row="1" Grid.Column="3">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_Fan1MaxDuty" Style="{StaticResource StandardTextBoxStyle}" Text="90" Margin="4"
-                                                     ToolTip="图纸预留参数；当前固件无独立风扇1最高占空比字段"/>
+                                                     ToolTip="风扇1拉载占空比；等待独立双路协议"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Grid Grid.Row="1" Grid.Column="4">
@@ -641,11 +650,11 @@
                                             <TextBlock Grid.Column="1" Text="RPM" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
 
-                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="风扇2" Style="{StaticResource PressureRowHeaderStyle}"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="风扇2（估算）" Style="{StaticResource PressureRowHeaderStyle}"/>
                                         <Grid Grid.Row="2" Grid.Column="1">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_Fan2MinDuty" Style="{StaticResource StandardTextBoxStyle}" Text="30" Margin="4"
-                                                     ToolTip="上位机模拟参数；当前固件两路风扇共用PWM"/>
+                                                     ToolTip="风扇2待机占空比；当前仅用于本地估算和界面预览"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Border Grid.Row="2" Grid.Column="2" Style="{StaticResource PressureLiveBoxStyle}"
@@ -656,7 +665,7 @@
                                         <Grid Grid.Row="2" Grid.Column="3">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_Fan2MaxDuty" Style="{StaticResource StandardTextBoxStyle}" Text="80" Margin="4"
-                                                     ToolTip="风扇2模拟最高占空比"/>
+                                                     ToolTip="风扇2拉载占空比；当前仅用于本地估算和界面预览"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Grid Grid.Row="2" Grid.Column="4">
@@ -667,16 +676,18 @@
                                         </Grid>
                                     </Grid>
 
-                                    <TextBlock Text="风扇1为实测转速；风扇2无转速反馈，当前值按百分比模拟。独立两路最低/最高占空比待固件协议接入。"
+                                    <TextBlock Text="风扇1为实测转速；风扇2无FG反馈，显示值为估算转速（百分比）。待机/拉载两档及双路独立控制等待固件协议接入。"
                                                FontSize="11" Foreground="#757575" Margin="4,6,4,0" TextWrapping="Wrap"/>
 
-                                    <!-- 0x0F运行控制：不写Flash，重启或恢复自动后由PEM温度闭环接管 -->
+                                    <!-- 双路手动控制界面已完成；协议未定义前不得复用旧的单路0x0F命令 -->
                                     <Border CornerRadius="4" Padding="10,8" Background="#F5F9FF"
                                             BorderBrush="#90CAF9" BorderThickness="1" Margin="4,10,4,0">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="150"/>
+                                                <ColumnDefinition Width="120"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="120"/>
                                                 <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="*"/>
@@ -684,26 +695,35 @@
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="Auto"/>
                                                 <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
                                             </Grid.RowDefinitions>
 
-                                            <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="5"
+                                            <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="7"
                                                        Text="风扇手动控制（运行态）" FontWeight="SemiBold" Foreground="#1565C0" Margin="0,0,0,6"/>
-                                            <Label Grid.Row="1" Grid.Column="0" Content="手动占空比:" Style="{StaticResource LabelStyle}" Margin="0,2,4,2"/>
+                                            <Label Grid.Row="1" Grid.Column="0" Content="风扇1:" Style="{StaticResource LabelStyle}" Margin="0,2,4,2"/>
                                             <Grid Grid.Row="1" Grid.Column="1" Margin="0,2,8,2">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                                 <TextBox Grid.Column="0" Name="tbx_FanManualDuty" Style="{StaticResource StandardTextBoxStyle}" Text="60"
-                                                         ToolTip="允许0～100%；仅在启用手动控制时生效"/>
+                                                         ToolTip="风扇1手动占空比，0～100%"/>
                                                 <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                             </Grid>
-                                            <Button Grid.Row="1" Grid.Column="2" Name="btn_EnableFanManual"
-                                                    Content="启用手动占空比" Style="{StaticResource StandardButtonStyle}"
-                                                    Width="140" Margin="4,2" Click="btn_EnableFanManual_Click"/>
-                                            <Button Grid.Row="1" Grid.Column="3" Name="btn_RestoreFanAutomatic"
+                                            <Label Grid.Row="1" Grid.Column="2" Content="风扇2:" Style="{StaticResource LabelStyle}" Margin="0,2,4,2"/>
+                                            <Grid Grid.Row="1" Grid.Column="3" Margin="0,2,8,2">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <TextBox Grid.Column="0" Name="tbx_Fan2ManualDuty" Style="{StaticResource StandardTextBoxStyle}" Text="60"
+                                                         ToolTip="风扇2手动占空比，0～100%；等待固件协议"/>
+                                                <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
+                                            </Grid>
+                                            <Button Grid.Row="1" Grid.Column="4" Name="btn_EnableFanManual"
+                                                    Content="启用双路手动" Style="{StaticResource StandardButtonStyle}"
+                                                    Width="125" Margin="4,2" IsEnabled="False"/>
+                                            <Button Grid.Row="1" Grid.Column="5" Name="btn_RestoreFanAutomatic"
                                                     Content="恢复自动温控" Style="{StaticResource SuccessButtonStyle}"
-                                                    Width="130" Margin="4,2" Click="btn_RestoreFanAutomatic_Click"/>
-                                            <StackPanel Grid.Row="1" Grid.Column="4" Margin="12,2,0,2" VerticalAlignment="Center">
-                                                <TextBlock Name="tbk_FanManualMode" Text="自动温控（上电默认）" FontWeight="SemiBold" Foreground="#2E7D32"/>
-                                                <TextBlock Text="命令不写Flash；设备重启恢复自动。电堆超温时下位机会强制全速并退出手动。"
+                                                    Width="125" Margin="4,2" IsEnabled="False"/>
+                                            <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="7"
+                                                        Margin="0,6,0,0" VerticalAlignment="Center">
+                                                <TextBlock Name="tbk_FanManualMode" Text="等待双路独立控制协议" FontWeight="SemiBold" Foreground="#EF6C00"/>
+                                                <TextBlock Text="当前仅完成双路参数界面，不复用旧固件的一组公共PWM命令。"
                                                            FontSize="11" Foreground="#616161" TextWrapping="Wrap"/>
                                             </StackPanel>
                                         </Grid>
@@ -735,15 +755,17 @@
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="1*"/><ColumnDefinition Width="1*"/>
                                             <ColumnDefinition Width="1*"/><ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="1*"/>
                                         </Grid.ColumnDefinitions>
                                         <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
 
                                         <TextBlock Grid.Row="0" Grid.Column="0" Text="最低开机电量" Style="{StaticResource PressureHeaderStyle}"/>
                                         <TextBlock Grid.Row="0" Grid.Column="1" Text="当前电量" Style="{StaticResource PressureHeaderStyle}" Foreground="#2196F3"/>
                                         <TextBlock Grid.Row="0" Grid.Column="2" Text="最高关机电量" Style="{StaticResource PressureHeaderStyle}"/>
-                                        <TextBlock Grid.Row="0" Grid.Column="3" Text="电池容量" Style="{StaticResource PressureHeaderStyle}"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="3" Text="强启开机电量" Style="{StaticResource PressureHeaderStyle}"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="4" Text="电池容量" Style="{StaticResource PressureHeaderStyle}"/>
 
                                         <Grid Grid.Row="1" Grid.Column="0">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -765,148 +787,206 @@
                                         </Grid>
                                         <Grid Grid.Row="1" Grid.Column="3">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <TextBox Grid.Column="0" Name="tbx_OverviewSocForceStart" Style="{StaticResource StandardTextBoxStyle}" Text="40" Margin="4"
+                                                     ToolTip="界面示例值，不是默认值；等待固件SOC阈值协议"/>
+                                            <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
+                                        </Grid>
+                                        <Grid Grid.Row="1" Grid.Column="4">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_OverviewBatteryCapacity" Style="{StaticResource StandardTextBoxStyle}" Text="8" Margin="4"
-                                                     ToolTip="图纸预留设定值；右侧BMS页继续显示设备回读额定容量"/>
+                                                     ToolTip="界面示例值，不是默认值；等待固件电池容量协议"/>
                                             <TextBlock Grid.Column="1" Text="Ah" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
-
-                                        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="4,4,4,0">
-                                            <TextBlock Text="强启开机电量" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                            <TextBox Name="tbx_OverviewSocForceStart" Style="{StaticResource StandardTextBoxStyle}" Text="40" Width="90"
-                                                     ToolTip="图纸预留；当前FCU固件未提供强启SOC阈值写入协议"/>
-                                            <TextBlock Text="%" Style="{StaticResource PressureUnitStyle}"/>
-                                        </StackPanel>
-                                        <StackPanel Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="4,4,4,0">
-                                            <TextBlock Text="当前固件SOC逻辑仍为90/85/60硬编码" Foreground="#EF6C00" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                            <Button Content="等待固件写入协议" IsEnabled="False" Style="{StaticResource StandardButtonStyle}" Width="150"/>
-                                        </StackPanel>
+                                    </Grid>
+                                    <Grid Margin="4,8,4,0">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Name="tbk_SocValidationStatus"
+                                                   Text="图中数值仅作界面示例；当前固件仍为90/85/60硬编码。"
+                                                   Foreground="#EF6C00" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                        <Button Grid.Column="1" Content="校验SOC参数" Style="{StaticResource StandardButtonStyle}"
+                                                Width="125" Margin="4,0" Click="btn_ValidateSocParams_Click"/>
+                                        <Button Grid.Column="2" Content="写入FCU（等待固件）" IsEnabled="False"
+                                                Style="{StaticResource SuccessButtonStyle}" Width="170" Margin="4,0"/>
                                     </Grid>
                                 </StackPanel>
                             </GroupBox>
 
-                            <!-- 按客户草图合并为启动、正常运行、关机三阶段的阀门脉冲逻辑 -->
+                            <!-- 新阀门时序仅做本地校验与预览；等待更新后的固件协议后再接入读写 -->
                             <GroupBox Header="氢阀 / 排水阀开关逻辑" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
-                            <StackPanel>
-                                <!-- 排水周期参数(0x0201)与流程参数(0x0601)仍分别读写 -->
-                                <WrapPanel HorizontalAlignment="Right" Margin="0,0,0,10">
-                                <Button Name="btn_ReadValveParams"
-                                        Content="读取排水周期参数"
-                                        Style="{StaticResource StandardButtonStyle}"
-                                        Width="160"
-                                        Margin="4"
-                                        Click="btn_ReadValveParams_Click"/>
-                                <Button Content="写入排水周期参数" Style="{StaticResource SuccessButtonStyle}" Width="160" Margin="4" Click="btn_SetValveParams_Click"/>
-                                <Button Name="btn_ReadFlowParams"
-                                        Content="读取流程参数"
-                                        Style="{StaticResource StandardButtonStyle}"
-                                        Width="150"
-                                        Margin="4"
-                                        Click="btn_ReadFlowParams_Click"/>
-                                <Button Content="写入流程参数" Style="{StaticResource SuccessButtonStyle}" Width="150" Margin="4" Click="btn_SetFlowParams_Click"/>
-                                </WrapPanel>
+                                <StackPanel>
+                                    <Grid Margin="4,0,4,10">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0"
+                                                   Text="本页完成上位机时序校验和波形预览；图中数值为示例，不会写入当前固件。"
+                                                   Foreground="#EF6C00" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                        <Button Grid.Column="1" Content="校验并刷新预览" Style="{StaticResource StandardButtonStyle}"
+                                                Width="150" Margin="4,0" Click="btn_ValidateValveTiming_Click"/>
+                                        <Button Grid.Column="2" Content="写入FCU（等待固件）" IsEnabled="False"
+                                                Style="{StaticResource SuccessButtonStyle}" Width="170" Margin="4,0"/>
+                                    </Grid>
 
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="1.15*"/>
-                                        <ColumnDefinition Width="1.15*"/>
-                                        <ColumnDefinition Width="0.85*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <!-- 启动阶段 -->
-                                    <Border Grid.Column="0" BorderBrush="#90CAF9" BorderThickness="1" CornerRadius="4" Margin="4" Padding="8">
+                                    <!-- 开机阶段 -->
+                                    <Border BorderBrush="#90CAF9" BorderThickness="1" CornerRadius="6" Margin="4" Padding="10">
                                         <StackPanel>
-                                            <TextBlock Text="启动阶段" FontSize="15" FontWeight="SemiBold" Foreground="#1565C0"/>
-                                            <TextBlock Text="氢阀：开① → 关 → 开②　｜　排水阀：开① → 开②"
-                                                       FontSize="11" Foreground="#616161" Margin="0,2,0,8" TextWrapping="Wrap"/>
-                                            <Grid>
-                                                <Grid.ColumnDefinitions><ColumnDefinition Width="1.45*"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
-                                                <Grid.RowDefinitions>
-                                                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                                                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                                                </Grid.RowDefinitions>
-                                                <Label Grid.Row="0" Grid.Column="0" Content="氢阀第一次开 (0.1s)" Style="{StaticResource LabelStyle}" Margin="2"/>
-                                                <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_PurgeH2Open1" Style="{StaticResource StandardTextBoxStyle}" Text="10" Margin="2"/>
-                                                <Label Grid.Row="1" Grid.Column="0" Content="氢阀关断 (0.1s)" Style="{StaticResource LabelStyle}" Margin="2"/>
-                                                <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_PurgeH2Close" Style="{StaticResource StandardTextBoxStyle}" Text="10" Margin="2"/>
-                                                <Label Grid.Row="2" Grid.Column="0" Content="氢阀第二次开 (0.1s)" Style="{StaticResource LabelStyle}" Margin="2"/>
-                                                <TextBox Grid.Row="2" Grid.Column="1" Name="tbx_PurgeH2Open2" Style="{StaticResource StandardTextBoxStyle}" Text="10" Margin="2"/>
-                                                <Label Grid.Row="3" Grid.Column="0" Content="排水阀第一次开 (0.1s)" Style="{StaticResource LabelStyle}" Margin="2"/>
-                                                <TextBox Grid.Row="3" Grid.Column="1" Name="tbx_ValveFirstOpen" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="2"/>
-                                                <Label Grid.Row="4" Grid.Column="0" Content="排水阀第二次开 (0.1s)" Style="{StaticResource LabelStyle}" Margin="2"/>
-                                                <TextBox Grid.Row="4" Grid.Column="1" Name="tbx_ValveSecondOpen" Style="{StaticResource StandardTextBoxStyle}" Text="20" Margin="2"/>
-                                            </Grid>
+                                            <TextBlock Text="开机时序（t=0：收到有效 RS485 开机指令）"
+                                                       FontSize="15" FontWeight="SemiBold" Foreground="#1565C0"/>
+                                            <TextBlock Text="t=0 排水阀立即打开；排水阀第一次打开计时与氢阀第一次打开延时并行开始。"
+                                                       FontSize="11" Foreground="#616161" Margin="0,2,0,6" TextWrapping="Wrap"/>
+                                            <controls:ValveTimingPreview x:Name="startupValveTimingPreview" Height="170" Margin="0,2,0,4"/>
+                                            <TextBlock x:Name="tbk_StartupTimingStatus" Foreground="#2E7D32" Margin="4,0,4,6" TextWrapping="Wrap"/>
+                                            <WrapPanel ItemWidth="225">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="氢阀首次延时" Style="{StaticResource LabelStyle}" Width="112"/>
+                                                    <TextBox Name="tbx_StartupH2FirstDelay" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"/>
+                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="氢阀首次打开" Style="{StaticResource LabelStyle}" Width="112"/>
+                                                    <TextBox Name="tbx_StartupH2FirstOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="排水阀首次打开" Style="{StaticResource LabelStyle}" Width="112"/>
+                                                    <TextBox Name="tbx_StartupDrainFirstOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.20" TextChanged="ValveTimingInput_TextChanged"/>
+                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="排水阀首次关闭" Style="{StaticResource LabelStyle}" Width="112"/>
+                                                    <TextBox Name="tbx_StartupDrainFirstClose" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"/>
+                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="氢阀再次延时" Style="{StaticResource LabelStyle}" Width="112"/>
+                                                    <TextBox Name="tbx_StartupH2ReopenDelay" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"/>
+                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="排水阀第二次开" Style="{StaticResource LabelStyle}" Width="112"/>
+                                                    <TextBox Name="tbx_StartupDrainSecondOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="排水阀第三次间隔" Style="{StaticResource LabelStyle}" Width="112"/>
+                                                    <TextBox Name="tbx_StartupDrainThirdInterval" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"/>
+                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="排水阀第三次开" Style="{StaticResource LabelStyle}" Width="112"/>
+                                                    <TextBox Name="tbx_StartupDrainThirdOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                            </WrapPanel>
                                         </StackPanel>
                                     </Border>
 
                                     <!-- 正常运行阶段 -->
-                                    <Border Grid.Column="1" BorderBrush="#A5D6A7" BorderThickness="1" CornerRadius="4" Margin="4" Padding="8">
+                                    <Border BorderBrush="#A5D6A7" BorderThickness="1" CornerRadius="6" Margin="4" Padding="10">
                                         <StackPanel>
-                                            <TextBlock Text="正常运行阶段" FontSize="15" FontWeight="SemiBold" Foreground="#2E7D32"/>
-                                            <TextBlock Text="等待间隔 → 排水阀打开 → 关闭 → 循环"
-                                                       FontSize="11" Foreground="#616161" Margin="0,2,0,8" TextWrapping="Wrap"/>
-                                            <Grid>
-                                                <Grid.ColumnDefinitions><ColumnDefinition Width="1.45*"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
-                                                <Grid.RowDefinitions>
-                                                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                                                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                                                </Grid.RowDefinitions>
-                                                <Label Grid.Row="0" Grid.Column="0" Content="排水间隔 (0.1s)" Style="{StaticResource LabelStyle}" Margin="2"/>
-                                                <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_ValveNormalInterval" Style="{StaticResource StandardTextBoxStyle}" Text="150" Margin="2"/>
-                                                <Label Grid.Row="1" Grid.Column="0" Content="排水打开 (0.1s)" Style="{StaticResource LabelStyle}" Margin="2"/>
-                                                <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_ValveNormalOpen" Style="{StaticResource StandardTextBoxStyle}" Text="3" Margin="2"/>
-                                                <Label Grid.Row="2" Grid.Column="0" Content="排水模式" Style="{StaticResource LabelStyle}" Margin="2"/>
-                                                <hc:ComboBox Grid.Row="2" Grid.Column="1" Name="cbx_DrainMode" SelectedIndex="0" Margin="2"
-                                                             SelectionChanged="cbx_DrainMode_SelectionChanged">
-                                                    <ComboBoxItem Content="定时"/>
-                                                    <ComboBoxItem Content="低压反馈"/>
-                                                </hc:ComboBox>
-                                                <Label Grid.Row="3" Grid.Column="0" Content="低压反馈阈值 (kPa)" Style="{StaticResource LabelStyle}" Margin="2"/>
-                                                <TextBox Grid.Row="3" Grid.Column="1" Name="tbx_LowNormalRef" Style="{StaticResource StandardTextBoxStyle}" Text="55" IsEnabled="False" Margin="2"/>
-                                                <Label Grid.Row="4" Grid.Column="0" Content="拉载风扇占空比 (%)" Style="{StaticResource LabelStyle}" Margin="2"/>
-                                                <TextBox Grid.Row="4" Grid.Column="1" Name="tbx_LoadDuty" Style="{StaticResource StandardTextBoxStyle}" Text="30" Margin="2"/>
-                                            </Grid>
+                                            <TextBlock Text="正常运行排水" FontSize="15" FontWeight="SemiBold" Foreground="#2E7D32"/>
+                                            <TextBlock Text="定时或低压反馈触发 → 排水阀打开 → 关闭 → 重新计时/检测"
+                                                       FontSize="11" Foreground="#616161" Margin="0,2,0,6"/>
+                                            <WrapPanel ItemWidth="225">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="排水模式" Style="{StaticResource LabelStyle}" Width="105"/>
+                                                    <hc:ComboBox Name="cbx_DrainMode" SelectedIndex="0" Width="120" Margin="4,2">
+                                                        <ComboBoxItem Content="定时"/>
+                                                        <ComboBoxItem Content="低压反馈"/>
+                                                    </hc:ComboBox>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="排水间隔" Style="{StaticResource LabelStyle}" Width="105"/>
+                                                    <TextBox Name="tbx_ValveNormalInterval" Style="{StaticResource TimingTextBoxStyle}" Text="15.00"/>
+                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="排水打开" Style="{StaticResource LabelStyle}" Width="105"/>
+                                                    <TextBox Name="tbx_ValveNormalOpen" Style="{StaticResource TimingTextBoxStyle}" Text="0.30"/>
+                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="低压反馈阈值" Style="{StaticResource LabelStyle}" Width="105"/>
+                                                    <TextBox Name="tbx_LowNormalRef" Style="{StaticResource TimingTextBoxStyle}" Text="55"/>
+                                                    <TextBlock Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                            </WrapPanel>
+                                            <TextBlock Text="低压反馈阈值始终可编辑；触发方向、回差和复位条件等待固件协议确认。"
+                                                       FontSize="11" Foreground="#757575" Margin="4,5,4,0"/>
                                         </StackPanel>
                                     </Border>
 
                                     <!-- 关机阶段 -->
-                                    <Border Grid.Column="2" BorderBrush="#FFCC80" BorderThickness="1" CornerRadius="4" Margin="4" Padding="8">
+                                    <Border BorderBrush="#FFCC80" BorderThickness="1" CornerRadius="6" Margin="4" Padding="10">
                                         <StackPanel>
-                                            <TextBlock Text="关机阶段" FontSize="15" FontWeight="SemiBold" Foreground="#EF6C00"/>
-                                            <TextBlock Text="排水阀打开 → 保持 → 关闭"
-                                                       FontSize="11" Foreground="#616161" Margin="0,2,0,8" TextWrapping="Wrap"/>
-                                            <Grid>
-                                                <Grid.ColumnDefinitions><ColumnDefinition Width="1.35*"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
-                                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                                <Label Grid.Row="0" Grid.Column="0" Content="排水打开 (0.1s)" Style="{StaticResource LabelStyle}" Margin="2"/>
-                                                <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_ValveShutdownOpen" Style="{StaticResource StandardTextBoxStyle}" Text="5" Margin="2"/>
-                                                <Label Grid.Row="1" Grid.Column="0" Content="排水保持 (0.1s)" Style="{StaticResource LabelStyle}" Margin="2"/>
-                                                <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_PurgeDrainHold" Style="{StaticResource StandardTextBoxStyle}" Text="30" Margin="2"/>
-                                            </Grid>
+                                            <TextBlock Text="关机时序（t=0：收到有效 RS485 关机指令）"
+                                                       FontSize="15" FontWeight="SemiBold" Foreground="#EF6C00"/>
+                                            <TextBlock Text="t=0 同时关闭氢阀并打开排水阀；排水阀持续打开至关机总时长结束。"
+                                                       FontSize="11" Foreground="#616161" Margin="0,2,0,6" TextWrapping="Wrap"/>
+                                            <controls:ValveTimingPreview x:Name="shutdownValveTimingPreview" Height="170" Margin="0,2,0,4"/>
+                                            <TextBlock x:Name="tbk_ShutdownTimingStatus" Foreground="#2E7D32" Margin="4,0,4,6" TextWrapping="Wrap"/>
+                                            <UniformGrid Columns="3">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="氢阀关闭①" Style="{StaticResource LabelStyle}" Width="110"/>
+                                                    <TextBox Name="tbx_ShutdownH2Close1" Style="{StaticResource TimingTextBoxStyle}" Text="0.50" TextChanged="ValveTimingInput_TextChanged"/>
+                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="氢阀打开①" Style="{StaticResource LabelStyle}" Width="110"/>
+                                                    <TextBox Name="tbx_ShutdownH2Open1" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="氢阀关闭②" Style="{StaticResource LabelStyle}" Width="110"/>
+                                                    <TextBox Name="tbx_ShutdownH2Close2" Style="{StaticResource TimingTextBoxStyle}" Text="0.50" TextChanged="ValveTimingInput_TextChanged"/>
+                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="氢阀打开②" Style="{StaticResource LabelStyle}" Width="110"/>
+                                                    <TextBox Name="tbx_ShutdownH2Open2" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="关机总时长" Style="{StaticResource LabelStyle}" Width="110"/>
+                                                    <TextBox Name="tbx_ShutdownTotal" Style="{StaticResource TimingTextBoxStyle}" Text="5.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                            </UniformGrid>
                                         </StackPanel>
                                     </Border>
-                                </Grid>
 
-                                <Border CornerRadius="4" Padding="10,8" Background="#F5F5F5"
-                                        BorderBrush="#BDBDBD" BorderThickness="1" Margin="4,10,4,0">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0" Margin="0,0,16,0">
-                                            <TextBlock Text="阀门实时状态" FontWeight="SemiBold"/>
-                                            <TextBlock Text="{Binding HydrogenValveState, StringFormat=氢阀：{0}}" Margin="0,3,0,0"/>
-                                            <TextBlock Text="{Binding DrainValveState, StringFormat=排水阀：{0}}"/>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1">
-                                            <TextBlock Text="上位机手动控制（等待固件RS485指令）" Foreground="#EF6C00" Margin="0,0,0,4"/>
-                                            <WrapPanel>
-                                                <Button Content="开氢阀" IsEnabled="False" Style="{StaticResource StandardButtonStyle}" Width="90" Margin="0,2,6,2"/>
-                                                <Button Content="关氢阀" IsEnabled="False" Style="{StaticResource StandardButtonStyle}" Width="90" Margin="0,2,6,2"/>
-                                                <Button Content="开排水阀" IsEnabled="False" Style="{StaticResource StandardButtonStyle}" Width="100" Margin="0,2,6,2"/>
-                                                <Button Content="关排水阀" IsEnabled="False" Style="{StaticResource StandardButtonStyle}" Width="100" Margin="0,2,6,2"/>
-                                            </WrapPanel>
-                                        </StackPanel>
+                                    <Border CornerRadius="4" Padding="10,8" Background="#F5F5F5"
+                                            BorderBrush="#BDBDBD" BorderThickness="1" Margin="4,8,4,0">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                                <TextBlock Text="阀门实时状态" FontWeight="SemiBold"/>
+                                                <TextBlock Text="{Binding HydrogenValveState, StringFormat=氢阀：{0}}" Margin="0,3,0,0"/>
+                                                <TextBlock Text="{Binding DrainValveState, StringFormat=排水阀：{0}}"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="上位机手动控制（等待固件 RS485 指令与安全联锁）" Foreground="#EF6C00" Margin="0,0,0,4"/>
+                                                <WrapPanel>
+                                                    <Button Content="开氢阀" IsEnabled="False" Style="{StaticResource StandardButtonStyle}" Width="90" Margin="0,2,6,2"/>
+                                                    <Button Content="关氢阀" IsEnabled="False" Style="{StaticResource StandardButtonStyle}" Width="90" Margin="0,2,6,2"/>
+                                                    <Button Content="开排水阀" IsEnabled="False" Style="{StaticResource StandardButtonStyle}" Width="100" Margin="0,2,6,2"/>
+                                                    <Button Content="关排水阀" IsEnabled="False" Style="{StaticResource StandardButtonStyle}" Width="100" Margin="0,2,6,2"/>
+                                                </WrapPanel>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- 保留旧协议字段供旧响应解析，避免在新协议确定前误映射到新时序。 -->
+                                    <Grid Visibility="Collapsed">
+                                        <TextBox Name="tbx_PurgeH2Open1" Text="10"/>
+                                        <TextBox Name="tbx_PurgeH2Close" Text="10"/>
+                                        <TextBox Name="tbx_PurgeH2Open2" Text="10"/>
+                                        <TextBox Name="tbx_PurgeDrainHold" Text="30"/>
+                                        <TextBox Name="tbx_ValveFirstOpen" Text="5"/>
+                                        <TextBox Name="tbx_ValveSecondOpen" Text="20"/>
+                                        <TextBox Name="tbx_ValveShutdownOpen" Text="5"/>
+                                        <TextBox Name="tbx_LoadDuty" Text="30"/>
                                     </Grid>
-                                </Border>
-                            </StackPanel>
-                        </GroupBox>
+                                </StackPanel>
+                            </GroupBox>
 
                             <!-- DCDC参数 -->
                             <GroupBox Header="DCDC参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">

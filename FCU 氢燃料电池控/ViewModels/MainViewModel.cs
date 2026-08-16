@@ -508,11 +508,11 @@ namespace FCU_氢燃料电池控.ViewModels
         private byte[] BuildPressureParamsData()
         {
             // 量程为 0 会被固件静默接受并写入 Flash，导致压力恒为 0，必须拦截
-            ushort highPressureMin = ParsePressureField(HighPressureMin, "高压最小值", 1);
+            ushort highPressureMin = ParsePressureField(HighPressureMin, "高压最小值", 0);
             ushort highPressureRed = ParsePressureField(HighPressureRed, "高压红警值", 1);
             ushort highPressureYellow = ParsePressureField(HighPressureYellow, "高压黄警值", 1);
             ushort highPressureMax = ParsePressureField(HighPressureMax, "高压上限告警值", 1);
-            ushort lowPressureMin = ParsePressureField(LowPressureMin, "低压下限值", 1);
+            ushort lowPressureMin = ParsePressureField(LowPressureMin, "低压下限值", 0);
             ushort lowPressureMax = ParsePressureField(LowPressureMax, "低压上限值", 1);
             ushort highPressureRange = ParsePressureField(HighPressureRange, "高压量程", 1);
             ushort lowPressureRange = ParsePressureField(LowPressureRange, "低压量程", 1);
@@ -530,6 +530,12 @@ namespace FCU_氢燃料电池控.ViewModels
                     $"高压上限告警值({highPressureMax})必须大于高压黄警值({highPressureYellow})");
             }
 
+            if (highPressureMax <= highPressureMin)
+            {
+                throw new ArgumentException(
+                    $"高压上限告警值({highPressureMax})必须大于高压最小值({highPressureMin})");
+            }
+
             if (highPressureMax > highPressureRange)
             {
                 throw new ArgumentException(
@@ -541,6 +547,12 @@ namespace FCU_氢燃料电池控.ViewModels
             {
                 throw new ArgumentException(
                     $"低压上限值({lowPressureMax})必须大于低压下限值({lowPressureMin})");
+            }
+
+            if (lowPressureMax > lowPressureRange)
+            {
+                throw new ArgumentException(
+                    $"低压上限值({lowPressureMax})不能超过低压传感器量程({lowPressureRange})");
             }
 
             byte[] data = new byte[ProtocolConstants.PRESSURE_PARAMS_DATA_LENGTH];

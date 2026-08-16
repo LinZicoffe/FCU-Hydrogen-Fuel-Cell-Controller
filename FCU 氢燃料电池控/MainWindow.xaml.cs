@@ -30,6 +30,7 @@ using FCU_氢燃料电池控.Models;
 using FCU_氢燃料电池控.Services;
 using FCU_氢燃料电池控.Helpers;
 using FCU_氢燃料电池控.ViewModels;
+using FCU_氢燃料电池控.Controls;
 using LiveChartsCore;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
@@ -54,6 +55,7 @@ namespace FCU_氢燃料电池控
         private DispatcherTimer? _chartUpdateTimer;  // 图表数据采集定时器
         private bool _isSerialOpen = false;
         private ProtocolHandler? _protocolHandler;
+        private bool _customerRequirementUiInitialized;
 
         // BMS 总线仲裁 (0x0D set_bms_poll) [SOC计划 §1.3]
         private volatile bool _bmsPollAckReceived;
@@ -103,6 +105,8 @@ namespace FCU_氢燃料电池控
 #endif
         {
             InitializeComponent();
+            _customerRequirementUiInitialized = true;
+            InitializeCustomerRequirementUi();
 #if ENABLE_LICENSE_FEATURE
             _licenseService = licenseService;
 #endif
@@ -147,6 +151,251 @@ namespace FCU_氢燃料电池控
 #endif
 
         }
+
+        /// <summary>
+        /// 初始化 2026-08-16 客户需求中仅依赖上位机的校验与时序预览。
+        /// 这些预览不代表设备实时状态，也不会复用旧固件协议写入新字段。
+        /// </summary>
+        private void InitializeCustomerRequirementUi()
+        {
+            UpdateStartupTimingPreview();
+            UpdateShutdownTimingPreview();
+        }
+
+        private void ValveTimingInput_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (!_customerRequirementUiInitialized ||
+                startupValveTimingPreview == null || shutdownValveTimingPreview == null)
+            {
+                return;
+            }
+
+            UpdateStartupTimingPreview();
+            UpdateShutdownTimingPreview();
+        }
+
+        private void btn_ValidateValveTiming_Click(object sender, RoutedEventArgs e)
+        {
+            bool startupValid = UpdateStartupTimingPreview();
+            bool shutdownValid = UpdateShutdownTimingPreview();
+            if (startupValid && shutdownValid)
+            {
+                HC.Growl.Success("开机和关机时序校验通过；当前仅完成本地预览，未写入FCU");
+            }
+            else
+            {
+                HC.Growl.Warning("时序参数存在错误，请根据红色提示修改");
+            }
+        }
+
+        private bool UpdateStartupTimingPreview()
+        {
+            if (startupValveTimingPreview == null || tbk_StartupTimingStatus == null)
+            {
+                return false;
+            }
+
+            var fields = new (TextBox Box, string Name)[]
+            {
+                (tbx_StartupH2FirstDelay, "氢阀首次延时"),
+                (tbx_StartupH2FirstOpen, "氢阀首次打开"),
+                (tbx_StartupDrainFirstOpen, "排水阀首次打开"),
+                (tbx_StartupDrainFirstClose, "排水阀首次关闭"),
+                (tbx_StartupH2ReopenDelay, "氢阀再次延时"),
+                (tbx_StartupDrainSecondOpen, "排水阀第二次打开"),
+                (tbx_StartupDrainThirdInterval, "排水阀第三次间隔"),
+                (tbx_StartupDrainThirdOpen, "排水阀第三次打开")
+            };
+
+            double[] values = new double[fields.Length];
+            for (int i = 0; i < fields.Length; i++)
+            {
+                if (!TryReadTimingValue(fields[i].Box, fields[i].Name, out values[i], out string error))
+                {
+                    SetTimingError(startupValveTimingPreview, tbk_StartupTimingStatus, error);
+                    return false;
+                }
+            }
+
+            double h2FirstDelay = values[0];
+            double h2FirstClose = h2FirstDelay + values[1];
+            double drainFirstClose = values[2];
+            double drainSecondOpen = drainFirstClose + values[3];
+            double h2Reopen = drainSecondOpen + values[4];
+            double drainSecondClose = drainSecondOpen + values[5];
+            double drainThirdOpen = drainSecondClose + values[6];
+            double drainThirdClose = drainThirdOpen + values[7];
+
+            if (h2Reopen < h2FirstClose)
+            {
+                SetTimingError(startupValveTimingPreview, tbk_StartupTimingStatus,
+                    "氢阀再次打开早于首次打开结束，请调整首次打开或再次延时");
+                return false;
+            }
+
+            if (values[4] > values[5])
+            {
+                SetTimingError(startupValveTimingPreview, tbk_StartupTimingStatus,
+                    "氢阀再次打开延时不能大于排水阀第二次打开时长");
+                return false;
+            }
+
+            double total = Math.Max(Math.Max(h2Reopen, drainThirdClose), 0.01);
+            startupValveTimingPreview.SetTimeline(total,
+                new ValveTrack(false,
+                    new[] { h2FirstDelay, h2FirstClose, h2Reopen },
+                    new[] { "开①", "关①", "再开" }),
+                new ValveTrack(true, new[]
+                {
+                    drainFirstClose, drainSecondOpen, drainSecondClose, drainThirdOpen, drainThirdClose
+                }, new[] { "关①", "开②", "关②", "开③", "关③" }));
+
+            tbk_StartupTimingStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
+            tbk_StartupTimingStatus.Text =
+                $"有效预览：t=0 两路并行计时；{h2Reopen:0.00}s 氢阀再次打开并允许进入拉载条件判断；{drainThirdClose:0.00}s 后进入正常排水计时。";
+            return true;
+        }
+
+        private bool UpdateShutdownTimingPreview()
+        {
+            if (shutdownValveTimingPreview == null || tbk_ShutdownTimingStatus == null)
+            {
+                return false;
+            }
+
+            var fields = new (TextBox Box, string Name)[]
+            {
+                (tbx_ShutdownH2Close1, "氢阀关闭①"),
+                (tbx_ShutdownH2Open1, "氢阀打开①"),
+                (tbx_ShutdownH2Close2, "氢阀关闭②"),
+                (tbx_ShutdownH2Open2, "氢阀打开②"),
+                (tbx_ShutdownTotal, "关机总时长")
+            };
+
+            double[] values = new double[fields.Length];
+            for (int i = 0; i < fields.Length; i++)
+            {
+                if (!TryReadTimingValue(fields[i].Box, fields[i].Name, out values[i], out string error))
+                {
+                    SetTimingError(shutdownValveTimingPreview, tbk_ShutdownTimingStatus, error);
+                    return false;
+                }
+            }
+
+            double close1End = values[0];
+            double open1End = close1End + values[1];
+            double close2End = open1End + values[2];
+            double open2End = close2End + values[3];
+            double total = values[4];
+            if (total < open2End)
+            {
+                SetTimingError(shutdownValveTimingPreview, tbk_ShutdownTimingStatus,
+                    $"关机总时长不能小于氢阀四段时间之和 {open2End:0.00}s");
+                return false;
+            }
+
+            shutdownValveTimingPreview.SetTimeline(Math.Max(total, 0.01),
+                new ValveTrack(false,
+                    new[] { close1End, open1End, close2End, open2End },
+                    new[] { "开①", "关②", "开②", "最终关" }),
+                new ValveTrack(true, new[] { total }, new[] { "关" }));
+
+            double remainingDrainTime = total - open2End;
+            tbk_ShutdownTimingStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
+            tbk_ShutdownTimingStatus.Text =
+                $"有效预览：t=0 同时关氢阀、开排水阀；氢阀序列 {open2End:0.00}s，最终关氢后继续排空 {remainingDrainTime:0.00}s。";
+            return true;
+        }
+
+        private static bool TryReadTimingValue(TextBox box, string fieldName, out double value,
+            out string error)
+        {
+            string text = box.Text?.Trim() ?? string.Empty;
+            bool parsed = double.TryParse(text, NumberStyles.Number, CultureInfo.CurrentCulture, out value)
+                || double.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out value);
+            if (!parsed)
+            {
+                error = $"{fieldName}“{text}”不是合法数值";
+                return false;
+            }
+
+            decimal decimalValue;
+            try
+            {
+                decimalValue = Convert.ToDecimal(value);
+            }
+            catch (OverflowException)
+            {
+                error = $"{fieldName}超出可用范围";
+                return false;
+            }
+
+            if (value < 0 || value > 9.99)
+            {
+                error = $"{fieldName}超出范围，允许 0.00～9.99s";
+                return false;
+            }
+
+            if (decimal.Round(decimalValue, 2, MidpointRounding.AwayFromZero) != decimalValue)
+            {
+                error = $"{fieldName}最多支持两位小数";
+                return false;
+            }
+
+            error = string.Empty;
+            return true;
+        }
+
+        private static void SetTimingError(ValveTimingPreview preview, TextBlock status, string error)
+        {
+            preview.SetError(error);
+            status.Foreground = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
+            status.Text = "参数错误：" + error;
+        }
+
+        private void btn_ValidateSocParams_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryParseRange(tbx_OverviewSocForceStart, "强启开机电量", 0, 100, "%", out ushort forceStart) ||
+                !TryParseRange(tbx_OverviewSocStart, "最低开机电量", 0, 100, "%", out ushort start) ||
+                !TryParseRange(tbx_OverviewSocStop, "最高关机电量", 0, 100, "%", out ushort stop))
+            {
+                SetSocValidationError("SOC 电量必须是 0～100 的整数，请按提示修正");
+                return;
+            }
+
+            string capacityText = tbx_OverviewBatteryCapacity.Text?.Trim() ?? string.Empty;
+            bool capacityParsed = decimal.TryParse(capacityText, NumberStyles.Number,
+                    CultureInfo.CurrentCulture, out decimal capacity)
+                || decimal.TryParse(capacityText, NumberStyles.Number,
+                    CultureInfo.InvariantCulture, out capacity);
+            if (!capacityParsed || capacity <= 0 || capacity > 9999.99m)
+            {
+                const string error = "电池容量必须是大于0且不超过9999.99Ah的数值";
+                SetSocValidationError(error);
+                HC.Growl.Warning(error);
+                tbx_OverviewBatteryCapacity.Focus();
+                tbx_OverviewBatteryCapacity.SelectAll();
+                return;
+            }
+
+            if (forceStart > start || start >= stop)
+            {
+                const string error = "SOC参数必须满足：强启开机电量 ≤ 最低开机电量 < 最高关机电量";
+                SetSocValidationError(error);
+                HC.Growl.Warning(error);
+                return;
+            }
+
+            tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
+            tbk_SocValidationStatus.Text = "本地校验通过；等待固件提供SOC参数读写与实际启停逻辑。";
+            HC.Growl.Success("SOC参数本地校验通过，未写入FCU");
+        }
+
+        private void SetSocValidationError(string error)
+        {
+            tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
+            tbk_SocValidationStatus.Text = "参数错误：" + error;
+        }
         
         /// <summary>
         /// 串口连接状态改变事件处理
@@ -179,7 +428,7 @@ namespace FCU_氢燃料电池控
                 _bmsService?.StopPolling();
                 ResetBmsDisplay();
                 _pendingFanManualEnable = null;
-                tbk_FanManualMode.Text = "未连接（设备重启后自动温控）";
+                tbk_FanManualMode.Text = "等待双路独立控制协议（未连接）";
                 tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0x75, 0x75, 0x75));
             }
         }
@@ -884,8 +1133,8 @@ namespace FCU_氢燃料电池控
                 // 风扇温度数据域13B：参数ID + 5个原有字段 + fan_min_rpm。
                 // fan_min_rpm=0 表示不启用堵转检测。
                 if (!TryParseRange(tbx_FanLowDuty, "低速占空比", 0, 100, "%", out ushort lowDutyValue) ||
-                    !TryParseScaledRange(tbx_TempMin, "温度下限", 10m, 1, ushort.MaxValue, "℃", out ushort tempMin) ||
-                    !TryParseScaledRange(tbx_TempMax, "温度上限", 10m, 1, ushort.MaxValue, "℃", out ushort tempMax) ||
+                    !TryParseScaledSignedRange(tbx_TempMin, "温度下限", 10m, -400, 1250, "℃", out short tempMin) ||
+                    !TryParseScaledSignedRange(tbx_TempMax, "温度上限", 10m, -400, 1250, "℃", out short tempMax) ||
                     !TryParseRange(tbx_FanFullSpeedTime, "全速运行时长", 1, ushort.MaxValue, "0.1s", out ushort fullSpeedTime) ||
                     !TryParseRange(tbx_LowTempCheckTime, "低温检测时长", 1, ushort.MaxValue, "0.1s", out ushort lowTempCheckTime) ||
                     !TryParseRange(tbx_FanMinRpm, "风扇最低转速", 0, ushort.MaxValue, "RPM", out ushort fanMinRpm))
@@ -916,14 +1165,16 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 按《FCU参数新增与建议清单》生成风扇温度13字节SET数据域（大端）。
         /// </summary>
-        private static byte[] BuildFanTempParamsData(byte lowDuty, ushort tempMin,
-            ushort tempMax, ushort fullSpeedTime, ushort lowTempCheckTime, ushort fanMinRpm)
+        private static byte[] BuildFanTempParamsData(byte lowDuty, short tempMin,
+            short tempMax, ushort fullSpeedTime, ushort lowTempCheckTime, ushort fanMinRpm)
         {
             byte[] data = new byte[ProtocolConstants.FAN_TEMP_PARAMS_DATA_LENGTH];
+            ushort tempMinRaw = unchecked((ushort)tempMin);
+            ushort tempMaxRaw = unchecked((ushort)tempMax);
             data[0] = 0x04; data[1] = 0x01;
             data[2] = lowDuty;
-            data[3] = (byte)(tempMin >> 8); data[4] = (byte)(tempMin & 0xFF);
-            data[5] = (byte)(tempMax >> 8); data[6] = (byte)(tempMax & 0xFF);
+            data[3] = (byte)(tempMinRaw >> 8); data[4] = (byte)(tempMinRaw & 0xFF);
+            data[5] = (byte)(tempMaxRaw >> 8); data[6] = (byte)(tempMaxRaw & 0xFF);
             data[7] = (byte)(fullSpeedTime >> 8); data[8] = (byte)(fullSpeedTime & 0xFF);
             data[9] = (byte)(lowTempCheckTime >> 8); data[10] = (byte)(lowTempCheckTime & 0xFF);
             data[11] = (byte)(fanMinRpm >> 8); data[12] = (byte)(fanMinRpm & 0xFF);
@@ -1371,6 +1622,51 @@ namespace FCU_氢燃料电池控
             }
 
             rawValue = (ushort)rounded;
+            return true;
+        }
+
+        /// <summary>
+        /// 按界面工程单位解析有符号小数，并转换为下位机有符号16位协议值。
+        /// </summary>
+        private static bool TryParseScaledSignedRange(TextBox box, string fieldName,
+            decimal scale, int minRaw, int maxRaw, string unit, out short rawValue)
+        {
+            rawValue = 0;
+            string text = box.Text?.Trim() ?? string.Empty;
+
+            bool parsed = decimal.TryParse(text, NumberStyles.Number, CultureInfo.CurrentCulture,
+                    out decimal displayValue)
+                || decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture,
+                    out displayValue);
+            if (!parsed)
+            {
+                HC.Growl.Warning($"{fieldName}「{text}」不是合法数值");
+                box.Focus();
+                box.SelectAll();
+                return false;
+            }
+
+            decimal scaled = displayValue * scale;
+            decimal rounded = decimal.Round(scaled, 0, MidpointRounding.AwayFromZero);
+            if (scaled != rounded)
+            {
+                HC.Growl.Warning($"{fieldName}最多支持 1 位小数");
+                box.Focus();
+                box.SelectAll();
+                return false;
+            }
+
+            if (rounded < minRaw || rounded > maxRaw || rounded < short.MinValue || rounded > short.MaxValue)
+            {
+                decimal minDisplay = minRaw / scale;
+                decimal maxDisplay = maxRaw / scale;
+                HC.Growl.Warning($"{fieldName}超出范围：{displayValue}，允许 {minDisplay}~{maxDisplay}{unit}");
+                box.Focus();
+                box.SelectAll();
+                return false;
+            }
+
+            rawValue = (short)rounded;
             return true;
         }
 

@@ -327,8 +327,8 @@ namespace FCU_氢燃料电池控.Protocol
                     return data;
 
                 data.LowSpeedDuty = frame[offset];
-                data.TempMin = (ushort)((frame[offset + 1] << 8) | frame[offset + 2]);
-                data.TempMax = (ushort)((frame[offset + 3] << 8) | frame[offset + 4]);
+                data.TempMin = unchecked((short)((frame[offset + 1] << 8) | frame[offset + 2]));
+                data.TempMax = unchecked((short)((frame[offset + 3] << 8) | frame[offset + 4]));
                 data.FullSpeedTime = (ushort)((frame[offset + 5] << 8) | frame[offset + 6]);
                 data.LowTempCheckTime = (ushort)((frame[offset + 7] << 8) | frame[offset + 8]);
                 data.FanMinRpm = (ushort)((frame[offset + 9] << 8) | frame[offset + 10]);
