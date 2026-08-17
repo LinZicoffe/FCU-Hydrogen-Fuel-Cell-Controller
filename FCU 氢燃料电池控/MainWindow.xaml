@@ -7,7 +7,7 @@
         xmlns:controls="clr-namespace:FCU_氢燃料电池控.Controls"
         xmlns:hc="https://handyorg.github.io/handycontrol"
         mc:Ignorable="d"
-        Title="氢燃料电池标定系统" Height="780" Width="1280"
+        Title="氢燃料电池标定系统" ShowTitle="False" Height="780" Width="1280"
         MinWidth="1000" MinHeight="600"
         Background="{DynamicResource RegionBrush}"
         WindowStartupLocation="CenterScreen">
@@ -250,7 +250,7 @@
 
             <Border Grid.Row="1" Background="{DynamicResource PrimaryBrush}" Padding="18,0">
                 <TextBlock Name="tbk_SystemName"
-                           Text="氢燃料电池标定系统"
+                           Text=" "
                            FontSize="24"
                            FontWeight="Bold"
                            Foreground="White"
