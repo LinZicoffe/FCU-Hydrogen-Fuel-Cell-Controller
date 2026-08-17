@@ -45,6 +45,10 @@ namespace FCU_氢燃料电池控
     /// </summary>
     public partial class MainWindow : HandyControl.Controls.Window
     {
+        private const string CustomerCompanyName = "瑞达新能源（广州）有限公司";
+        private const string CustomerSystemName = "风冷电堆标定系统";
+        private const string CustomerProductVersion = "RIDI FCU/DCDC-2026/V1.5";
+
         // MVVM ViewModel
         private MainViewModel? _viewModel;
 
@@ -124,9 +128,12 @@ namespace FCU_氢燃料电池控
 #if ENABLE_LICENSE_FEATURE
             _licenseService = licenseService;
 #endif
-            Title = companyName;
-            tbk_ApplicationName.Text = companyName;
-            tbk_CompanyName.Text = companyName;
+            // 客户品牌信息固定展示；注册单位仍由启动流程保留，不再占用品牌标题和版权位。
+            Title = $"{CustomerSystemName} - {CustomerCompanyName}";
+            tbk_ApplicationName.Text = CustomerCompanyName;
+            tbk_SystemName.Text = CustomerSystemName;
+            tbk_ProductVersion.Text = CustomerProductVersion;
+            tbk_Copyright.Text = $"版权归{CustomerCompanyName}所有";
             
             // ==================== MVVM初始化 ====================
             _viewModel = new MainViewModel();
@@ -212,14 +219,14 @@ namespace FCU_氢燃料电池控
 
             var fields = new (TextBox Box, string Name)[]
             {
-                (tbx_StartupH2FirstDelay, "氢阀首次延时"),
-                (tbx_StartupH2FirstOpen, "氢阀首次打开"),
-                (tbx_StartupDrainFirstOpen, "排水阀首次打开"),
-                (tbx_StartupDrainFirstClose, "排水阀首次关闭"),
-                (tbx_StartupH2ReopenDelay, "氢阀再次延时"),
-                (tbx_StartupDrainSecondOpen, "排水阀第二次打开"),
-                (tbx_StartupDrainThirdInterval, "排水阀第三次间隔"),
-                (tbx_StartupDrainThirdOpen, "排水阀第三次打开")
+                (tbx_StartupH2FirstDelay, "氢阀等待"),
+                (tbx_StartupH2FirstOpen, "氢阀打开①"),
+                (tbx_StartupDrainFirstOpen, "电堆吹扫①"),
+                (tbx_StartupDrainFirstClose, "吹扫停止①"),
+                (tbx_StartupH2ReopenDelay, "氢阀关闭/再开延时"),
+                (tbx_StartupDrainSecondOpen, "电堆吹扫②"),
+                (tbx_StartupDrainThirdInterval, "吹扫停止②"),
+                (tbx_StartupDrainThirdOpen, "电堆吹扫③")
             };
 
             double[] values = new double[fields.Length];
@@ -281,10 +288,10 @@ namespace FCU_氢燃料电池控
             var fields = new (TextBox Box, string Name)[]
             {
                 (tbx_ShutdownH2Close1, "氢阀关闭①"),
-                (tbx_ShutdownH2Open1, "氢阀打开①"),
+                (tbx_ShutdownH2Open1, "氢阀补气①"),
                 (tbx_ShutdownH2Close2, "氢阀关闭②"),
-                (tbx_ShutdownH2Open2, "氢阀打开②"),
-                (tbx_ShutdownTotal, "关机总时长")
+                (tbx_ShutdownH2Open2, "氢阀补气②"),
+                (tbx_ShutdownTotal, "排氢关机时长")
             };
 
             double[] values = new double[fields.Length];
@@ -305,7 +312,7 @@ namespace FCU_氢燃料电池控
             if (total < open2End)
             {
                 SetTimingError(shutdownValveTimingPreview, tbk_ShutdownTimingStatus,
-                    $"关机总时长不能小于氢阀四段时间之和 {open2End:0.00}s");
+                    $"排氢关机时长不能小于氢阀四段时间之和 {open2End:0.00}s");
                 return false;
             }
 
@@ -318,7 +325,7 @@ namespace FCU_氢燃料电池控
             double remainingDrainTime = total - open2End;
             tbk_ShutdownTimingStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
             tbk_ShutdownTimingStatus.Text =
-                $"有效预览：t=0 同时关氢阀、开排水阀；氢阀序列 {open2End:0.00}s，最终关氢后继续排空 {remainingDrainTime:0.00}s。";
+                $"有效预览：t=0 同时关氢阀、开排水阀；氢阀序列 {open2End:0.00}s，最终关氢后继续排氢 {remainingDrainTime:0.00}s。";
             return true;
         }
 

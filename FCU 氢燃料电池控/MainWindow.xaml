@@ -210,20 +210,50 @@
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="50"/>
+            <RowDefinition Height="58"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="5"/>
             <RowDefinition Height="200"/>
-            <RowDefinition Height="25"/>
+            <RowDefinition Height="28"/>
         </Grid.RowDefinitions>
 
         <!-- 顶部标题栏 -->
-        <Border Grid.Row="0" Background="{DynamicResource PrimaryBrush}" Padding="16,0">
-            <TextBlock Name="tbk_ApplicationName"
-                       Text="FCU 氢燃料电池控制系统"
-                       Style="{StaticResource TextBlockLargeBold}"
-                       Foreground="White"
-                       VerticalAlignment="Center"/>
+        <Border Grid.Row="0" Background="{DynamicResource PrimaryBrush}" Padding="18,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"
+                           Name="tbk_ApplicationName"
+                           Text="瑞达新能源（广州）有限公司"
+                           FontSize="24"
+                           FontWeight="Bold"
+                           Foreground="White"
+                           VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1"
+                           Name="tbk_SystemName"
+                           Text="风冷电堆标定系统"
+                           FontSize="19"
+                           FontWeight="SemiBold"
+                           Foreground="White"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+                <Border Grid.Column="2"
+                        Background="#757575"
+                        CornerRadius="4"
+                        Padding="12,6"
+                        Margin="16,0,0,0"
+                        VerticalAlignment="Center">
+                    <TextBlock Name="tbk_ProductVersion"
+                               Text="RIDI FCU/DCDC-2026/V1.5"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="White"
+                               VerticalAlignment="Center"/>
+                </Border>
+            </Grid>
         </Border>
 
         <!-- 主内容区 -->
@@ -840,48 +870,90 @@
                                                        FontSize="11" Foreground="#616161" Margin="0,2,0,6" TextWrapping="Wrap"/>
                                             <controls:ValveTimingPreview x:Name="startupValveTimingPreview" Height="170" Margin="0,2,0,4"/>
                                             <TextBlock x:Name="tbk_StartupTimingStatus" Foreground="#2E7D32" Margin="4,0,4,6" TextWrapping="Wrap"/>
-                                            <WrapPanel ItemWidth="225">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Label Content="氢阀首次延时" Style="{StaticResource LabelStyle}" Width="112"/>
-                                                    <TextBox Name="tbx_StartupH2FirstDelay" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"/>
-                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
-                                                </StackPanel>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Label Content="氢阀首次打开" Style="{StaticResource LabelStyle}" Width="112"/>
-                                                    <TextBox Name="tbx_StartupH2FirstOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
-                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
-                                                </StackPanel>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Label Content="排水阀首次打开" Style="{StaticResource LabelStyle}" Width="112"/>
-                                                    <TextBox Name="tbx_StartupDrainFirstOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.20" TextChanged="ValveTimingInput_TextChanged"/>
-                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
-                                                </StackPanel>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Label Content="排水阀首次关闭" Style="{StaticResource LabelStyle}" Width="112"/>
-                                                    <TextBox Name="tbx_StartupDrainFirstClose" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"/>
-                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
-                                                </StackPanel>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Label Content="氢阀再次延时" Style="{StaticResource LabelStyle}" Width="112"/>
-                                                    <TextBox Name="tbx_StartupH2ReopenDelay" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"/>
-                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
-                                                </StackPanel>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Label Content="排水阀第二次开" Style="{StaticResource LabelStyle}" Width="112"/>
-                                                    <TextBox Name="tbx_StartupDrainSecondOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
-                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
-                                                </StackPanel>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Label Content="排水阀第三次间隔" Style="{StaticResource LabelStyle}" Width="112"/>
-                                                    <TextBox Name="tbx_StartupDrainThirdInterval" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"/>
-                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
-                                                </StackPanel>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Label Content="排水阀第三次开" Style="{StaticResource LabelStyle}" Width="112"/>
-                                                    <TextBox Name="tbx_StartupDrainThirdOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
-                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
-                                                </StackPanel>
-                                            </WrapPanel>
+                                            <!-- 客户要求：氢阀参数与排水/吹扫参数分别成行，不再交叉排列。 -->
+                                            <Grid Margin="0,2,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="72"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+
+                                                <Border Grid.Row="0" Grid.Column="0" Background="#E3F2FD" CornerRadius="4" Margin="0,2,8,4">
+                                                    <TextBlock Text="氢阀" Foreground="#1565C0" FontWeight="SemiBold"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <UniformGrid Grid.Row="0" Grid.Column="1" Columns="3" Margin="0,0,0,4">
+                                                    <StackPanel>
+                                                        <TextBlock Text="氢阀等待" FontWeight="SemiBold" HorizontalAlignment="Center"
+                                                                   ToolTip="t=0 起，氢阀保持关闭至第一次打开"/>
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <TextBox Name="tbx_StartupH2FirstDelay" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel>
+                                                        <TextBlock Text="氢阀打开①" FontWeight="SemiBold" HorizontalAlignment="Center"
+                                                                   ToolTip="氢阀第一次打开保持时长"/>
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <TextBox Name="tbx_StartupH2FirstOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel>
+                                                        <TextBlock Text="氢阀关闭 / 再开延时" FontWeight="SemiBold" HorizontalAlignment="Center"
+                                                                   ToolTip="从电堆吹扫②开始，到氢阀再次打开的延时"/>
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <TextBox Name="tbx_StartupH2ReopenDelay" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </UniformGrid>
+
+                                                <Border Grid.Row="1" Grid.Column="0" Background="#E8F5E9" CornerRadius="4" Margin="0,2,8,0">
+                                                    <TextBlock Text="排水阀" Foreground="#2E7D32" FontWeight="SemiBold"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <UniformGrid Grid.Row="1" Grid.Column="1" Columns="5">
+                                                    <StackPanel>
+                                                        <TextBlock Text="电堆吹扫①" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <TextBox Name="tbx_StartupDrainFirstOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.20" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel>
+                                                        <TextBlock Text="吹扫停止①" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <TextBox Name="tbx_StartupDrainFirstClose" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel>
+                                                        <TextBlock Text="电堆吹扫②" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <TextBox Name="tbx_StartupDrainSecondOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel>
+                                                        <TextBlock Text="吹扫停止②" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <TextBox Name="tbx_StartupDrainThirdInterval" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel>
+                                                        <TextBlock Text="电堆吹扫③" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <TextBox Name="tbx_StartupDrainThirdOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </UniformGrid>
+                                            </Grid>
                                         </StackPanel>
                                     </Border>
 
@@ -925,37 +997,67 @@
                                         <StackPanel>
                                             <TextBlock Text="关机时序（t=0：收到有效 RS485 关机指令）"
                                                        FontSize="15" FontWeight="SemiBold" Foreground="#EF6C00"/>
-                                            <TextBlock Text="t=0 同时关闭氢阀并打开排水阀；排水阀持续打开至关机总时长结束。"
+                                            <TextBlock Text="t=0 同时关闭氢阀并打开排水阀；排水阀持续打开至排氢关机时长结束。"
                                                        FontSize="11" Foreground="#616161" Margin="0,2,0,6" TextWrapping="Wrap"/>
                                             <controls:ValveTimingPreview x:Name="shutdownValveTimingPreview" Height="170" Margin="0,2,0,4"/>
                                             <TextBlock x:Name="tbk_ShutdownTimingStatus" Foreground="#2E7D32" Margin="4,0,4,6" TextWrapping="Wrap"/>
-                                            <UniformGrid Columns="3">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Label Content="氢阀关闭①" Style="{StaticResource LabelStyle}" Width="110"/>
-                                                    <TextBox Name="tbx_ShutdownH2Close1" Style="{StaticResource TimingTextBoxStyle}" Text="0.50" TextChanged="ValveTimingInput_TextChanged"/>
-                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                            <!-- 关机阶段同样按阀门分组：氢阀四段在一行，排水阀总时长独立一行。 -->
+                                            <Grid Margin="0,2,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="72"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+                                                <Border Grid.Row="0" Grid.Column="0" Background="#FFF3E0" CornerRadius="4" Margin="0,2,8,4">
+                                                    <TextBlock Text="氢阀" Foreground="#EF6C00" FontWeight="SemiBold"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <UniformGrid Grid.Row="0" Grid.Column="1" Columns="4" Margin="0,0,0,4">
+                                                    <StackPanel>
+                                                        <TextBlock Text="氢阀关闭①" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <TextBox Name="tbx_ShutdownH2Close1" Style="{StaticResource TimingTextBoxStyle}" Text="0.50" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel>
+                                                        <TextBlock Text="氢阀补气①" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <TextBox Name="tbx_ShutdownH2Open1" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel>
+                                                        <TextBlock Text="氢阀关闭②" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <TextBox Name="tbx_ShutdownH2Close2" Style="{StaticResource TimingTextBoxStyle}" Text="0.50" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel>
+                                                        <TextBlock Text="氢阀补气②" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <TextBox Name="tbx_ShutdownH2Open2" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </UniformGrid>
+                                                <Border Grid.Row="1" Grid.Column="0" Background="#E8F5E9" CornerRadius="4" Margin="0,2,8,0">
+                                                    <TextBlock Text="排水阀" Foreground="#2E7D32" FontWeight="SemiBold"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <StackPanel Grid.Row="1" Grid.Column="1" Width="230" HorizontalAlignment="Left">
+                                                    <TextBlock Text="排氢关机时长" FontWeight="SemiBold" HorizontalAlignment="Center"
+                                                               ToolTip="排水阀从收到关机指令起持续打开的总时长"/>
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                        <TextBox Name="tbx_ShutdownTotal" Style="{StaticResource TimingTextBoxStyle}" Text="5.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                        <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                    </StackPanel>
                                                 </StackPanel>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Label Content="氢阀打开①" Style="{StaticResource LabelStyle}" Width="110"/>
-                                                    <TextBox Name="tbx_ShutdownH2Open1" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
-                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
-                                                </StackPanel>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Label Content="氢阀关闭②" Style="{StaticResource LabelStyle}" Width="110"/>
-                                                    <TextBox Name="tbx_ShutdownH2Close2" Style="{StaticResource TimingTextBoxStyle}" Text="0.50" TextChanged="ValveTimingInput_TextChanged"/>
-                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
-                                                </StackPanel>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Label Content="氢阀打开②" Style="{StaticResource LabelStyle}" Width="110"/>
-                                                    <TextBox Name="tbx_ShutdownH2Open2" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
-                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
-                                                </StackPanel>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Label Content="关机总时长" Style="{StaticResource LabelStyle}" Width="110"/>
-                                                    <TextBox Name="tbx_ShutdownTotal" Style="{StaticResource TimingTextBoxStyle}" Text="5.00" TextChanged="ValveTimingInput_TextChanged"/>
-                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
-                                                </StackPanel>
-                                            </UniformGrid>
+                                            </Grid>
                                         </StackPanel>
                                     </Border>
 
@@ -2028,7 +2130,13 @@
         <!-- 底部状态栏 -->
         <Border Grid.Row="4" Background="{DynamicResource DarkBrush}" Padding="16,0">
             <Grid>
-                <TextBlock Text="{Binding StatusMessage}"
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"
+                           Text="{Binding StatusMessage}"
                            Style="{StaticResource TextBlockDefault}"
                            FontSize="11"
                            Foreground="White"
@@ -2045,20 +2153,22 @@
                            Cursor="Hand"
                            MouseDown="TbkLicense_MouseDown"/>
                 -->
-                <TextBlock Name="tbk_CompanyName"
-                           Text="公司名称"
+                <TextBlock Grid.Column="2"
+                           Name="tbk_Copyright"
+                           Text="版权归瑞达新能源（广州）有限公司所有"
                            Style="{StaticResource TextBlockDefault}"
                            FontSize="11"
                            Foreground="#FFD700"
                            FontWeight="SemiBold"
-                           HorizontalAlignment="Center"
+                           Margin="18,0,0,0"
                            VerticalAlignment="Center"/>
-                <TextBlock Name="tbk_Time"
+                <TextBlock Grid.Column="1"
+                           Name="tbk_Time"
                            Text="{Binding Source={x:Static sys:DateTime.Now}, StringFormat='yyyy-MM-dd HH:mm:ss'}"
                            Style="{StaticResource TextBlockDefault}"
                            FontSize="11"
                            Foreground="White"
-                           HorizontalAlignment="Right"
+                           Margin="16,0,0,0"
                            VerticalAlignment="Center"
                            xmlns:sys="clr-namespace:System;assembly=mscorlib"/>
             </Grid>
