@@ -1,10 +1,10 @@
 ; === FCU 氢燃料电池控制器上位机 安装包脚本 ===
 
 #define MyAppName "FCU氢燃料电池控制器"
-#define MyAppVersion "1.4.5"
-#define MyAppPublisher "FCU"
+#define MyAppVersion "1.5.0"
+#define MyAppPublisher "瑞达新能源（广州）有限公司"
 #define MyAppExeName "FCU 氢燃料电池控.exe"
-#define MyAppCopyright "Copyright (C) 2026"
+#define MyAppCopyright "Copyright (C) 2026 瑞达新能源（广州）有限公司"
 
 [Setup]
 AppId={{B7E3F2A1-4D5C-6E8F-9A0B-1C2D3E4F5A6B}
@@ -44,8 +44,8 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 
 ; === 安装文件 ===
 [Files]
-; 自包含发布：使用 v1.4.5 独立目录，避免混入旧版文件
-Source: "publish_v1.4.5\*"; DestDir: "{app}"; Excludes: "*.pdb,*.xml"; Flags: ignoreversion recursesubdirs createallsubdirs
+; 自包含发布：使用 v1.5.0 独立目录，避免混入旧版文件
+Source: "publish_v1.5.0\*"; DestDir: "{app}"; Excludes: "*.pdb,*.xml"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; === 快捷方式 ===
 [Icons]
