@@ -46,7 +46,7 @@ namespace FCU_氢燃料电池控
     public partial class MainWindow : HandyControl.Controls.Window
     {
         private const string CustomerCompanyName = "瑞达新能源（广州）有限公司";
-        private const string CustomerSystemName = "风冷电堆标定系统";
+        private const string CustomerSystemName = "氢燃料电池标定系统";
         private const string CustomerProductVersion = "RIDI FCU/DCDC-2026/V1.5";
 
         // MVVM ViewModel
@@ -128,8 +128,8 @@ namespace FCU_氢燃料电池控
 #if ENABLE_LICENSE_FEATURE
             _licenseService = licenseService;
 #endif
-            // 客户品牌信息固定展示；注册单位仍由启动流程保留，不再占用品牌标题和版权位。
-            Title = $"{CustomerSystemName} - {CustomerCompanyName}";
+            // 系统标题固定显示；公司名称放在独立的白色品牌行和底部版权信息中。
+            Title = CustomerSystemName;
             tbk_ApplicationName.Text = CustomerCompanyName;
             tbk_SystemName.Text = CustomerSystemName;
             tbk_ProductVersion.Text = CustomerProductVersion;

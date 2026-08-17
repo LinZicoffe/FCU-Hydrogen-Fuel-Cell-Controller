@@ -7,7 +7,7 @@
         xmlns:controls="clr-namespace:FCU_氢燃料电池控.Controls"
         xmlns:hc="https://handyorg.github.io/handycontrol"
         mc:Ignorable="d"
-        Title="FCU 氢燃料电池控制系统" Height="780" Width="1280"
+        Title="氢燃料电池标定系统" Height="780" Width="1280"
         MinWidth="1000" MinHeight="600"
         Background="{DynamicResource RegionBrush}"
         WindowStartupLocation="CenterScreen">
@@ -210,51 +210,54 @@
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="58"/>
+            <RowDefinition Height="102"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="5"/>
             <RowDefinition Height="200"/>
             <RowDefinition Height="28"/>
         </Grid.RowDefinitions>
 
-        <!-- 顶部标题栏 -->
-        <Border Grid.Row="0" Background="{DynamicResource PrimaryBrush}" Padding="18,0">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0"
-                           Name="tbk_ApplicationName"
-                           Text="瑞达新能源（广州）有限公司"
-                           FontSize="24"
-                           FontWeight="Bold"
-                           Foreground="White"
-                           VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="1"
-                           Name="tbk_SystemName"
-                           Text="风冷电堆标定系统"
-                           FontSize="19"
-                           FontWeight="SemiBold"
-                           Foreground="White"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center"/>
-                <Border Grid.Column="2"
-                        Background="#757575"
-                        CornerRadius="4"
-                        Padding="12,6"
-                        Margin="16,0,0,0"
-                        VerticalAlignment="Center">
-                    <TextBlock Name="tbk_ProductVersion"
+        <!-- 顶部品牌与系统标题：第一行展示公司和版本，蓝色第二行只展示系统名称。 -->
+        <Grid Grid.Row="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="40"/>
+                <RowDefinition Height="62"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Background="White" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Padding="18,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Name="tbk_ApplicationName"
+                               Text="瑞达新能源（广州）有限公司"
+                               FontSize="18"
+                               FontWeight="Bold"
+                               Foreground="#333333"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="1"
+                               Name="tbk_ProductVersion"
                                Text="RIDI FCU/DCDC-2026/V1.5"
                                FontSize="12"
                                FontWeight="SemiBold"
-                               Foreground="White"
+                               Foreground="#9E9E9E"
+                               Margin="16,0,0,0"
                                VerticalAlignment="Center"/>
-                </Border>
-            </Grid>
-        </Border>
+                </Grid>
+            </Border>
+
+            <Border Grid.Row="1" Background="{DynamicResource PrimaryBrush}" Padding="18,0">
+                <TextBlock Name="tbk_SystemName"
+                           Text="氢燃料电池标定系统"
+                           FontSize="24"
+                           FontWeight="Bold"
+                           Foreground="White"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+            </Border>
+        </Grid>
 
         <!-- 主内容区 -->
         <Grid Grid.Row="1" Margin="10">
