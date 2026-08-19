@@ -354,11 +354,19 @@ namespace FCU_氢燃料电池控.Views
                 }
                 Log($"S1: 串口已切换 {BL_BAUD}, 进入升级模式");
 
-                /* ---------- S2 等待设备 (提示断电重启) ---------- */
+                /* ---------- S2 等待设备 (提示断电重启; BL 常驻续升时设备已在应答, 免提示) ---------- */
                 _ui.StepState(2, "done");
                 _ui.StepState(3, "active");
-                Status("S2 等待设备 (请断电重新上电)");
-                Log("S2: 请现在给 FCU 断电, 3 秒后重新上电 (30 秒内有效)");
+                if (!blResident)
+                {
+                    Status("S2 等待设备 (请断电重新上电)");
+                    Log("S2: 请现在给 FCU 断电, 3 秒后重新上电 (30 秒内有效)");
+                }
+                else
+                {
+                    Status("S2 连接 Bootloader 常驻设备");
+                    Log("S2: 设备已在升级模式, 直接获取 UID...");
+                }
 
                 byte[]? uid = null;
                 var s2Deadline = Environment.TickCount64 + 30_000;
