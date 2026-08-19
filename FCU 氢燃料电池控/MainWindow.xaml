@@ -228,8 +228,7 @@
             <Border Grid.Row="0" Background="White" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Padding="18,0">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="21*"/>
-                        <ColumnDefinition Width="512*"/>
+                        <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0"
@@ -238,8 +237,8 @@
                                FontSize="18"
                                FontWeight="Bold"
                                Foreground="#333333"
-                               VerticalAlignment="Center" Grid.ColumnSpan="2"/>
-                    <TextBlock Grid.Column="2"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="1"
                                Name="tbk_ProductVersion"
                                Text="RIDI FCU/DCDC-2026/V1.5"
                                FontSize="12"
@@ -252,7 +251,7 @@
 
             <Border Grid.Row="1" Background="{DynamicResource PrimaryBrush}" Padding="18,0">
                 <TextBlock Name="tbk_SystemName"
-                           Text="氢燃料电池标定系统"
+                           Text=" "
                            FontSize="24"
                            FontWeight="Bold"
                            Foreground="White"

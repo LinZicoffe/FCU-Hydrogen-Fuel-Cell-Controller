@@ -76,6 +76,10 @@ namespace FCU_氢燃料电池控
         // 固件升级页所在 TabItem (升级期间保持可用, 其余主 Tab 禁用)
         private System.Windows.Controls.TabItem? _firmwareUpgradeTab;
 
+        // [BL升级 终审P1] 抑制下一次连接事件自动下发的 0x0D en=0 (升级流程切回 9600 后由
+        // 正常断开链路统一归还, 避免对新复位设备/BL 的多余 Flash 擦写)
+        private bool _suppressNextAutoBmsPoll;
+
         /// <summary>AA55 完整帧到达事件 (固件升级页 S1 前置检查 / S8 存活确认用) [BL设计 §4.2]</summary>
         private event Action<byte[]>? BlAppFrameReceived;
 
@@ -568,7 +572,16 @@ namespace FCU_氢燃料电池控
 
                 // [SOC计划 §1.3] 会话级仲裁: 上位机接管 BMS 总线, 停固件 Modbus 轮询
                 // (固件每次写Flash, 禁止逐次握手; 关轮询后固件走离线宽松策略, 不会超时ABORT)
-                SendBmsPollEnable(0);
+                // [BL升级 终审P1] 升级流程驱动的 9600 重开(S8/退出)不自动下发 en=0:
+                // 此时设备可能刚复位/仍在 BL, 多余的 en=0 会造成参数页无谓擦写与残留窗口
+                if (_suppressNextAutoBmsPoll)
+                {
+                    _suppressNextAutoBmsPoll = false;
+                }
+                else
+                {
+                    SendBmsPollEnable(0);
+                }
             }
             else
             {
@@ -2816,9 +2829,9 @@ namespace FCU_氢燃料电池控
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
             /* 固件升级进行中禁止关窗 [BL设计 §4.4 中途关窗拦截]:
-             * S4~S7 期间(115200/BL 常驻)直接关闭会使 OnBeforeSerialClose 在错误波特率下发无效 en=1,
-             * 造成 bms_poll_enable=0 残留; 正确路径是先在升级页取消/完成走统一退出规则 */
-            if (_blUpgradeMode)
+             * 互斥窗口(S1末~S8末)由 _blUpgradeMode 拦截; S8 之后退出归一化期间(6s 静默等)
+             * 由升级页 _busy 拦截 [全量终审 P2] */
+            if (_blUpgradeMode || FirmwareUpgradeView.IsBusy)
             {
                 HC.Growl.Warning("固件升级进行中, 请先在升级页点击[取消]完成退出流程后再关闭程序");
                 e.Cancel = true;
@@ -4511,6 +4524,8 @@ namespace FCU_氢燃料电池控
                     {
                         _owner._protocolHandler?.Reset();
                         SetMainTabsEnabled(true);
+                        /* [BL升级 终审P1] 随后的 9600 重开不自动下发 en=0 (由正常断开链路统一归还) */
+                        _owner._suppressNextAutoBmsPoll = true;
                         /* 轮询不自动恢复: 按钮状态与实际一致地保持停止, 由用户重新启动 */
                         try { _owner.btn_StartPolling.IsEnabled = true; } catch { }
                         try { _owner.btn_StartBMSPolling.IsEnabled = true; } catch { }

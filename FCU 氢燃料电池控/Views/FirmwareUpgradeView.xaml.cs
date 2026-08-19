@@ -53,6 +53,10 @@ namespace FCU_氢燃料电池控.Views
         private BlUpgFile? _pkg;
         private CancellationTokenSource? _cts;
         private volatile bool _busy;
+        private bool? _lastExitAppAlive;    /* 最近一次退出归一化的探活结果 [全量终审 P2] */
+
+        /// <summary>升级流程进行中 (含 S1~S9 与退出归一化全程), 供 MainWindow.OnClosing 关窗拦截 [全量终审 P2]</summary>
+        public bool IsBusy => _busy;
         private byte[]? _appFrameWait;    /* AppFrameReceived 事件暂存 (lock 保护) */
         private readonly object _frameLock = new();
 
@@ -286,30 +290,67 @@ namespace FCU_氢燃料电池控.Views
                 Log("S1: 前置检查 (电堆关机 / 连接状态)");
                 _ui.StepState(2, "active");
 
+                bool blResident = false;
                 var readInfo = BuildAppRequest(0x07);   /* 读电堆信息 */
                 byte[]? info = RequestAppFrame(readInfo, 0x87, 2000, ct);
-                if (info == null)
+                if (info != null)
                 {
-                    throw new UpgradeException("读取电堆状态无应答 (0x07/0x87), 请检查连接");
+                    if (info.Length < 6 || info[4] != 26)
+                    {
+                        throw new UpgradeException($"电堆状态应答长度异常 (LEN={info[4]})");
+                    }
+                    byte stackState = info[5];   /* 数据域首字节 = 工作状态 */
+                    if (stackState != 0)
+                    {
+                        throw new UpgradeException($"电堆未处于关机状态 (状态={stackState}), 请先关闭电堆再升级");
+                    }
+                    Log($"S1: 电堆状态 = {stackState} (关机) ✓");
                 }
-                if (info.Length < 6 || info[4] != 26)
+                else
                 {
-                    throw new UpgradeException($"电堆状态应答长度异常 (LEN={info[4]})");
-                }
-                byte stackState = info[5];   /* 数据域首字节 = 工作状态 */
-                if (stackState != 0)
-                {
-                    throw new UpgradeException($"电堆未处于关机状态 (状态={stackState}), 请先关闭电堆再升级");
-                }
-                Log($"S1: 电堆状态 = {stackState} (关机) ✓");
+                    /* [全量终审 P0-1] 自救回退: 上次升级在 EraseApp 后失败时设备 BL 常驻
+                     * (仅 115200/BL 协议应答), 0x07 永无应答 → 必须允许从这里直接续升,
+                     * 否则"重新执行升级即可修复"的承诺被 S1 硬门槛堵死 (485 级变砖)。 */
+                    Log("S1: 0x07 无应答, 探测 Bootloader 常驻模式 (115200)...");
+                    _bridge!.SetBlMode(true);
+                    if (!_bridge.ReopenSerial(BL_BAUD))
+                    {
+                        throw new UpgradeException("0x07 无应答且切换 115200 失败, 请检查串口");
+                    }
+                    _client.Reset();
 
-                /* 进入升级模式互斥窗口 [设计 §4.2.2: S1 末启用] */
-                _bridge!.SetBlMode(true);
-                _client.Reset();
+                    var probe = _client.Request(BlProtocolHelper.Commands.GetUid, null, 500, expectedLen: 12);
+                    if (!(probe.Ok && probe.Data is { Length: 12 }))
+                    {
+                        await Task.Delay(300, ct);
+                        probe = _client.Request(BlProtocolHelper.Commands.GetUid, null, 500, expectedLen: 12);
+                    }
 
-                if (!_bridge.ReopenSerial(BL_BAUD))
+                    if (probe.Ok && probe.Data is { Length: 12 })
+                    {
+                        blResident = true;
+                        Log("S1: 设备处于 Bootloader 常驻 (上次升级未完成), 跳过电堆检查直接续升");
+                    }
+                    else
+                    {
+                        _bridge.SetBlMode(false);
+                        _bridge.ReopenSerial(APP_BAUD);    /* 尽力恢复, 失败由用户手动处理 */
+                        throw new UpgradeException(
+                            "设备无应答: 既非运行中的应用 (0x07), 也非 Bootloader (115200 GetUID)。\n" +
+                            "请检查供电/接线/设备地址后重试");
+                    }
+                }
+
+                if (!blResident)
                 {
-                    throw new UpgradeException($"切换串口到 {BL_BAUD} 失败");
+                    /* 进入升级模式互斥窗口 [设计 §4.2.2: S1 末启用] */
+                    _bridge!.SetBlMode(true);
+                    _client.Reset();
+
+                    if (!_bridge.ReopenSerial(BL_BAUD))
+                    {
+                        throw new UpgradeException($"切换串口到 {BL_BAUD} 失败");
+                    }
                 }
                 Log($"S1: 串口已切换 {BL_BAUD}, 进入升级模式");
 
@@ -325,7 +366,7 @@ namespace FCU_氢燃料电池控.Views
                  * [批次2审查 P1: 原 2s 超时使周期 2.2s, 窗口命中率仅 ~45%] */
                 while (Environment.TickCount64 < s2Deadline && !ct.IsCancellationRequested)
                 {
-                    var r = _client.Request(BlProtocolHelper.Commands.GetUid, null, 300);
+                    var r = _client.Request(BlProtocolHelper.Commands.GetUid, null, 300, expectedLen: 12);
                     if (r.Ok && r.Data is { Length: 12 })
                     {
                         uid = r.Data;
@@ -449,7 +490,7 @@ namespace FCU_氢燃料电池控.Views
                 await Task.Delay(2000, ct);
 
                 /* 退出升级模式互斥窗口 [设计 §4.2.2: S8 末解除] */
-                _bridge.SetBlMode(false);
+                _bridge!.SetBlMode(false);
 
                 if (!_bridge.ReopenSerial(APP_BAUD))
                 {
@@ -481,9 +522,7 @@ namespace FCU_氢燃料电池控.Views
                 }
                 else
                 {
-                    throw new UpgradeException(
-                        "设备无应答: 可能仍停留在 Bootloader。\n处置: 保持上位机无升级操作, 给设备断电重新上电即可恢复运行; " +
-                        "若固件未更新成功请重新执行升级。\n注意: 若恢复后 FCU 不轮询 BMS, 请在 BMS 页面使用\"归还 BMS 总线\"按钮自救");
+                    throw new UpgradeException("设备 Reset 后 10s 内无应答 (0x81), 存活确认失败");
                 }
             }
             catch (OperationCanceledException)
@@ -491,26 +530,45 @@ namespace FCU_氢燃料电池控.Views
                 Log("升级已取消");
                 Status("已取消");
                 _ui.StepState(5, "fail");
-                await ExitNormalizationAsync(canceled: true);
+                await ExitNormalizationAsync();
+                if (_lastExitAppAlive == false)
+                {
+                    _ = Dispatcher.BeginInvoke(() => MessageBox.Show(
+                        "升级已取消, 设备停留在 Bootloader (无有效固件)。\n\n" +
+                        "处置: 重新执行一次完整升级即可修复 (会跳过电堆检查直接续升)。", "固件升级",
+                        MessageBoxButton.OK, MessageBoxImage.Warning));
+                }
             }
             catch (UpgradeException ex)
             {
                 Log($"升级失败: {ex.Message}");
                 Status("升级失败");
-                await ExitNormalizationAsync(canceled: false);
-                /* 失败弹窗延迟到退出归一化之后, 且编组到 UI 线程 [批次2审查 P2] */
+                await ExitNormalizationAsync();
+                /* 失败弹窗延迟到退出归一化之后(可附加设备真实状态), 编组 UI 线程
+                 * [全量终审 P2: 消除双重弹窗 + 修正 S8 失败但设备实际存活时的误导文案] */
+                string msg = ex.Message;
+                if (_lastExitAppAlive == false)
+                {
+                    msg += "\n\n设备当前停留在 Bootloader (无有效固件), 串口已关闭。\n" +
+                           "处置: 重新执行一次完整升级即可修复 (会跳过电堆检查直接续升); " +
+                           "若之前已到 S7 固化之后, 也可先断电重新上电尝试直接启动新固件。\n" +
+                           "注意: 若后续 FCU 不轮询 BMS, 请在 BMS 页面使用\"归还 BMS 总线\"按钮自救。";
+                }
                 _ = Dispatcher.BeginInvoke(() => MessageBox.Show(
-                    ex.Message, "固件升级失败", MessageBoxButton.OK, MessageBoxImage.Warning));
+                    msg, "固件升级失败", MessageBoxButton.OK, MessageBoxImage.Warning));
             }
             catch (Exception ex)
             {
                 Log($"升级异常: {ex}");
                 Status("异常终止");
-                await ExitNormalizationAsync(canceled: false);
+                await ExitNormalizationAsync();
             }
             finally
             {
                 _busy = false;
+                var oldCts = _cts;
+                _cts = null;
+                oldCts?.Dispose();          /* [全量终审 P2] 连续升级的 CTS 释放 */
                 _ = Dispatcher.BeginInvoke(() =>
                 {
                     btn_Start.IsEnabled = true;
@@ -519,9 +577,12 @@ namespace FCU_氢燃料电池控.Views
             }
         }
 
-        /// <summary>统一退出规则 [设计 §4.4]: 停发 → 静默 6s → 切 9600 → 探活 → 正常断开(归还总线)</summary>
-        private async Task ExitNormalizationAsync(bool canceled)
+        /// <summary>统一退出规则 [设计 §4.4]: 停发 → 静默 6s → 切 9600 → 探活 → 正常断开(归还总线)
+        /// 探活结果记录于 _lastExitAppAlive (true=APP存活已正常断开 / false=BL常驻已直接关串口 / null=未执行或重开失败),
+        /// 供 catch 块生成准确的用户提示 [全量终审 P2: 弹窗统一]</summary>
+        private async Task ExitNormalizationAsync()
         {
+            _lastExitAppAlive = null;
             try
             {
                 if (_bridge == null) return;
@@ -552,13 +613,8 @@ namespace FCU_氢燃料电池控.Views
                 else
                 {
                     Log("设备无 APP 应答 (可能停留在 Bootloader 常驻): 直接关闭串口; 重新执行升级可修复");
-                    /* BL 常驻自救提示 [设计 §4.4 退出规则/批次2审查 P2] */
-                    _ = Dispatcher.BeginInvoke(() => MessageBox.Show(
-                        "设备当前停留在 Bootloader (无有效固件), 串口已关闭。\n\n" +
-                        "处置: 重新执行一次完整升级即可修复 (擦写过程会重建固件)。\n" +
-                        "若之前升级已到 S7 固化之后, 也可尝试给设备断电重新上电直接启动新固件。",
-                        "固件升级", MessageBoxButton.OK, MessageBoxImage.Warning));
                 }
+                _lastExitAppAlive = alive;
                 _bridge.NormalizeExit(alive);
             }
             catch (Exception ex)

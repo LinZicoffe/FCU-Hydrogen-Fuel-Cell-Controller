@@ -30,6 +30,7 @@ namespace FCU_氢燃料电池控.Services
         private bool _respReceived;
         private byte _respStatus;
         private byte[]? _respData;
+        private int _expectedLen = -1;   /* 当前命令期待的应答数据域长度, -1 不校验 [全量终审 P1-2] */
 
         private readonly Managers.SerialPortManager _serial;
 
@@ -118,11 +119,16 @@ namespace FCU_氢燃料电池控.Services
                         int total = 5 + _rxLen + 2;
                         if (BlProtocolHelper.TryParseResponse(_rxBuf, total, out var data, out var status))
                         {
-                            /* 结构有效即视为应答到达 (含 Status=0x01 显式拒绝, 由上层快速失败) */
-                            _respStatus = status;
-                            _respData = data ?? Array.Empty<byte>();
-                            _respReceived = true;
-                            System.Threading.Monitor.Pulse(_lock);
+                            /* 结构有效即视为应答到达 (含 Status=0x01 显式拒绝, 由上层快速失败);
+                             * 但若与当前命令期待的数据域长度不符(如上一命令迟到的 ACK), 丢弃继续等
+                             * [全量终审 P1-2: 迟到 Write ACK(LEN=0) 被误当 Verify 应答 → 假报 CRC 不匹配] */
+                            if (_expectedLen < 0 || _rxLen == _expectedLen)
+                            {
+                                _respStatus = status;
+                                _respData = data ?? Array.Empty<byte>();
+                                _respReceived = true;
+                                System.Threading.Monitor.Pulse(_lock);
+                            }
                         }
                         /* 结构失败(校验和/长度): 静默丢弃, 等上位机侧超时重发 */
                         break;
@@ -141,7 +147,8 @@ namespace FCU_氢燃料电池控.Services
         /// <param name="data">数据域 (可 null)</param>
         /// <param name="timeoutMs">单次应答超时</param>
         /// <param name="maxAttempts">最大尝试次数 (仅超时/帧损坏重试; BL 显式拒绝 Status=0x01 不重试)</param>
-        public BlResult Request(byte cmd, byte[]? data, int timeoutMs, int maxAttempts = 1)
+        /// <param name="expectedLen">期待应答数据域长度: -1 不校验; ≥0 时长度不符的迟到帧被丢弃继续等</param>
+        public BlResult Request(byte cmd, byte[]? data, int timeoutMs, int maxAttempts = 1, int expectedLen = -1)
         {
             byte[] frame = BlProtocolHelper.BuildRequestFrame(cmd, data);
 
@@ -157,6 +164,7 @@ namespace FCU_氢燃料电池控.Services
                     _respReceived = false;
                     _respData = null;
                     _respStatus = STATUS_TIMEOUT;
+                    _expectedLen = expectedLen;
                 }
 
                 if (!_serial.SendData(frame))
@@ -196,20 +204,20 @@ namespace FCU_氢燃料电池控.Services
         /* ---------------- 高层命令封装 (超时分档见 [设计 §4.4]) ---------------- */
 
         public BlResult GetUid()
-            => Request(BlProtocolHelper.Commands.GetUid, null, 2000);
+            => Request(BlProtocolHelper.Commands.GetUid, null, 2000, expectedLen: 12);
 
         public BlResult GetVersion()
-            => Request(BlProtocolHelper.Commands.GetVersion, null, 2000);
+            => Request(BlProtocolHelper.Commands.GetVersion, null, 2000, expectedLen: 8);
 
         public BlResult EraseApp()
-            => Request(BlProtocolHelper.Commands.EraseApp, null, 5000, maxAttempts: 2);
+            => Request(BlProtocolHelper.Commands.EraseApp, null, 5000, maxAttempts: 2, expectedLen: 0);
 
         public BlResult WriteChunk(uint address, byte[] chunk)
             => Request(BlProtocolHelper.Commands.Write,
-                       BlProtocolHelper.BuildWriteData(address, chunk), 2000, maxAttempts: 3);
+                       BlProtocolHelper.BuildWriteData(address, chunk), 2000, maxAttempts: 3, expectedLen: 0);
 
         public BlResult WriteMeta(byte[] metaData16)
-            => Request(BlProtocolHelper.Commands.WriteMeta, metaData16, 5000);
+            => Request(BlProtocolHelper.Commands.WriteMeta, metaData16, 5000, expectedLen: 0);
 
         public BlResult Verify(uint length)
         {
@@ -218,11 +226,11 @@ namespace FCU_氢燃料电池控.Services
             n[1] = (byte)((length >> 8) & 0xFF);
             n[2] = (byte)((length >> 16) & 0xFF);
             n[3] = (byte)((length >> 24) & 0xFF);
-            return Request(BlProtocolHelper.Commands.Verify, n, 2000);
+            return Request(BlProtocolHelper.Commands.Verify, n, 2000, expectedLen: 4);
         }
 
         /// <summary>0x05 设备复位命令 (与状态机复位的 Reset() 重名, 故名 ResetDevice)</summary>
         public BlResult ResetDevice()
-            => Request(BlProtocolHelper.Commands.Reset, null, 2000);
+            => Request(BlProtocolHelper.Commands.Reset, null, 2000, expectedLen: 0);
     }
 }
