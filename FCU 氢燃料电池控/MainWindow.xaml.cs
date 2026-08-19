@@ -4495,6 +4495,13 @@ namespace FCU_氢燃料电池控
                         ok = spm.Open(port, baudRate);
                         if (!ok) System.Threading.Thread.Sleep(200);
                     }
+
+                    /* 重开失败时清除 en=0 抑制标志, 防止残留吞掉用户下一次手动连接的
+                     * 总线接管 (触发条件: S8/退出/S1自救 的 9600 重开失败) [终审2 残留P2] */
+                    if (!ok)
+                    {
+                        _owner._suppressNextAutoBmsPoll = false;
+                    }
                 });
                 return ok;
             }

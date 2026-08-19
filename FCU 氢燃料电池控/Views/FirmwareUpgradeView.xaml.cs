@@ -274,7 +274,9 @@ namespace FCU_氢燃料电池控.Views
         private void BtnCancel_Click(object sender, RoutedEventArgs e)
         {
             if (!_busy) return;
-            _cts?.Cancel();
+            /* 纳秒级理论竞态防御: Cancel 与 finally 的 Dispose 交叠时 ObjectDisposedException [终审2 P3] */
+            try { _cts?.Cancel(); }
+            catch (ObjectDisposedException) { }
             Status("正在取消...");
             Log("用户请求取消");
         }
