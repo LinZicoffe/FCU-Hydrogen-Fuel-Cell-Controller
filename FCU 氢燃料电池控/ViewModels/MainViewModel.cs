@@ -318,6 +318,9 @@ namespace FCU_氢燃料电池控.ViewModels
         /// <returns>串口管理器实例</returns>
         public SerialPortManager GetSerialPortManager() => _serialPortManager;
 
+        /// <summary>参数管理器 (MainWindow 用于注入固件升级发送拦截钩子)</summary>
+        public ParameterManager ParameterManager => _parameterManager;
+
         public void AppendCommunicationFrame(CommunicationDirection direction, byte[] frame)
         {
             if (IsCommunicationLogPaused || frame == null || frame.Length == 0)

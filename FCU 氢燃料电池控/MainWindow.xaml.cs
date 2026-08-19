@@ -68,6 +68,17 @@ namespace FCU_氢燃料电池控
         private bool? _pendingFanManualEnable;
         private byte _pendingFanManualDuty;
 
+        // 固件升级 (Bootloader) 模式标志 [BL设计 §4.2]:
+        // 互斥窗口 = S1 前置检查完成后启用, S8 切回 9600 并确认 APP 存活后解除;
+        // 生效期间: 串口字节分流到升级客户端, SendFrame/ParameterManager 发送被拦截, 主 Tab 被禁用
+        private volatile bool _blUpgradeMode;
+
+        // 固件升级页所在 TabItem (升级期间保持可用, 其余主 Tab 禁用)
+        private System.Windows.Controls.TabItem? _firmwareUpgradeTab;
+
+        /// <summary>AA55 完整帧到达事件 (固件升级页 S1 前置检查 / S8 存活确认用) [BL设计 §4.2]</summary>
+        private event Action<byte[]>? BlAppFrameReceived;
+
         // 最近一次从 0x0701 回读到的 SOC 门控参数；默认值与固件默认配置一致。
         private int _socStartMax = 90;
         private int _socStopHigh = 85;
@@ -162,7 +173,13 @@ namespace FCU_氢燃料电池控
             _bmsService.StatusChanged += msg => Dispatcher.Invoke(() => UpdateStatus(msg));
             _bmsService.ErrorOccurred += msg => Dispatcher.Invoke(() => { HC.Growl.Warning(msg); UpdateStatus(msg); });
             _bmsService.MosWriteCompleted += OnBmsMosWriteCompleted;
-            
+
+            // 固件升级页初始化 [BL设计 §4.2 集成点]: 注入串口管理器与宿主桥接
+            _firmwareUpgradeTab = FirmwareUpgradeView.Parent as System.Windows.Controls.TabItem;
+            FirmwareUpgradeView.Initialize(serialPortManager, new BlHostBridgeImpl(this));
+            // 升级期间拦截 ParameterManager 的 AA55 发送 (MVVM 命令 CanExecute 只查 IsConnected 拦不住)
+            _viewModel.ParameterManager.SendBlocked = () => _blUpgradeMode;
+
             // 图表初始化（保留）
             InitializePowerChart();
             InitializeChartUpdateTimer();
@@ -2220,13 +2237,31 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private bool SendFrame(byte[] frame)
         {
+            // 固件升级模式期间拦截一切 AA55 发送 [BL设计 §4.2 集成点2]
+            if (_blUpgradeMode)
+                return false;
+
             // 使用ViewModel的SerialPortManager发送数据
+            var serialPortManager = _viewModel?.GetSerialPortManager();
+            return serialPortManager?.SendData(frame) == true;
+        }
+
+        /// <summary>
+        /// 固件升级模式下的 AA55 帧直发 (升级页 S1 前置检查 / S8 存活确认专用,
+        /// 此时 _blUpgradeMode=false, 走正常通道; TX 日志由 SerialPortManager.FrameSent
+        /// 事件统一记录, 此处不重复追加) [BL设计 §4.2]
+        /// </summary>
+        private bool SendAppFrameRaw(byte[] frame)
+        {
             var serialPortManager = _viewModel?.GetSerialPortManager();
             return serialPortManager?.SendData(frame) == true;
         }
 
         private void OnFrameSent(byte[] frame)
         {
+            /* 升级模式下的 BL 二进制帧不进 AA55 通信日志 [批次2审查 P2] */
+            if (_blUpgradeMode)
+                return;
             AppendCommunicationFrame(CommunicationDirection.Tx, frame);
         }
 
@@ -2262,7 +2297,20 @@ namespace FCU_氢燃料电池控
             try
             {
                 SerialPort? sp = sender as SerialPort;
-                if (sp == null || _protocolHandler == null)
+                if (sp == null)
+                    return;
+
+                /* 固件升级模式: 字节全部喂入升级客户端, 不进 AA55 解析器与 BMS 服务 [BL设计 §4.2 集成点1] */
+                if (_blUpgradeMode)
+                {
+                    while (sp.BytesToRead > 0)
+                    {
+                        FirmwareUpgradeView.FeedSerialByte((byte)sp.ReadByte());
+                    }
+                    return;
+                }
+
+                if (_protocolHandler == null)
                     return;
 
                 List<byte>? rxBytes = null;
@@ -2293,6 +2341,9 @@ namespace FCU_氢燃料电池控
         private void OnFrameReceived(byte[] frame)
         {
             AppendCommunicationFrame(CommunicationDirection.Rx, frame);
+
+            // 广播给固件升级页 (S1 前置检查读 0x87 / S8 存活确认等 0x81) [BL设计 §4.2]
+            BlAppFrameReceived?.Invoke(frame);
 
             byte functionCode = 0;
             try
@@ -2764,6 +2815,16 @@ namespace FCU_氢燃料电池控
         /// </summary>
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
+            /* 固件升级进行中禁止关窗 [BL设计 §4.4 中途关窗拦截]:
+             * S4~S7 期间(115200/BL 常驻)直接关闭会使 OnBeforeSerialClose 在错误波特率下发无效 en=1,
+             * 造成 bms_poll_enable=0 残留; 正确路径是先在升级页取消/完成走统一退出规则 */
+            if (_blUpgradeMode)
+            {
+                HC.Growl.Warning("固件升级进行中, 请先在升级页点击[取消]完成退出流程后再关闭程序");
+                e.Cancel = true;
+                return;
+            }
+
             if (_isSerialOpen)
             {
                 OnBeforeSerialClose();
@@ -4355,6 +4416,148 @@ namespace FCU_氢燃料电池控
             catch
             {
                 // 静默处理
+            }
+        }
+
+        #endregion
+
+        #region 固件升级宿主桥接 [BL设计 §4.2]
+
+        /// <summary>
+        /// 升级页宿主桥接实现: 串口开关/AA55 直发/升级模式互斥/统一退出归一化
+        /// </summary>
+        private sealed class BlHostBridgeImpl : Views.FirmwareUpgradeView.IBlHostBridge
+        {
+            private readonly MainWindow _owner;
+
+            public BlHostBridgeImpl(MainWindow owner) => _owner = owner;
+
+            public event Action<byte[]>? AppFrameReceived
+            {
+                add => _owner.BlAppFrameReceived += value;
+                remove => _owner.BlAppFrameReceived -= value;
+            }
+
+            public bool IsSerialOpen =>
+                _owner._viewModel?.GetSerialPortManager().IsOpen == true;
+
+            public string? PortName =>
+                _owner._viewModel?.GetSerialPortManager().PortName;
+
+            public byte DeviceAddress
+            {
+                get
+                {
+                    /* GetDeviceAddress 读取 UI 控件, 须在 UI 线程执行 (本属性被后台任务调用) */
+                    return _owner.Dispatcher.Invoke(() =>
+                    {
+                        try
+                        {
+                            if (byte.TryParse(_owner.GetDeviceAddress(), out byte addr) && addr >= 1)
+                                return addr;
+                        }
+                        catch { /* 界面地址非法时回退默认 1 */ }
+                        return (byte)0x01;
+                    });
+                }
+            }
+
+            /// <summary>关闭并以新波特率重开串口 (UI 线程执行, 含重试) [BL设计 §4.2.4]</summary>
+            public bool ReopenSerial(int baudRate)
+            {
+                bool ok = false;
+                _owner.Dispatcher.Invoke(() =>
+                {
+                    var spm = _owner._viewModel?.GetSerialPortManager();
+                    if (spm == null) return;
+
+                    string? port = spm.PortName;
+                    if (string.IsNullOrEmpty(port)) return;
+
+                    if (spm.IsOpen) spm.Close();
+
+                    /* 部分 USB 串口驱动 Close 后立即重开会失败, 100~300ms 间隔重试 [BL设计 §4.2.4(c)] */
+                    for (int attempt = 0; attempt < 3 && !ok; attempt++)
+                    {
+                        ok = spm.Open(port, baudRate);
+                        if (!ok) System.Threading.Thread.Sleep(200);
+                    }
+                });
+                return ok;
+            }
+
+            public bool SendAppFrame(byte[] frame)
+            {
+                if (_owner._blUpgradeMode) return false;
+                return _owner.Dispatcher.Invoke(() => _owner.SendAppFrameRaw(frame));
+            }
+
+            /// <summary>进入/退出升级模式: 标志 + 轮询挂起 + 主 Tab 互斥 + 协议状态机复位 [BL设计 §4.2]</summary>
+            public void SetBlMode(bool on)
+            {
+                _owner.Dispatcher.Invoke(() =>
+                {
+                    _owner._blUpgradeMode = on;
+
+                    if (on)
+                    {
+                        /* 显式挂起电堆轮询与 BMS 轮询 (不依赖 Close/Open 副作用链) */
+                        _owner._pollingTimer?.Stop();
+                        _owner._bmsService?.StopPolling();
+                        _owner._protocolHandler?.Reset();
+                        SetMainTabsEnabled(false);
+                    }
+                    else
+                    {
+                        _owner._protocolHandler?.Reset();
+                        SetMainTabsEnabled(true);
+                        /* 轮询不自动恢复: 按钮状态与实际一致地保持停止, 由用户重新启动 */
+                        try { _owner.btn_StartPolling.IsEnabled = true; } catch { }
+                        try { _owner.btn_StartBMSPolling.IsEnabled = true; } catch { }
+                    }
+                });
+            }
+
+            /// <summary>升级期间禁用除固件升级页外的全部主 Tab [BL设计 §4.2 集成点2 等效实现]</summary>
+            private void SetMainTabsEnabled(bool enabled)
+            {
+                foreach (var item in _owner.MainTabControl.Items.OfType<System.Windows.Controls.TabItem>())
+                {
+                    item.IsEnabled = enabled;
+                }
+                if (_owner._firmwareUpgradeTab != null)
+                {
+                    _owner._firmwareUpgradeTab.IsEnabled = true;    /* 升级页自身保持可用 */
+                    if (!enabled)
+                    {
+                        _owner.MainTabControl.SelectedItem = _owner._firmwareUpgradeTab;
+                    }
+                }
+            }
+
+            /// <summary>统一退出归一化 [BL设计 §4.4 退出规则]:
+            /// APP 存活 → 走正常断开命令 (BeforeSerialClose 链路发 0x0D en=1 归还 BMS 总线);
+            /// APP 不存活(BL 常驻) → 直接关串口, 提示重新升级。</summary>
+            public void NormalizeExit(bool appAlive)
+            {
+                _owner.Dispatcher.Invoke(() =>
+                {
+                    try
+                    {
+                        if (appAlive)
+                        {
+                            _owner._viewModel?.CloseSerialCommand?.Execute(null);
+                        }
+                        else
+                        {
+                            _owner._viewModel?.GetSerialPortManager().Close();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _owner.UpdateStatus($"升级退出处理异常: {ex.Message}");
+                    }
+                });
             }
         }
 

@@ -1,0 +1,78 @@
+<UserControl x:Class="FCU_氢燃料电池控.Views.FirmwareUpgradeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             d:DesignHeight="620" d:DesignWidth="900">
+
+    <!-- 固件升级页 [BL设计 §4.3]: 选包 → 前置检查 → 断电握手 → 擦/写/校验 → 重启验证 -->
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- 升级包选择 -->
+        <Border Grid.Row="0" Background="{DynamicResource RegionBrush}" CornerRadius="4" Padding="10" Margin="0,0,0,8">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="选择 .upg 升级包..." Padding="12,4" Click="BtnSelectFile_Click"/>
+                    <TextBlock Name="tbk_FilePath" Text="未选择" VerticalAlignment="Center" Margin="10,0,0,0"
+                               TextTrimming="CharacterEllipsis" MaxWidth="560" ToolTip="{Binding RelativeSource={RelativeSource Self}, Path=Text}"/>
+                </StackPanel>
+                <TextBlock Name="tbk_PkgInfo" Text="包信息: --" Margin="0,6,0,0" Foreground="{DynamicResource SecondaryTextBrush}"/>
+            </StackPanel>
+        </Border>
+
+        <!-- 设备信息 -->
+        <Border Grid.Row="1" Background="{DynamicResource RegionBrush}" CornerRadius="4" Padding="10" Margin="0,0,0,8">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="设备UID: " VerticalAlignment="Center"/>
+                <TextBlock Name="tbk_DeviceUid" Text="--" VerticalAlignment="Center" Margin="0,0,24,0"/>
+                <TextBlock Text="设备固件版本: " VerticalAlignment="Center"/>
+                <TextBlock Name="tbk_DeviceVer" Text="--" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+
+        <!-- 步骤指示 -->
+        <Border Grid.Row="2" Background="{DynamicResource RegionBrush}" CornerRadius="4" Padding="10" Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Name="tbk_Step1" Text="① 选择升级包并核对" Margin="0,2"/>
+                <TextBlock Name="tbk_Step2" Text="② 前置检查 (电堆关机 / BMS 总线接管)" Margin="0,2"/>
+                <TextBlock Name="tbk_Step3" Text="③ 按提示断电重新上电 FCU, 等待 Bootloader 应答" Margin="0,2"/>
+                <TextBlock Name="tbk_Step4" Text="④ 擦除 / 写入 / 校验" Margin="0,2"/>
+                <TextBlock Name="tbk_Step5" Text="⑤ 重启验证" Margin="0,2"/>
+            </StackPanel>
+        </Border>
+
+        <!-- 进度与操作 -->
+        <Border Grid.Row="3" Background="{DynamicResource RegionBrush}" CornerRadius="4" Padding="10" Margin="0,0,0,8">
+            <StackPanel>
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <ProgressBar Name="pbar_Progress" Height="18" Minimum="0" Maximum="100" Value="0"/>
+                    <TextBlock Name="tbk_Progress" Grid.Column="1" Text="0%  (0/0 KB)" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                </Grid>
+                <StackPanel Orientation="Horizontal">
+                    <Button Name="btn_Start" Content="开始升级" Padding="16,5" FontWeight="Bold" Click="BtnStart_Click"/>
+                    <Button Name="btn_Cancel" Content="取消" Padding="16,5" Margin="12,0,0,0" IsEnabled="False" Click="BtnCancel_Click"/>
+                    <TextBlock Name="tbk_Status" Text="空闲" VerticalAlignment="Center" Margin="16,0,0,0" FontWeight="Bold"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- 分隔 -->
+        <Separator Grid.Row="4" Margin="0,2,0,6"/>
+
+        <!-- 日志 -->
+        <ListBox Name="lbx_Log" Grid.Row="5" FontFamily="Consolas" FontSize="12"/>
+    </Grid>
+</UserControl>

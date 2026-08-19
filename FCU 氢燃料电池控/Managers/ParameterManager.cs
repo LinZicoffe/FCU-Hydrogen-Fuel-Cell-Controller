@@ -11,6 +11,9 @@ namespace FCU_氢燃料电池控.Managers
     public class ParameterManager
     {
         private readonly SerialPortManager _serialPortManager;
+
+        /// <summary>发送拦截钩子: 返回 true 时拦截一切 AA55 发送 (固件升级模式由 MainWindow 注入) [BL设计 §4.2]</summary>
+        public Func<bool>? SendBlocked { get; set; }
         private byte _deviceAddress = ProtocolConstants.DEFAULT_DEVICE_ADDRESS;
 
         #region 事件定义
@@ -146,6 +149,12 @@ namespace FCU_氢燃料电池控.Managers
         {
             try
             {
+                if (SendBlocked?.Invoke() == true)
+                {
+                    ErrorOccurred?.Invoke(this, "固件升级进行中, 串口已被升级功能占用");
+                    return false;
+                }
+
                 if (!_serialPortManager.IsOpen)
                 {
                     ErrorOccurred?.Invoke(this, "串口未打开");
@@ -184,6 +193,12 @@ namespace FCU_氢燃料电池控.Managers
         {
             try
             {
+                if (SendBlocked?.Invoke() == true)
+                {
+                    ErrorOccurred?.Invoke(this, "固件升级进行中, 串口已被升级功能占用");
+                    return false;
+                }
+
                 if (!_serialPortManager.IsOpen)
                 {
                     ErrorOccurred?.Invoke(this, "串口未打开");

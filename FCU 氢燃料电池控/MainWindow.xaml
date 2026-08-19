@@ -6,6 +6,7 @@
         xmlns:local="clr-namespace:FCU_氢燃料电池控"
         xmlns:controls="clr-namespace:FCU_氢燃料电池控.Controls"
         xmlns:hc="https://handyorg.github.io/handycontrol"
+        xmlns:views="clr-namespace:FCU_氢燃料电池控.Views"
         mc:Ignorable="d"
         Title="氢燃料电池标定系统" ShowTitle="False" Height="780" Width="1280"
         MinWidth="1000" MinHeight="600"
@@ -227,7 +228,8 @@
             <Border Grid.Row="0" Background="White" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Padding="18,0">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="21*"/>
+                        <ColumnDefinition Width="512*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0"
@@ -236,8 +238,8 @@
                                FontSize="18"
                                FontWeight="Bold"
                                Foreground="#333333"
-                               VerticalAlignment="Center"/>
-                    <TextBlock Grid.Column="1"
+                               VerticalAlignment="Center" Grid.ColumnSpan="2"/>
+                    <TextBlock Grid.Column="2"
                                Name="tbk_ProductVersion"
                                Text="RIDI FCU/DCDC-2026/V1.5"
                                FontSize="12"
@@ -250,7 +252,7 @@
 
             <Border Grid.Row="1" Background="{DynamicResource PrimaryBrush}" Padding="18,0">
                 <TextBlock Name="tbk_SystemName"
-                           Text=" "
+                           Text="氢燃料电池标定系统"
                            FontSize="24"
                            FontWeight="Bold"
                            Foreground="White"
@@ -272,20 +274,20 @@
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
                 <hc:UniformSpacingPanel Spacing="10" Orientation="Vertical">
-                <!-- 串口设置 -->
-                <hc:Card BorderThickness="0" Effect="{StaticResource EffectShadow2}">
-                    <StackPanel>
-                        <TextBlock Text="串口设置"
+                    <!-- 串口设置 -->
+                    <hc:Card BorderThickness="0" Effect="{StaticResource EffectShadow2}">
+                        <StackPanel>
+                            <TextBlock Text="串口设置"
                                    Style="{StaticResource TextBlockHeader}"
                                    Margin="0,0,0,10"/>
 
-                        <Grid Margin="0,0,0,6">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="70"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Label Grid.Column="0" Content="串口号:" Style="{StaticResource LabelStyle}"/>
-                            <hc:ComboBox Grid.Column="1"
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="70"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Label Grid.Column="0" Content="串口号:" Style="{StaticResource LabelStyle}"/>
+                                <hc:ComboBox Grid.Column="1"
                                       ItemsSource="{Binding AvailablePorts}"
                                       SelectedItem="{Binding SelectedPortName}"
                                       IsEnabled="{Binding IsConnected, Converter={StaticResource InverseBoolConverter}}"
@@ -294,15 +296,15 @@
                                       hc:InfoElement.ShowClearButton="True"
                                       FontFamily="Microsoft YaHei UI, Segoe UI, Tahoma, sans-serif"
                                       FontSize="10"/>
-                        </Grid>
+                            </Grid>
 
-                        <Grid Margin="0,0,0,6">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="70"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Label Grid.Column="0" Content="波特率:" Style="{StaticResource LabelStyle}"/>
-                            <hc:ComboBox Grid.Column="1"
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="70"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Label Grid.Column="0" Content="波特率:" Style="{StaticResource LabelStyle}"/>
+                                <hc:ComboBox Grid.Column="1"
                                       ItemsSource="{Binding AvailableBaudRates}"
                                       SelectedItem="{Binding SelectedBaudRate}"
                                       IsEnabled="{Binding IsConnected, Converter={StaticResource InverseBoolConverter}}"
@@ -311,15 +313,15 @@
                                       hc:InfoElement.ShowClearButton="True"
                                       FontFamily="Microsoft YaHei UI, Segoe UI, Tahoma, sans-serif"
                                       FontSize="10"/>
-                        </Grid>
+                            </Grid>
 
-                        <Grid Margin="0,0,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="90"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Label Grid.Column="0" Content="从站地址(1-247):" Style="{StaticResource LabelStyle}" FontSize="10"/>
-                            <TextBox Grid.Column="1"
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Label Grid.Column="0" Content="从站地址(1-247):" Style="{StaticResource LabelStyle}" FontSize="10"/>
+                                <TextBox Grid.Column="1"
                                      Text="{Binding DeviceAddress, UpdateSourceTrigger=PropertyChanged}"
                                      IsEnabled="{Binding IsConnected, Converter={StaticResource InverseBoolConverter}}"
                                      Height="32"
@@ -327,97 +329,97 @@
                                      FontSize="12"
                                      VerticalContentAlignment="Center"
                                      Padding="5,0,0,0"/>
-                        </Grid>
+                            </Grid>
 
-                        <Grid Margin="0,0,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="10"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            
-                            <Button Grid.Column="0"
+                            <Grid Margin="0,0,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="10"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Button Grid.Column="0"
                                     Content="刷新串口"
                                     Command="{Binding RefreshPortsCommand}"
                                     Style="{StaticResource StandardButtonStyle}"
                                     Height="36"/>
-                            
-                            <!-- 打开串口按钮 -->
-                            <Button Grid.Column="2"
+
+                                <!-- 打开串口按钮 -->
+                                <Button Grid.Column="2"
                                     Content="打开串口"
                                     Command="{Binding OpenSerialCommand}"
                                     Style="{StaticResource SuccessButtonStyle}"
                                     Height="36"
                                     Visibility="{Binding IsConnected, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
-                                    
-                            <!-- 关闭串口按钮 -->
-                            <Button Grid.Column="2"
+
+                                <!-- 关闭串口按钮 -->
+                                <Button Grid.Column="2"
                                     Content="关闭串口"
                                     Command="{Binding CloseSerialCommand}"
                                     Style="{StaticResource StopButtonStyle}"
                                     Height="36"
                                     Visibility="{Binding IsConnected, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                        </Grid>
-                    </StackPanel>
-                </hc:Card>
+                            </Grid>
+                        </StackPanel>
+                    </hc:Card>
 
-                <!-- 读取操作 -->
-                <hc:Card BorderThickness="0" Effect="{StaticResource EffectShadow2}">
-                    <StackPanel>
-                        <TextBlock Text="读取操作"
+                    <!-- 读取操作 -->
+                    <hc:Card BorderThickness="0" Effect="{StaticResource EffectShadow2}">
+                        <StackPanel>
+                            <TextBlock Text="读取操作"
                                    Style="{StaticResource TextBlockHeader}"
                                    Margin="0,0,0,10"/>
 
-                        <Button Content="读取设备序列号"
+                            <Button Content="读取设备序列号"
                                 Command="{Binding ReadSerialNumberCommand}"
                                 Style="{StaticResource StandardButtonStyle}"
                                 Margin="0,0,0,6"/>
 
-                        <Button Content="读取电堆信息"
+                            <Button Content="读取电堆信息"
                                 Command="{Binding ReadStackInfoCommand}"
                                 Style="{StaticResource StandardButtonStyle}"
                                 Margin="0,0,0,6"/>
 
-                        <Button Content="读取配置参数"
+                            <Button Content="读取配置参数"
                                 Command="{Binding ReadConfigCommand}"
                                 Style="{StaticResource StandardButtonStyle}"/>
-                    </StackPanel>
-                </hc:Card>
+                        </StackPanel>
+                    </hc:Card>
 
-                <!-- 系统控制 -->
-                <hc:Card BorderThickness="0" Effect="{StaticResource EffectShadow2}">
-                    <StackPanel>
-                        <TextBlock Text="系统控制"
+                    <!-- 系统控制 -->
+                    <hc:Card BorderThickness="0" Effect="{StaticResource EffectShadow2}">
+                        <StackPanel>
+                            <TextBlock Text="系统控制"
                                    Style="{StaticResource TextBlockHeader}"
                                    Margin="0,0,0,10"/>
 
-                        <Button Content="启动电堆"
+                            <Button Content="启动电堆"
                                 Command="{Binding StartStackCommand}"
                                 Style="{StaticResource SuccessButtonStyle}"
                                 Margin="0,0,0,6"/>
 
-                        <Button Content="关闭电堆"
+                            <Button Content="关闭电堆"
                                 Command="{Binding StopStackCommand}"
                                 Style="{StaticResource StopButtonStyle}"/>
-                    </StackPanel>
-                </hc:Card>
+                        </StackPanel>
+                    </hc:Card>
 
-                <!-- 设备序列号显示 -->
-                <hc:Card BorderThickness="0" Effect="{StaticResource EffectShadow2}">
-                    <StackPanel>
-                        <TextBlock Text="设备序列号"
+                    <!-- 设备序列号显示 -->
+                    <hc:Card BorderThickness="0" Effect="{StaticResource EffectShadow2}">
+                        <StackPanel>
+                            <TextBlock Text="设备序列号"
                                    Style="{StaticResource TextBlockHeader}"
                                    Margin="0,0,0,10"/>
-                        <TextBox Text="{Binding SerialNumber, Mode=OneWay}"
+                            <TextBox Text="{Binding SerialNumber, Mode=OneWay}"
                                  Style="{StaticResource StandardTextBoxStyle}"
                                  IsReadOnly="True"/>
-                    </StackPanel>
-                </hc:Card>
+                        </StackPanel>
+                    </hc:Card>
                 </hc:UniformSpacingPanel>
             </ScrollViewer>
 
             <!-- 右侧Tab区域 -->
-            <hc:TabControl Grid.Column="1"
+            <hc:TabControl x:Name="MainTabControl" Grid.Column="1"
                         Background="Transparent"
                         BorderThickness="0">
                 <!-- FCU参数配置 Tab（合并：压力/阀门/DCDC/风扇温度） -->
@@ -427,152 +429,152 @@
                             <TextBlock Text="参数设定：读取当前参数，修改后写入FCU并固化到Flash。" FontWeight="SemiBold" Margin="4,0,4,10"/>
                             <!-- 压力参数 -->
                             <GroupBox Header="压力传感器设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
-                            <StackPanel>
-                                <!-- 读取按钮 -->
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
-                                <Button Name="btn_ReadPressureParams"
+                                <StackPanel>
+                                    <!-- 读取按钮 -->
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
+                                        <Button Name="btn_ReadPressureParams"
                                         Content="读取压力参数"
                                         Style="{StaticResource StandardButtonStyle}"
                                         Width="150"
                                         Margin="4"
                                         IsEnabled="{Binding IsConnected}"
                                         Click="btn_ReadPressureParams_Click"/>
-                                <!-- 旧压力协议仍包含已从客户界面移除的红/黄阈值；在新字段映射确认前禁止整帧覆盖。 -->
-                                <Button Content="写入FCU并固化（等待固件）" IsEnabled="False"
+                                        <!-- 旧压力协议仍包含已从客户界面移除的红/黄阈值；在新字段映射确认前禁止整帧覆盖。 -->
+                                        <Button Content="写入FCU并固化（等待固件）" IsEnabled="False"
                                         Style="{StaticResource SuccessButtonStyle}" Width="200" Margin="4"/>
-                                </StackPanel>
+                                    </StackPanel>
 
-                                <!-- 按客户草图排列：最低限制 | 当前值 | 最高限制 | 量程 -->
-                                <Grid HorizontalAlignment="Stretch">
-                                    <Grid.ColumnDefinitions>
-                                        <!-- 行头 | 最低限制 | 当前值 | 最高限制 | 量程 -->
-                                        <ColumnDefinition Width="85"/>
-                                        <ColumnDefinition Width="1*"/>
-                                        <ColumnDefinition Width="1*"/>
-                                        <ColumnDefinition Width="1*"/>
-                                        <ColumnDefinition Width="1.15*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
+                                    <!-- 按客户草图排列：最低限制 | 当前值 | 最高限制 | 量程 -->
+                                    <Grid HorizontalAlignment="Stretch">
+                                        <Grid.ColumnDefinitions>
+                                            <!-- 行头 | 最低限制 | 当前值 | 最高限制 | 量程 -->
+                                            <ColumnDefinition Width="85"/>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="1.15*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
 
-                                    <!-- ===== 列头（备注） ===== -->
-                                    <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource PressureHeaderStyle}"
+                                        <!-- ===== 列头（备注） ===== -->
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource PressureHeaderStyle}"
                                                Text="最低限制"
                                                ToolTip="高压侧为启动门槛；低压侧为低限告警值"/>
-                                    <TextBlock Grid.Row="0" Grid.Column="2" Style="{StaticResource PressureHeaderStyle}"
+                                        <TextBlock Grid.Row="0" Grid.Column="2" Style="{StaticResource PressureHeaderStyle}"
                                                Text="当前值"
                                                Foreground="#2196F3"
                                                ToolTip="电堆信息(0x07)上报的实测压力，只读"/>
-                                    <TextBlock Grid.Row="0" Grid.Column="3" Style="{StaticResource PressureHeaderStyle}"
+                                        <TextBlock Grid.Row="0" Grid.Column="3" Style="{StaticResource PressureHeaderStyle}"
                                                Text="最高限制"
                                                ToolTip="压力允许区间上限。高压超过设定值触发 CRITICAL 停机；低压超过设定值同样触发 CRITICAL 停机"/>
-                                    <TextBlock Grid.Row="0" Grid.Column="4" Style="{StaticResource PressureHeaderStyle}"
+                                        <TextBlock Grid.Row="0" Grid.Column="4" Style="{StaticResource PressureHeaderStyle}"
                                                Text="量程"
                                                ToolTip="传感器满量程。写 0 会被固件静默接受并固化，导致压力读数恒为 0 且重启不恢复"/>
 
-                                    <!-- ===== 第1行：高压传感器 ===== -->
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource PressureRowHeaderStyle}"
+                                        <!-- ===== 第1行：高压传感器 ===== -->
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource PressureRowHeaderStyle}"
                                                Text="高压传感器"/>
 
-                                    <Grid Grid.Row="1" Grid.Column="1">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBox Grid.Column="0" Margin="4"
+                                        <Grid Grid.Row="1" Grid.Column="1">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Grid.Column="0" Margin="4"
                                                  Text="{Binding HighPressureMin, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource StandardTextBoxStyle}"
                                                  ToolTip="高压最小值，固件默认 300 KPA"/>
-                                        <TextBlock Grid.Column="1" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
-                                    </Grid>
+                                            <TextBlock Grid.Column="1" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
+                                        </Grid>
 
-                                    <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource PressureLiveBoxStyle}">
-                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                            <TextBlock Text="{Binding HighPressure}" Style="{StaticResource PressureLiveTextStyle}"/>
-                                            <TextBlock Text=" kPa" Style="{StaticResource PressureUnitStyle}" Margin="2,0,0,0"/>
-                                        </StackPanel>
-                                    </Border>
+                                        <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource PressureLiveBoxStyle}">
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                <TextBlock Text="{Binding HighPressure}" Style="{StaticResource PressureLiveTextStyle}"/>
+                                                <TextBlock Text=" kPa" Style="{StaticResource PressureUnitStyle}" Margin="2,0,0,0"/>
+                                            </StackPanel>
+                                        </Border>
 
-                                    <Grid Grid.Row="1" Grid.Column="3">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBox Grid.Column="0" Margin="4"
+                                        <Grid Grid.Row="1" Grid.Column="3">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Grid.Column="0" Margin="4"
                                                  Text="{Binding HighPressureMax, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource StandardTextBoxStyle}"
                                                  ToolTip="高压上限告警值，高于此值触发 CRITICAL 停机。建议初值 5000 KPA（等于量程），联调后按实际安全值下调"/>
-                                        <TextBlock Grid.Column="1" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
-                                    </Grid>
+                                            <TextBlock Grid.Column="1" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
+                                        </Grid>
 
-                                    <Grid Grid.Row="1" Grid.Column="4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="0 ～" Style="{StaticResource PressureUnitStyle}" Margin="4,0,0,0"/>
-                                        <TextBox Grid.Column="1" Margin="4"
+                                        <Grid Grid.Row="1" Grid.Column="4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="0 ～" Style="{StaticResource PressureUnitStyle}" Margin="4,0,0,0"/>
+                                            <TextBox Grid.Column="1" Margin="4"
                                                  Text="{Binding HighPressureRange, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource StandardTextBoxStyle}"
                                                  ToolTip="高压量程上限，固件默认 5000 KPA，可修改"/>
-                                        <TextBlock Grid.Column="2" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
-                                    </Grid>
+                                            <TextBlock Grid.Column="2" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
+                                        </Grid>
 
-                                    <!-- ===== 第2行：低压传感器 ===== -->
-                                    <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource PressureRowHeaderStyle}"
+                                        <!-- ===== 第2行：低压传感器 ===== -->
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource PressureRowHeaderStyle}"
                                                Text="低压传感器"/>
 
-                                    <Grid Grid.Row="2" Grid.Column="1">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBox Grid.Column="0" Margin="4"
+                                        <Grid Grid.Row="2" Grid.Column="1">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Grid.Column="0" Margin="4"
                                                  Text="{Binding LowPressureMin, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource StandardTextBoxStyle}"
                                                  ToolTip="低压下限值，固件默认 30 KPA"/>
-                                        <TextBlock Grid.Column="1" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
-                                    </Grid>
+                                            <TextBlock Grid.Column="1" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
+                                        </Grid>
 
-                                    <Border Grid.Row="2" Grid.Column="2" Style="{StaticResource PressureLiveBoxStyle}">
-                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                            <TextBlock Text="{Binding LowPressure}" Style="{StaticResource PressureLiveTextStyle}"/>
-                                            <TextBlock Text=" kPa" Style="{StaticResource PressureUnitStyle}" Margin="2,0,0,0"/>
-                                        </StackPanel>
-                                    </Border>
+                                        <Border Grid.Row="2" Grid.Column="2" Style="{StaticResource PressureLiveBoxStyle}">
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                <TextBlock Text="{Binding LowPressure}" Style="{StaticResource PressureLiveTextStyle}"/>
+                                                <TextBlock Text=" kPa" Style="{StaticResource PressureUnitStyle}" Margin="2,0,0,0"/>
+                                            </StackPanel>
+                                        </Border>
 
-                                    <Grid Grid.Row="2" Grid.Column="3">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBox Grid.Column="0" Margin="4"
+                                        <Grid Grid.Row="2" Grid.Column="3">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Grid.Column="0" Margin="4"
                                                  Text="{Binding LowPressureMax, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource StandardTextBoxStyle}"
                                                  ToolTip="低压上限值，固件默认 80 KPA，须大于下限值。低压超出 [下限, 上限] 区间时禁止启动电堆"/>
-                                        <TextBlock Grid.Column="1" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
-                                    </Grid>
+                                            <TextBlock Grid.Column="1" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
+                                        </Grid>
 
-                                    <Grid Grid.Row="2" Grid.Column="4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="0 ～" Style="{StaticResource PressureUnitStyle}" Margin="4,0,0,0"/>
-                                        <TextBox Grid.Column="1" Margin="4"
+                                        <Grid Grid.Row="2" Grid.Column="4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="0 ～" Style="{StaticResource PressureUnitStyle}" Margin="4,0,0,0"/>
+                                            <TextBox Grid.Column="1" Margin="4"
                                                  Text="{Binding LowPressureRange, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource StandardTextBoxStyle}"
                                                  ToolTip="低压量程上限，固件默认 250 KPA，可修改"/>
-                                        <TextBlock Grid.Column="2" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
+                                            <TextBlock Grid.Column="2" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
+                                        </Grid>
                                     </Grid>
-                                </Grid>
-                            </StackPanel>
-                        </GroupBox>
+                                </StackPanel>
+                            </GroupBox>
 
                             <!-- 按客户草图合并温度与双风扇：限制值、当前值、百分比和转速量程同表展示 -->
                             <GroupBox Header="温度与双风扇设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
@@ -661,7 +663,10 @@
 
                                         <TextBlock Grid.Row="1" Grid.Column="0" Text="风扇1" Style="{StaticResource PressureRowHeaderStyle}"/>
                                         <Grid Grid.Row="1" Grid.Column="1">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_FanLowDuty" Style="{StaticResource StandardTextBoxStyle}" Text="20" Margin="4"
                                                      ToolTip="风扇1待机占空比；等待独立双路协议"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
@@ -673,13 +678,19 @@
                                             </StackPanel>
                                         </Border>
                                         <Grid Grid.Row="1" Grid.Column="3">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_Fan1MaxDuty" Style="{StaticResource StandardTextBoxStyle}" Text="90" Margin="4"
                                                      ToolTip="风扇1拉载占空比；等待独立双路协议"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Grid Grid.Row="1" Grid.Column="4">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_Fan1MaxRpm" Style="{StaticResource StandardTextBoxStyle}" Text="4000" Margin="4"
                                                      ToolTip="风扇1额定满速，仅作量程显示"/>
                                             <TextBlock Grid.Column="1" Text="RPM" Style="{StaticResource PressureUnitStyle}"/>
@@ -687,7 +698,10 @@
 
                                         <TextBlock Grid.Row="2" Grid.Column="0" Text="风扇2（估算）" Style="{StaticResource PressureRowHeaderStyle}"/>
                                         <Grid Grid.Row="2" Grid.Column="1">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_Fan2MinDuty" Style="{StaticResource StandardTextBoxStyle}" Text="30" Margin="4"
                                                      ToolTip="风扇2待机占空比；当前仅用于本地估算和界面预览"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
@@ -698,13 +712,19 @@
                                                        HorizontalAlignment="Center"/>
                                         </Border>
                                         <Grid Grid.Row="2" Grid.Column="3">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_Fan2MaxDuty" Style="{StaticResource StandardTextBoxStyle}" Text="80" Margin="4"
                                                      ToolTip="风扇2拉载占空比；当前仅用于本地估算和界面预览"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Grid Grid.Row="2" Grid.Column="4">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_Fan2MaxRpm" Style="{StaticResource StandardTextBoxStyle}" Text="4000" Margin="4"
                                                      ToolTip="风扇2模拟满速，可修改；估算转速=模拟满速×估算占空比"/>
                                             <TextBlock Grid.Column="1" Text="RPM" Style="{StaticResource PressureUnitStyle}"/>
@@ -737,14 +757,20 @@
                                                        Text="风扇手动控制（运行态）" FontWeight="SemiBold" Foreground="#1565C0" Margin="0,0,0,6"/>
                                             <Label Grid.Row="1" Grid.Column="0" Content="风扇1:" Style="{StaticResource LabelStyle}" Margin="0,2,4,2"/>
                                             <Grid Grid.Row="1" Grid.Column="1" Margin="0,2,8,2">
-                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
                                                 <TextBox Grid.Column="0" Name="tbx_FanManualDuty" Style="{StaticResource StandardTextBoxStyle}" Text="60"
                                                          ToolTip="风扇1手动占空比，0～100%"/>
                                                 <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                             </Grid>
                                             <Label Grid.Row="1" Grid.Column="2" Content="风扇2:" Style="{StaticResource LabelStyle}" Margin="0,2,4,2"/>
                                             <Grid Grid.Row="1" Grid.Column="3" Margin="0,2,8,2">
-                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
                                                 <TextBox Grid.Column="0" Name="tbx_Fan2ManualDuty" Style="{StaticResource StandardTextBoxStyle}" Text="60"
                                                          ToolTip="风扇2手动占空比，0～100%；等待固件协议"/>
                                                 <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
@@ -767,9 +793,12 @@
                                     <Expander Header="保护与时序参数" Margin="4,8,4,0">
                                         <Grid Margin="8,4,0,0">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="1*"/>
-                                                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="1*"/>
-                                                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="1*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="1*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="1*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="1*"/>
                                             </Grid.ColumnDefinitions>
                                             <Label Grid.Column="0" Content="全速保持(0.1s):" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Column="1" Name="tbx_FanFullSpeedTime" Style="{StaticResource StandardTextBoxStyle}" Text="200" Margin="4"/>
@@ -788,12 +817,15 @@
                                 <StackPanel>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="1*"/><ColumnDefinition Width="1*"/>
-                                            <ColumnDefinition Width="1*"/><ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="1*"/>
                                             <ColumnDefinition Width="1*"/>
                                         </Grid.ColumnDefinitions>
                                         <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
 
                                         <TextBlock Grid.Row="0" Grid.Column="0" Text="开机拒启上限" Style="{StaticResource PressureHeaderStyle}"/>
@@ -803,7 +835,10 @@
                                         <TextBlock Grid.Row="0" Grid.Column="4" Text="电池容量" Style="{StaticResource PressureHeaderStyle}"/>
 
                                         <Grid Grid.Row="1" Grid.Column="0">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_OverviewSocStartMax" Style="{StaticResource StandardTextBoxStyle}" Text="90" Margin="4"
                                                      ToolTip="1～100%；SOC大于该值时拒绝开机"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
@@ -815,26 +850,40 @@
                                             </StackPanel>
                                         </Border>
                                         <Grid Grid.Row="1" Grid.Column="2">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_OverviewSocStopHigh" Style="{StaticResource StandardTextBoxStyle}" Text="85" Margin="4"
                                                      ToolTip="1～100%；运行中SOC大于该值时自动停机"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Grid Grid.Row="1" Grid.Column="3">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_OverviewSocStopMin" Style="{StaticResource StandardTextBoxStyle}" Text="60" Margin="4"
                                                      ToolTip="1～100%；关机时SOC低于该值，先充电至该值"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Grid Grid.Row="1" Grid.Column="4">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_OverviewBatteryCapacity" Style="{StaticResource StandardTextBoxStyle}" Text="8" Margin="4"
                                                      ToolTip="FCU标称容量，正整数Ah；当前仅存储和回读，不参与SOC计算"/>
                                             <TextBlock Grid.Column="1" Text="Ah" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                     </Grid>
                                     <Grid Margin="4,8,4,0">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Name="tbk_SocValidationStatus"
                                                    Text="FCU默认值：90 / 85 / 60 / 8Ah；写入固化后需重启FCU生效。"
                                                    Foreground="#616161" VerticalAlignment="Center" TextWrapping="Wrap"/>
@@ -854,7 +903,11 @@
                             <GroupBox Header="氢阀 / 排水阀开关逻辑" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <StackPanel>
                                     <Grid Margin="4,0,4,10">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0"
                                                    Text="本页完成上位机时序校验和波形预览；图中数值为示例，不会写入当前固件。"
                                                    Foreground="#EF6C00" VerticalAlignment="Center" TextWrapping="Wrap"/>
@@ -1067,7 +1120,10 @@
                                     <Border CornerRadius="4" Padding="10,8" Background="#F5F5F5"
                                             BorderBrush="#BDBDBD" BorderThickness="1" Margin="4,8,4,0">
                                         <Grid>
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
                                             <StackPanel Grid.Column="0" Margin="0,0,16,0">
                                                 <TextBlock Text="阀门实时状态" FontWeight="SemiBold"/>
                                                 <TextBlock Text="{Binding HydrogenValveState, StringFormat=氢阀：{0}}" Margin="0,3,0,0"/>
@@ -1101,37 +1157,37 @@
 
                             <!-- DCDC参数 -->
                             <GroupBox Header="DCDC参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
-                            <StackPanel>
-                                <!-- 读取按钮 -->
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
-                                <Button Name="btn_ReadDCDCParams"
+                                <StackPanel>
+                                    <!-- 读取按钮 -->
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
+                                        <Button Name="btn_ReadDCDCParams"
                                         Content="读取DCDC参数"
                                         Style="{StaticResource StandardButtonStyle}"
                                         Width="150"
                                         Margin="4"
                                         Click="btn_ReadDCDCParams_Click"/>
-                                <Button Content="写入FCU并固化" Style="{StaticResource SuccessButtonStyle}" Width="150" Margin="4" Click="btn_SetDCDCParams_Click"/>
+                                        <Button Content="写入FCU并固化" Style="{StaticResource SuccessButtonStyle}" Width="150" Margin="4" Click="btn_SetDCDCParams_Click"/>
+                                    </StackPanel>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1.5*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <Label Grid.Row="0" Grid.Column="0" Content="放电电压 (0.1V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_DCDCMinVoltage" Style="{StaticResource StandardTextBoxStyle}" Text="80" Margin="4"/>
+
+                                        <Label Grid.Row="1" Grid.Column="0" Content="截至电压 (0.1V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_DCDCStopVoltage" Style="{StaticResource StandardTextBoxStyle}" Text="20" Margin="4"/>
+                                    </Grid>
                                 </StackPanel>
-
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="1.5*"/>
-                                        <ColumnDefinition Width="1*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
-
-                                    <Label Grid.Row="0" Grid.Column="0" Content="放电电压 (0.1V):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_DCDCMinVoltage" Style="{StaticResource StandardTextBoxStyle}" Text="80" Margin="4"/>
-
-                                    <Label Grid.Row="1" Grid.Column="0" Content="截至电压 (0.1V):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_DCDCStopVoltage" Style="{StaticResource StandardTextBoxStyle}" Text="20" Margin="4"/>
-                                </Grid>
-                            </StackPanel>
-                        </GroupBox>
+                            </GroupBox>
 
                         </StackPanel>
                     </ScrollViewer>
@@ -1261,12 +1317,18 @@
 
                                         <TextBox Grid.Row="1" Grid.Column="0" Name="tbx_LoadLockFactor" Style="{StaticResource StandardTextBoxStyle}" Text="0.900" Margin="4"/>
                                         <Grid Grid.Row="1" Grid.Column="1">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_LoadNormalInterval" Style="{StaticResource StandardTextBoxStyle}" Text="60" Margin="4"/>
                                             <TextBlock Grid.Column="1" Text="min" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Grid Grid.Row="1" Grid.Column="2">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_LoadFirstCount" Style="{StaticResource StandardTextBoxStyle}" Text="3" Margin="4"/>
                                             <TextBlock Grid.Column="1" Text="次" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
@@ -1282,11 +1344,17 @@
                                     <Expander Header="协议高级参数" Margin="4,6,4,0">
                                         <Grid Margin="8,4,0,0">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="1*"/>
-                                                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="1*"/>
-                                                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="1*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="1*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="1*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="1*"/>
                                             </Grid.ColumnDefinitions>
-                                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
 
                                             <Label Grid.Row="0" Grid.Column="0" Content="峰值电流 (A)" Style="{StaticResource LabelStyle}" Margin="4"/>
                                             <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_LoadPeakCurrent" Style="{StaticResource StandardTextBoxStyle}" Text="38.0" Margin="4"/>
@@ -1405,109 +1473,109 @@
                         <StackPanel>
                             <!-- 电堆实时信息 -->
                             <GroupBox Header="电堆实时信息" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
-                            <StackPanel>
-                                <!-- 轮询控制按钮区 -->
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
-                                    <TextBlock Text="轮询间隔:" 
+                                <StackPanel>
+                                    <!-- 轮询控制按钮区 -->
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
+                                        <TextBlock Text="轮询间隔:" 
                                                VerticalAlignment="Center" 
                                                Margin="0,0,8,0"
                                                FontSize="12"/>
-                                    <hc:ComboBox Name="cbx_PollingInterval" 
+                                        <hc:ComboBox Name="cbx_PollingInterval" 
                                               Width="100" 
                                               Margin="0,0,10,0"
                                               SelectedIndex="0">
-                                        <ComboBoxItem Content="0.5秒" Tag="500"/>
-                                        <ComboBoxItem Content="1秒" Tag="1000"/>
-                                        <ComboBoxItem Content="2秒" Tag="2000"/>
-                                        <ComboBoxItem Content="5秒" Tag="5000"/>
-                                    </hc:ComboBox>
-                                    <Button Name="btn_StartPolling"
+                                            <ComboBoxItem Content="0.5秒" Tag="500"/>
+                                            <ComboBoxItem Content="1秒" Tag="1000"/>
+                                            <ComboBoxItem Content="2秒" Tag="2000"/>
+                                            <ComboBoxItem Content="5秒" Tag="5000"/>
+                                        </hc:ComboBox>
+                                        <Button Name="btn_StartPolling"
                                             Content="开启自动刷新"
                                             Style="{StaticResource StandardButtonStyle}"
                                             Width="120"
                                             Margin="0,0,10,0"
                                             Click="btn_StartPolling_Click"/>
-                                    <Button Name="btn_StopPolling"
+                                        <Button Name="btn_StopPolling"
                                             Content="停止自动刷新"
                                             Style="{StaticResource StandardButtonStyle}"
                                             Width="120"
                                             IsEnabled="False"
                                             Click="btn_StopPolling_Click"/>
-                                </StackPanel>
+                                    </StackPanel>
 
-                                <!-- 电堆信息显示区 -->
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="1*"/>
-                                        <ColumnDefinition Width="1*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
+                                    <!-- 电堆信息显示区 -->
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
 
-                                    <Label Grid.Row="0" Grid.Column="0" Content="电堆工作状态:" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding StackState}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                        <Label Grid.Row="0" Grid.Column="0" Content="电堆工作状态:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding StackState}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
 
-                                    <Label Grid.Row="1" Grid.Column="0" Content="高压压力 (KPA):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding HighPressure}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                        <Label Grid.Row="1" Grid.Column="0" Content="高压压力 (KPA):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding HighPressure}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
 
-                                    <Label Grid.Row="2" Grid.Column="0" Content="低压压力 (KPA):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding LowPressure}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                        <Label Grid.Row="2" Grid.Column="0" Content="低压压力 (KPA):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding LowPressure}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
 
-                                    <Label Grid.Row="3" Grid.Column="0" Content="氢气阀状态:" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding HydrogenValveState}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                        <Label Grid.Row="3" Grid.Column="0" Content="氢气阀状态:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding HydrogenValveState}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
 
-                                    <Label Grid.Row="4" Grid.Column="0" Content="排水阀状态:" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding DrainValveState}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                        <Label Grid.Row="4" Grid.Column="0" Content="排水阀状态:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding DrainValveState}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
 
-                                    <Label Grid.Row="5" Grid.Column="0" Content="DCDC输入电压 (V):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding DCDCInputVoltage}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                        <Label Grid.Row="5" Grid.Column="0" Content="DCDC输入电压 (V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding DCDCInputVoltage}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
 
-                                    <Label Grid.Row="6" Grid.Column="0" Content="DCDC输入电流 (A):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding DCDCInputCurrent}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                        <Label Grid.Row="6" Grid.Column="0" Content="DCDC输入电流 (A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding DCDCInputCurrent}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
 
-                                    <Label Grid.Row="7" Grid.Column="0" Content="DCDC输出电压 (V):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding DCDCOutputVoltage}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                        <Label Grid.Row="7" Grid.Column="0" Content="DCDC输出电压 (V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding DCDCOutputVoltage}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
 
-                                    <Label Grid.Row="8" Grid.Column="0" Content="DCDC输出电流 (A):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding DCDCOutputCurrent}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                        <Label Grid.Row="8" Grid.Column="0" Content="DCDC输出电流 (A):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding DCDCOutputCurrent}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
 
-                                    <Label Grid.Row="9" Grid.Column="0" Content="风扇1实际转速 (RPM):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBlock Grid.Row="9" Grid.Column="1" Text="{Binding FanSpeed}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                        <Label Grid.Row="9" Grid.Column="0" Content="风扇1实际转速 (RPM):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="9" Grid.Column="1" Text="{Binding FanSpeed}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
 
-                                    <Label Grid.Row="10" Grid.Column="0" Content="风扇2估算转速 (RPM):" Style="{StaticResource LabelStyle}" Margin="4"
+                                        <Label Grid.Row="10" Grid.Column="0" Content="风扇2估算转速 (RPM):" Style="{StaticResource LabelStyle}" Margin="4"
                                            ToolTip="无转速反馈；按两路共用PWM及温度参数估算，不代表实测转速"/>
-                                    <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding Fan2EstimatedSpeed}" Style="{StaticResource TextBlockDisplayStyle}"
+                                        <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding Fan2EstimatedSpeed}" Style="{StaticResource TextBlockDisplayStyle}"
                                                FontWeight="SemiBold" Foreground="#EF6C00"/>
 
-                                    <Label Grid.Row="11" Grid.Column="0" Content="电堆温度 (PT1000, ℃):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBlock Grid.Row="11" Grid.Column="1" Text="{Binding StackTemperature}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                        <Label Grid.Row="11" Grid.Column="0" Content="电堆温度 (PT1000, ℃):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="11" Grid.Column="1" Text="{Binding StackTemperature}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
 
-                                    <Label Grid.Row="12" Grid.Column="0" Content="FCU温度 (℃):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBlock Grid.Row="12" Grid.Column="1" Text="{Binding FCUTemperature}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                        <Label Grid.Row="12" Grid.Column="0" Content="FCU温度 (℃):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="12" Grid.Column="1" Text="{Binding FCUTemperature}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
 
-                                    <Label Grid.Row="13" Grid.Column="0" Content="累计运行时间 (秒):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBlock Grid.Row="13" Grid.Column="1" Text="{Binding RunTime}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                        <Label Grid.Row="13" Grid.Column="0" Content="累计运行时间 (秒):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="13" Grid.Column="1" Text="{Binding RunTime}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
 
-                                    <Label Grid.Row="14" Grid.Column="0" Content="故障码:" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                    <TextBlock Grid.Row="14" Grid.Column="1" Text="{Binding FaultCode}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
-                                </Grid>
-                            </StackPanel>
-                        </GroupBox>
+                                        <Label Grid.Row="14" Grid.Column="0" Content="故障码:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBlock Grid.Row="14" Grid.Column="1" Text="{Binding FaultCode}" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
+                                    </Grid>
+                                </StackPanel>
+                            </GroupBox>
 
                             <!-- 通用参数设置 -->
                             <GroupBox Header="通用参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
@@ -2073,6 +2141,10 @@
                         </Grid>
                     </Grid>
                 </hc:TabItem>
+                <!-- 固件升级 Tab [BL设计 §4.2/§4.3] -->
+                <hc:TabItem Header="固件升级">
+                    <views:FirmwareUpgradeView x:Name="FirmwareUpgradeView"/>
+                </hc:TabItem>
             </hc:TabControl>
         </Grid>
 
@@ -2097,7 +2169,7 @@
                     <TextBlock Text="功率曲线"
                                Style="{StaticResource TextBlockLargeBold}"
                                VerticalAlignment="Center"/>
-                    
+
                     <!-- 自定义图例 -->
                     <StackPanel Orientation="Horizontal" Margin="20,0,0,0" VerticalAlignment="Center">
                         <!-- 输入功率图例 -->
@@ -2117,7 +2189,7 @@
                                    VerticalAlignment="Center"/>
                     </StackPanel>
                 </StackPanel>
-                
+
                 <!-- 图表控件 -->
                 <lvc:CartesianChart Grid.Row="1"
                                     Name="PowerChart"
