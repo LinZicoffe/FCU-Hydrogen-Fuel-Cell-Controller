@@ -164,6 +164,16 @@ dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release
 
 ## 更新日志
 
+### 2026-08-20
+
+**feature/rs485-iap 分支（RS485 Bootloader 在线升级，累计 25 提交，仅推送分支未合并 master）**。与下位机 `450V_FCU_git` feature/rs485-iap 分支的 BL 固件配套，上位机新增固件在线升级能力：
+
+- **固件升级页（FirmwareUpgradeView）**：完整的 BL 升级流程 UI——选择 .upg 升级包、握手进 BL（9600 停 BMS 轮询 → 设备断电重启进 115200 BL → 1s 同步窗口）、擦除 APP、分块写入（1024B/块）、整包校验（SHA256/CRC32）、写 META、复位重启，全程步骤状态与日志呈现
+- **BL 协议客户端（新增 Protocol/BlProtocolHelper.cs、Models/BlUpgFile.cs、Services/BlUpgradeClient.cs）**：BL 帧（AA55+Cmd+Len2B+累加和）构建/解析、.upg 100B 头解析与完整性校验（magic/长度/SHA256/UID 通配）、expectedLen 迟到帧过滤防串答
+- **MainWindow 集成**：DataReceived 按 BL/AA55 双协议分流、SendFrame 发送互斥（升级期间阻断常规请求）、`_suppressNextAutoBmsPoll` 升级前抑制一次自动 BMS 轮询、ParameterManager.SendBlocked 升级期参数下发阻断
+- **BMS 总线仲裁**：升级前 0x0D=0 停 FCU 对 BMS 的 Modbus 轮询，升级完成/退出后探活归还（0x0D=1）；BL 常驻续升路径自动识别免断电
+- **审查修复要点**：S1 自救回退（P0，EraseApp 失败后 BL@115200 探测直连续升，消除 485 级变砖）、应答长度过滤、标题回归还原、弹窗统一、重开失败清除 en=0 抑制标志（残留 P2）、Cancel 防 ObjectDisposed（P3）；多轮三方独立审查全部通过
+
 ### 2026-08-08
 
 以下位机固件（`450V_FCU_git`）为唯一标准，对上位机做了全面协议一致性审查并修复。核对结论：14 个功能码上位机全部支持，字节布局、CRC、错误码、枚举码表逐项一致；问题集中在默认值、单位换算、发送前校验与异常呈现四类。
