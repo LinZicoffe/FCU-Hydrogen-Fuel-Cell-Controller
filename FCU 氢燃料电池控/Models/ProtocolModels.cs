@@ -327,13 +327,14 @@ namespace FCU_氢燃料电池控.Models
         /// <summary>
         /// 获取报警数值描述。
         /// AlarmValue 的单位随报警类型而变，需分别换算，下位机 fcu_control.c/fcu_fan.c 的实际口径：
-        ///   0x0001/0x0003/0x000A 压力类 → KPA 原值       (fcu_control.c:220,327,350,362,414)
-        ///   0x0002        温度过高 → 温度×10 (0.1℃)     (fcu_control.c:380)
-        ///   0x0006        DCDC异常 → 电压×10 (0.1V)     (fcu_control.c:194,420)
-        ///   0x0008        BMS故障  → reg139 故障位图     (fcu_control.c:109)
+        ///   0x0001/0x0003/0x000A 压力类 → KPA 原值       (fcu_control.c:269,392,414,427,439)
+        ///   0x0002        温度过高 → 温度×10 (0.1℃)     (fcu_control.c:457)
+        ///   0x0006        DCDC异常 → 电压×10 (0.1V)     (fcu_control.c:242,501)
+        ///   0x0008        BMS故障  → reg139 故障位图     (fcu_control.c:136)
         ///   0x0004        风扇异常 → 当前转速 RPM        (fcu_fan.c 堵转/缺相检测, 协议V5.1)
         ///   0x000B        充电异常 → SOC % (1%单位)      (fcu_control.c 充电停滞告警)
         /// 0x0005(电压异常)/0x0009(FCU过热) 固件当前无触发点，按同类语义预置换算。
+        /// 注：固件行号随提交漂移，以 FCU_ALARM_* 枚举 grep 定位为准。
         /// </summary>
         public string GetAlarmValueDescription()
         {
