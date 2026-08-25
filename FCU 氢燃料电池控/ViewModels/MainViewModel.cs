@@ -103,6 +103,8 @@ namespace FCU_氢燃料电池控.ViewModels
                     {
                         _parameterManager.DeviceAddress = address;
                     }
+                    // 目标设备可能已切换，压力参数须重新读取后才能免确认整帧写入
+                    DeviceAddressChanged?.Invoke(this, EventArgs.Empty);
                 }
             }
         }
@@ -494,6 +496,9 @@ namespace FCU_氢燃料电池控.ViewModels
         /// </summary>
         public event EventHandler<string>? ParameterValidationFailed;
 
+        /// <summary>设备地址被用户修改。多机共总线时切换目标后，按设备缓存的参数须作废。</summary>
+        public event EventHandler? DeviceAddressChanged;
+
         private void SetPressureParameter(string parameterName)
         {
             try
@@ -586,7 +591,7 @@ namespace FCU_氢燃料电池控.ViewModels
                     $"高压上限告警值({highPressureMax})不能超过高压传感器量程({highPressureRange})");
             }
 
-            // 固件不校验但会导致低压区间检查永久失败
+            // 固件同样拒收 low_max<=low_min，本地先行给出字段级原因
             if (lowPressureMax <= lowPressureMin)
             {
                 throw new ArgumentException(

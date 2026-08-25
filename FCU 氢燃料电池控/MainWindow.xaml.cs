@@ -167,6 +167,8 @@ namespace FCU_氢燃料电池控
             _viewModel.BeforeSerialClose += OnBeforeSerialClose;
             // VM 无 UI 引用，本地校验失败经事件弹 Growl，与 code-behind 参数组的反馈方式一致
             _viewModel.ParameterValidationFailed += (_, msg) => HC.Growl.Warning(msg);
+            // 多机共总线切换目标设备后，作废「已读取压力」豁免，防止跨设备静默覆盖隐藏红/黄阈值
+            _viewModel.DeviceAddressChanged += (_, _) => _pressureParamsLoadedFromDevice = false;
             // ==================== MVVM初始化结束 ====================
             
             // 协议处理初始化（保留）
@@ -580,6 +582,8 @@ namespace FCU_氢燃料电池控
 
                 // 新连接的设备未知，压力参数须重新读取后才能免确认整帧写入
                 _pressureParamsLoadedFromDevice = false;
+                tbk_FanManualMode.Text = "风扇当前模式以FCU侧为准";
+                tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0x61, 0x61, 0x61));
 
                 // [SOC计划 §1.3] 会话级仲裁: 上位机接管 BMS 总线, 停固件 Modbus 轮询
                 // (固件每次写Flash, 禁止逐次握手; 关轮询后固件走离线宽松策略, 不会超时ABORT)
@@ -1264,6 +1268,10 @@ namespace FCU_氢燃料电池控
             {
                 writeCommand.Execute(null);
             }
+            else
+            {
+                HC.Growl.Warning("串口已断开或升级占用，压力参数未发送");
+            }
         }
 
         private void btn_SetValveParams_Click(object sender, RoutedEventArgs e)
@@ -1336,9 +1344,15 @@ namespace FCU_氢燃料电池控
             _pendingFanManualEnable = enable;
             _pendingFanManualDuty = wireDuty;
 
-            SendFrame(ProtocolHandler.BuildRequestFrame(deviceAddress,
-                ProtocolConstants.FUNC_SET_FAN_MANUAL,
-                new[] { enable ? (byte)1 : (byte)0, wireDuty }));
+            if (!SendFrame(ProtocolHandler.BuildRequestFrame(deviceAddress,
+                    ProtocolConstants.FUNC_SET_FAN_MANUAL,
+                    new[] { enable ? (byte)1 : (byte)0, wireDuty })))
+            {
+                _pendingFanManualEnable = null;
+                tbk_FanManualMode.Text = "发送失败（串口未打开或升级占用）";
+                tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
+                return;
+            }
             StartFanManualResponseTimeout();
 
             tbk_FanManualMode.Text = enable
@@ -1980,51 +1994,6 @@ namespace FCU_氢燃料电池控
             }
 
             rawValue = (ushort)rounded;
-            return true;
-        }
-
-        /// <summary>
-        /// 按界面工程单位解析有符号小数，并转换为下位机有符号16位协议值。
-        /// </summary>
-        private static bool TryParseScaledSignedRange(TextBox box, string fieldName,
-            decimal scale, int minRaw, int maxRaw, string unit, out short rawValue)
-        {
-            rawValue = 0;
-            string text = box.Text?.Trim() ?? string.Empty;
-
-            bool parsed = decimal.TryParse(text, NumberStyles.Number, CultureInfo.CurrentCulture,
-                    out decimal displayValue)
-                || decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture,
-                    out displayValue);
-            if (!parsed)
-            {
-                HC.Growl.Warning($"{fieldName}「{text}」不是合法数值");
-                box.Focus();
-                box.SelectAll();
-                return false;
-            }
-
-            decimal scaled = displayValue * scale;
-            decimal rounded = decimal.Round(scaled, 0, MidpointRounding.AwayFromZero);
-            if (scaled != rounded)
-            {
-                HC.Growl.Warning($"{fieldName}最多支持 1 位小数");
-                box.Focus();
-                box.SelectAll();
-                return false;
-            }
-
-            if (rounded < minRaw || rounded > maxRaw || rounded < short.MinValue || rounded > short.MaxValue)
-            {
-                decimal minDisplay = minRaw / scale;
-                decimal maxDisplay = maxRaw / scale;
-                HC.Growl.Warning($"{fieldName}超出范围：{displayValue}，允许 {minDisplay}~{maxDisplay}{unit}");
-                box.Focus();
-                box.SelectAll();
-                return false;
-            }
-
-            rawValue = (short)rounded;
             return true;
         }
 
@@ -2681,14 +2650,15 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void HandleFanManualResponse(byte[] frame)
         {
-            StopFanManualResponseTimeout();
             byte result = ResponseParser.ParseFanManualResponse(frame);
-            bool? requestedEnable = _pendingFanManualEnable;
-            byte requestedDuty = _pendingFanManualDuty;
-            _pendingFanManualEnable = null;
 
             Dispatcher.Invoke(() =>
             {
+                // 与 SOC 超时处理器同款：计时器停止与 pending 清理统一编组到 UI 线程
+                StopFanManualResponseTimeout();
+                bool? requestedEnable = _pendingFanManualEnable;
+                byte requestedDuty = _pendingFanManualDuty;
+                _pendingFanManualEnable = null;
                 if (result == ProtocolConstants.ERR_SUCCESS)
                 {
                     if (requestedEnable == null)

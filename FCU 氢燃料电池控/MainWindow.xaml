@@ -636,7 +636,7 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_TempMax" Style="{StaticResource StandardTextBoxStyle}"
-                                                     Text="60.0" Margin="4" ToolTip="协议单位0.1℃，界面按℃显示"/>
+                                                     Text="60.0" Margin="4" ToolTip="温度上限，按0.1℃显示；固件字段为无符号(uint16)不支持负值，且须大于下限"/>
                                             <TextBlock Grid.Column="1" Text="℃" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                     </Grid>
@@ -793,7 +793,7 @@
                                                     Click="btn_RestoreFanAutomatic_Click"/>
                                             <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="7"
                                                         Margin="0,6,0,0" VerticalAlignment="Center">
-                                                <TextBlock Name="tbk_FanManualMode" Text="自动温控（手动控制为风扇1单路PWM）" FontWeight="SemiBold" Foreground="#2E7D32"/>
+                                                <TextBlock Name="tbk_FanManualMode" Text="风扇当前模式以FCU侧为准" FontWeight="SemiBold" Foreground="#757575"/>
                                                 <TextBlock Text="手动占空比作用于风扇1（单路PWM，风扇2同占空比跟随）；任意状态立即生效，仅本次上电有效不写Flash，重启或超温保护后自动恢复PEM温度闭环。"
                                                            FontSize="11" Foreground="#616161" TextWrapping="Wrap"/>
                                             </StackPanel>
