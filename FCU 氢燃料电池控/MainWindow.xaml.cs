@@ -1502,7 +1502,9 @@ namespace FCU_氢燃料电池控
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
 
                 // 风扇温度数据域13B：参数ID + 5个原有字段 + fan_min_rpm。
-                // fan_min_rpm=0 表示不启用堵转检测（固件目前仅存储/回读该值）。
+                // fan_min_rpm=0 表示不启用堵转检测；非0时固件(协议V5.1)在运行态
+                // 占空比>30%且连续3个2s窗口转速低于该值时上报0x0004风扇异常(WARNING,不停机)。
+                // 阈值须按0x87实测转速标定(测点取略高于30%占空比工况)，勿用数据手册值。
                 // 温度上下限固件为 uint16_t 无符号（fcu_protocol.h temp_lower/upper_limit），
                 // 且下限为 0 会被整帧拒收，这里按 0.1℃ 无符号解析并禁 0。
                 if (!TryParseRange(tbx_FanLowDuty, "低速占空比", 0, 100, "%", out ushort lowDutyValue) ||

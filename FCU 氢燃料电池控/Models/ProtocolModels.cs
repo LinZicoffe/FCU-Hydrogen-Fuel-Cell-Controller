@@ -318,25 +318,29 @@ namespace FCU_氢燃料电池控.Models
                 0x0007 => "阀门异常",
                 0x0008 => "BMS故障",
                 0x0009 => "FCU控制器过热",
+                0x000A => "高压压力高",
+                0x000B => "充电异常",
                 _ => "未知报警"
             };
         }
 
         /// <summary>
         /// 获取报警数值描述。
-        /// AlarmValue 的单位随报警类型而变，需分别换算，下位机 fcu_control.c 的实际口径：
-        ///   0x0001/0x0003 压力类  → KPA 原值        (fcu_control.c:220,327,350,362)
-        ///   0x0002        温度过高 → 温度×10 (0.1℃)  (fcu_control.c:380)
-        ///   0x0006        DCDC异常 → 电压×10 (0.1V)  (fcu_control.c:194,420)
-        ///   0x0008        BMS故障  → reg139 故障位图  (fcu_control.c:109)
+        /// AlarmValue 的单位随报警类型而变，需分别换算，下位机 fcu_control.c/fcu_fan.c 的实际口径：
+        ///   0x0001/0x0003/0x000A 压力类 → KPA 原值       (fcu_control.c:220,327,350,362,414)
+        ///   0x0002        温度过高 → 温度×10 (0.1℃)     (fcu_control.c:380)
+        ///   0x0006        DCDC异常 → 电压×10 (0.1V)     (fcu_control.c:194,420)
+        ///   0x0008        BMS故障  → reg139 故障位图     (fcu_control.c:109)
+        ///   0x0004        风扇异常 → 当前转速 RPM        (fcu_fan.c 堵转/缺相检测, 协议V5.1)
+        ///   0x000B        充电异常 → SOC % (1%单位)      (fcu_control.c 充电停滞告警)
         /// 0x0005(电压异常)/0x0009(FCU过热) 固件当前无触发点，按同类语义预置换算。
         /// </summary>
         public string GetAlarmValueDescription()
         {
             return AlarmType switch
             {
-                // 压力类：固件直接送 KPA 原值，不缩放
-                0x0001 or 0x0003 => $"{AlarmValue} KPA",
+                // 压力类：固件直接送 KPA 原值，不缩放（0x000A 高压过压同为 KPA 原值）
+                0x0001 or 0x0003 or 0x000A => $"{AlarmValue} KPA",
 
                 // 温度类：固件送 温度×10，按有符号还原（下位机允许负温）
                 0x0002 or 0x0009 => $"{(short)AlarmValue / 10.0:F1} ℃",
@@ -347,7 +351,13 @@ namespace FCU_氢燃料电池控.Models
                 // BMS故障：AlarmValue 为 BMS 故障位图(reg139), 按附表3解码 [上位机优化计划 h-t6]
                 0x0008 => BmsBitDecoder.DecodeFault(AlarmValue),
 
-                // 0x0004 风扇异常 / 0x0007 阀门异常：固件无触发点，单位未定义，原值输出
+                // 风扇异常：堵转/缺相检测上报的当前转速（协议V5.1, WARNING级不停机）
+                0x0004 => $"{AlarmValue} RPM",
+
+                // 充电异常：充电三条件满足但 SOC 持续不涨，数值为当前 SOC(%)
+                0x000B => $"SOC {AlarmValue} %",
+
+                // 0x0007 阀门异常：固件无触发点，单位未定义，原值输出
                 _ => AlarmValue.ToString()
             };
         }
