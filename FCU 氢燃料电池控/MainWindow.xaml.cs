@@ -67,6 +67,11 @@ namespace FCU_氢燃料电池控
         // 风扇手动运行控制(0x0F)：记录最近一次待确认命令，成功响应后再更新界面状态。
         private bool? _pendingFanManualEnable;
         private byte _pendingFanManualDuty;
+        /// <summary>0x8F 风扇手动控制响应超时（秒）。旧固件无 0x0F 分支时静默丢帧，需明确反馈而非永远“等待确认”。</summary>
+        private const int FanManualResponseTimeoutSeconds = 3;
+        private DispatcherTimer? _fanManualResponseTimeoutTimer;
+        /// <summary>本次连接内是否已从设备回读过压力参数；未读先写会整帧覆盖含未展示的红/黄阈值，需确认。</summary>
+        private bool _pressureParamsLoadedFromDevice;
 
         // 固件升级 (Bootloader) 模式标志 [BL设计 §4.2]:
         // 互斥窗口 = S1 前置检查完成后启用, S8 切回 9600 并确认 APP 存活后解除;
@@ -160,6 +165,8 @@ namespace FCU_氢燃料电池控
             serialPortManager.ConnectionStateChanged += OnSerialConnectionChanged;
             serialPortManager.FrameSent += OnFrameSent;
             _viewModel.BeforeSerialClose += OnBeforeSerialClose;
+            // VM 无 UI 引用，本地校验失败经事件弹 Growl，与 code-behind 参数组的反馈方式一致
+            _viewModel.ParameterValidationFailed += (_, msg) => HC.Growl.Warning(msg);
             // ==================== MVVM初始化结束 ====================
             
             // 协议处理初始化（保留）
@@ -168,6 +175,7 @@ namespace FCU_氢燃料电池控
             // 轮询定时器初始化（保留）
             InitializePollingTimer();
             InitializeSocResponseTimeoutTimer();
+            InitializeFanManualResponseTimeoutTimer();
 
             // BMS Modbus 主站服务初始化 [上位机优化计划 h-t4]
             _bmsService = new BmsService(serialPortManager);
@@ -570,6 +578,9 @@ namespace FCU_氢燃料电池控
                 // 串口打开时，启动图表采集
                 _chartUpdateTimer?.Start();
 
+                // 新连接的设备未知，压力参数须重新读取后才能免确认整帧写入
+                _pressureParamsLoadedFromDevice = false;
+
                 // [SOC计划 §1.3] 会话级仲裁: 上位机接管 BMS 总线, 停固件 Modbus 轮询
                 // (固件每次写Flash, 禁止逐次握手; 关轮询后固件走离线宽松策略, 不会超时ABORT)
                 // [BL升级 终审P1] 升级流程驱动的 9600 重开(S8/退出)不自动下发 en=0:
@@ -600,6 +611,7 @@ namespace FCU_氢燃料电池控
                 _bmsService?.StopPolling();
                 ResetBmsDisplay();
                 _pendingFanManualEnable = null;
+                StopFanManualResponseTimeout();
                 if (!_socWriteReadbackPending)
                 {
                     bool hadUnconfirmedSocWrite = _pendingSocWrite != null;
@@ -624,7 +636,7 @@ namespace FCU_氢燃料电池控
                     tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x6C, 0x00));
                     tbk_SocValidationStatus.Text = "SOC写入已确认，但自动回读因断线中断；重连后请点击读取SOC参数完成核对。";
                 }
-                tbk_FanManualMode.Text = "等待双路独立控制协议（未连接）";
+                tbk_FanManualMode.Text = "未连接（风扇当前模式以FCU侧为准）";
                 tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0x75, 0x75, 0x75));
             }
         }
@@ -686,6 +698,44 @@ namespace FCU_氢燃料电池控
         private void StopSocResponseTimeout()
         {
             _socResponseTimeoutTimer?.Stop();
+        }
+
+        /// <summary>
+        /// 0x8F 风扇手动控制单次超时计时器；响应到达、断线或窗口关闭时立即停止。
+        /// </summary>
+        private void InitializeFanManualResponseTimeoutTimer()
+        {
+            _fanManualResponseTimeoutTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(FanManualResponseTimeoutSeconds)
+            };
+            _fanManualResponseTimeoutTimer.Tick += FanManualResponseTimeoutTimer_Tick;
+        }
+
+        private void StartFanManualResponseTimeout()
+        {
+            _fanManualResponseTimeoutTimer?.Stop();
+            _fanManualResponseTimeoutTimer?.Start();
+        }
+
+        private void StopFanManualResponseTimeout()
+        {
+            _fanManualResponseTimeoutTimer?.Stop();
+        }
+
+        private void FanManualResponseTimeoutTimer_Tick(object? sender, EventArgs e)
+        {
+            StopFanManualResponseTimeout();
+
+            if (_pendingFanManualEnable == null)
+            {
+                return;
+            }
+
+            _pendingFanManualEnable = null;
+            tbk_FanManualMode.Text = "未收到FCU确认（固件可能不支持0x0F或链路异常），当前风扇模式未知";
+            tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
+            UpdateStatus("风扇手动控制响应超时");
         }
 
         private void SocResponseTimeoutTimer_Tick(object? sender, EventArgs e)
@@ -1185,6 +1235,37 @@ namespace FCU_氢燃料电池控
 
         #region 参数设置
 
+        /// <summary>
+        /// 整帧写入压力参数（0x02，18B 固化 Flash）。
+        /// 未先「读取压力参数」时，界面值（含未展示的红/黄阈值）会整帧覆盖设备，需二次确认。
+        /// </summary>
+        private void btn_SetPressureParams_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_isSerialOpen)
+            {
+                HC.Growl.Warning("请先打开串口");
+                return;
+            }
+
+            if (!_pressureParamsLoadedFromDevice)
+            {
+                var confirm = MessageBox.Show(
+                    "尚未从设备读取压力参数，将以上位机当前界面值整帧覆盖设备全部 8 项并固化到 Flash（含未在界面展示的高压红/黄阈值）。\n\n建议先「读取压力参数」以保留设备当前值。确定继续写入？",
+                    "压力参数写入确认",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (confirm != MessageBoxResult.Yes)
+                    return;
+            }
+
+            if (_viewModel?.WritePressureParamsCommand is { } writeCommand
+                && writeCommand.CanExecute(null))
+            {
+                writeCommand.Execute(null);
+            }
+        }
+
         private void btn_SetValveParams_Click(object sender, RoutedEventArgs e)
         {
             SetValveParamHelper("阀门参数并固化到FCU");
@@ -1201,8 +1282,9 @@ namespace FCU_氢燃料电池控
         }
 
         /// <summary>
-        /// 启用风扇手动占空比（0x0F，数据域 enable=1、duty=0~100）。
-        /// 该命令仅影响运行态，不写入Flash。
+        /// 启用风扇手动占空比（0x0F，数据域 enable=1、duty=1~100）。
+        /// 固件无状态门控（任意状态立即生效）且不写 Flash，仅本次上电运行期间有效。
+        /// duty=0 会立即停转风扇，温度传感器异常时固件无兜底，予以拦截。
         /// </summary>
         private void btn_EnableFanManual_Click(object sender, RoutedEventArgs e)
         {
@@ -1210,6 +1292,21 @@ namespace FCU_氢燃料电池控
             {
                 return;
             }
+
+            if (duty == 0)
+            {
+                HC.Growl.Warning("手动占空比 0% 会立即停转风扇；温度传感器异常时固件无兜底。请使用 1% 以上，或改用「恢复自动温控」");
+                return;
+            }
+
+            var confirm = MessageBox.Show(
+                $"确定将风扇切到手动模式，占空比 {duty}%？\n\n任意状态立即生效；仅本次上电有效（不写Flash），FCU 重启或超温保护后自动恢复温控。",
+                "风扇手动控制确认",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (confirm != MessageBoxResult.Yes)
+                return;
 
             SendFanManualControl(true, (byte)duty);
         }
@@ -1242,6 +1339,7 @@ namespace FCU_氢燃料电池控
             SendFrame(ProtocolHandler.BuildRequestFrame(deviceAddress,
                 ProtocolConstants.FUNC_SET_FAN_MANUAL,
                 new[] { enable ? (byte)1 : (byte)0, wireDuty }));
+            StartFanManualResponseTimeout();
 
             tbk_FanManualMode.Text = enable
                 ? $"等待FCU确认：手动 {wireDuty}%"
@@ -1390,10 +1488,12 @@ namespace FCU_氢燃料电池控
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
 
                 // 风扇温度数据域13B：参数ID + 5个原有字段 + fan_min_rpm。
-                // fan_min_rpm=0 表示不启用堵转检测。
+                // fan_min_rpm=0 表示不启用堵转检测（固件目前仅存储/回读该值）。
+                // 温度上下限固件为 uint16_t 无符号（fcu_protocol.h temp_lower/upper_limit），
+                // 且下限为 0 会被整帧拒收，这里按 0.1℃ 无符号解析并禁 0。
                 if (!TryParseRange(tbx_FanLowDuty, "低速占空比", 0, 100, "%", out ushort lowDutyValue) ||
-                    !TryParseScaledSignedRange(tbx_TempMin, "温度下限", 10m, -400, 1250, "℃", out short tempMin) ||
-                    !TryParseScaledSignedRange(tbx_TempMax, "温度上限", 10m, -400, 1250, "℃", out short tempMax) ||
+                    !TryParseScaledRange(tbx_TempMin, "温度下限", 10m, 1, 1250, "℃", out ushort tempMin) ||
+                    !TryParseScaledRange(tbx_TempMax, "温度上限", 10m, 1, 1250, "℃", out ushort tempMax) ||
                     !TryParseRange(tbx_FanFullSpeedTime, "全速运行时长", 1, ushort.MaxValue, "0.1s", out ushort fullSpeedTime) ||
                     !TryParseRange(tbx_LowTempCheckTime, "低温检测时长", 1, ushort.MaxValue, "0.1s", out ushort lowTempCheckTime) ||
                     !TryParseRange(tbx_FanMinRpm, "风扇最低转速", 0, ushort.MaxValue, "RPM", out ushort fanMinRpm))
@@ -1423,17 +1523,16 @@ namespace FCU_氢燃料电池控
 
         /// <summary>
         /// 按《FCU参数新增与建议清单》生成风扇温度13字节SET数据域（大端）。
+        /// 温度上下限为无符号 uint16（0.1℃），与固件 fcu_protocol.h 字段类型一致。
         /// </summary>
-        private static byte[] BuildFanTempParamsData(byte lowDuty, short tempMin,
-            short tempMax, ushort fullSpeedTime, ushort lowTempCheckTime, ushort fanMinRpm)
+        private static byte[] BuildFanTempParamsData(byte lowDuty, ushort tempMin,
+            ushort tempMax, ushort fullSpeedTime, ushort lowTempCheckTime, ushort fanMinRpm)
         {
             byte[] data = new byte[ProtocolConstants.FAN_TEMP_PARAMS_DATA_LENGTH];
-            ushort tempMinRaw = unchecked((ushort)tempMin);
-            ushort tempMaxRaw = unchecked((ushort)tempMax);
             data[0] = 0x04; data[1] = 0x01;
             data[2] = lowDuty;
-            data[3] = (byte)(tempMinRaw >> 8); data[4] = (byte)(tempMinRaw & 0xFF);
-            data[5] = (byte)(tempMaxRaw >> 8); data[6] = (byte)(tempMaxRaw & 0xFF);
+            data[3] = (byte)(tempMin >> 8); data[4] = (byte)(tempMin & 0xFF);
+            data[5] = (byte)(tempMax >> 8); data[6] = (byte)(tempMax & 0xFF);
             data[7] = (byte)(fullSpeedTime >> 8); data[8] = (byte)(fullSpeedTime & 0xFF);
             data[9] = (byte)(lowTempCheckTime >> 8); data[10] = (byte)(lowTempCheckTime & 0xFF);
             data[11] = (byte)(fanMinRpm >> 8); data[12] = (byte)(fanMinRpm & 0xFF);
@@ -2582,6 +2681,7 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void HandleFanManualResponse(byte[] frame)
         {
+            StopFanManualResponseTimeout();
             byte result = ResponseParser.ParseFanManualResponse(frame);
             bool? requestedEnable = _pendingFanManualEnable;
             byte requestedDuty = _pendingFanManualDuty;
@@ -2599,7 +2699,7 @@ namespace FCU_氢燃料电池控
                     }
                     else if (requestedEnable == true)
                     {
-                        tbk_FanManualMode.Text = $"已确认手动请求：{requestedDuty}%（无状态回读）";
+                        tbk_FanManualMode.Text = $"已确认手动请求：{requestedDuty}%（FCU重启或超温保护会自动恢复温控）";
                         tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x6C, 0x00));
                         UpdateStatus($"风扇手动控制已生效：{requestedDuty}%");
                     }
@@ -3208,6 +3308,9 @@ namespace FCU_氢燃料电池控
             _viewModel.LowPressureMax = data.LowPressureMax.ToString();
             _viewModel.HighPressureRange = data.HighPressureRange.ToString();
             _viewModel.LowPressureRange = data.LowPressureRange.ToString();
+
+            // 已从设备取得当前值（含未展示的红/黄阈值），此后写入可免“覆盖未展示字段”确认
+            _pressureParamsLoadedFromDevice = true;
         }
 
         /// <summary>
@@ -3972,6 +4075,11 @@ namespace FCU_氢燃料电池控
             {
                 _socResponseTimeoutTimer.Stop();
                 _socResponseTimeoutTimer.Tick -= SocResponseTimeoutTimer_Tick;
+            }
+            if (_fanManualResponseTimeoutTimer != null)
+            {
+                _fanManualResponseTimeoutTimer.Stop();
+                _fanManualResponseTimeoutTimer.Tick -= FanManualResponseTimeoutTimer_Tick;
             }
 
             if (_viewModel != null)

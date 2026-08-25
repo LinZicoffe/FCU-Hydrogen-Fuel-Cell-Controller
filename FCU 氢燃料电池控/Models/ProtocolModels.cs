@@ -184,14 +184,14 @@ namespace FCU_氢燃料电池控.Models
         public byte LowSpeedDuty { get; set; }
 
         /// <summary>
-        /// 温度下限 (0.1℃，有符号)
+        /// 温度下限 (0.1℃，无符号，对应固件 uint16_t temp_lower_limit)
         /// </summary>
-        public short TempMin { get; set; }
+        public ushort TempMin { get; set; }
 
         /// <summary>
-        /// 温度上限 (0.1℃，有符号)
+        /// 温度上限 (0.1℃，无符号，对应固件 uint16_t temp_upper_limit)
         /// </summary>
-        public short TempMax { get; set; }
+        public ushort TempMax { get; set; }
 
         /// <summary>
         /// 全速运行时长 (0.1s)

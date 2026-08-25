@@ -52,6 +52,7 @@ namespace FCU_氢燃料电池控.ViewModels
                     ((RelayCommand)SetLowPressureMaxCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)SetHighPressureRangeCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)SetLowPressureRangeCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)WritePressureParamsCommand).RaiseCanExecuteChanged();
                 }
             }
         }
@@ -301,6 +302,7 @@ namespace FCU_氢燃料电池控.ViewModels
         public ICommand SetLowPressureMaxCommand { get; }
         public ICommand SetHighPressureRangeCommand { get; }
         public ICommand SetLowPressureRangeCommand { get; }
+        public ICommand WritePressureParamsCommand { get; }
         public ICommand ClearCommunicationLogCommand { get; }
 
         /// <summary>
@@ -368,6 +370,7 @@ namespace FCU_氢燃料电池控.ViewModels
             SetLowPressureMaxCommand = new RelayCommand(ExecuteSetLowPressureMax, CanExecuteSerialOperation);
             SetHighPressureRangeCommand = new RelayCommand(ExecuteSetHighPressureRange, CanExecuteSerialOperation);
             SetLowPressureRangeCommand = new RelayCommand(ExecuteSetLowPressureRange, CanExecuteSerialOperation);
+            WritePressureParamsCommand = new RelayCommand(ExecuteWritePressureParams, CanExecuteSerialOperation);
             ClearCommunicationLogCommand = new RelayCommand(() => CommunicationLogs.Clear());
 
             // 初始化串口列表
@@ -476,6 +479,21 @@ namespace FCU_氢燃料电池控.ViewModels
             SetPressureParameter("低压量程");
         }
 
+        /// <summary>
+        /// 整帧写入压力参数（0x02，18B）。红/黄阈值不在界面展示，
+        /// 取 ViewModel 当前值（设备回读值或固件默认值）原样回写，避免整帧覆盖时篡改未展示字段。
+        /// </summary>
+        private void ExecuteWritePressureParams()
+        {
+            SetPressureParameter("压力参数");
+        }
+
+        /// <summary>
+        /// 参数本地校验失败（构建帧时抛出异常）。VM 不引用 UI，
+        /// 由 MainWindow 订阅后弹 Growl，与 code-behind 参数组的反馈方式一致。
+        /// </summary>
+        public event EventHandler<string>? ParameterValidationFailed;
+
         private void SetPressureParameter(string parameterName)
         {
             try
@@ -486,14 +504,17 @@ namespace FCU_氢燃料电池控.ViewModels
             }
             catch (Exception ex)
             {
-                StatusMessage = $"设置{parameterName}失败: {ex.Message}";
+                string message = $"设置{parameterName}失败: {ex.Message}";
+                StatusMessage = message;
+                ParameterValidationFailed?.Invoke(this, message);
             }
         }
 
         /// <summary>
         /// 解析压力参数字段并做范围校验。
-        /// 下位机 fcu_handle_set_pressure() 只校验红警/黄警序，其余字段不校验直接落 Flash，
-        /// 量程为 0 会导致压力读数恒为 0 且重启不恢复，因此必须在上位机侧拦住。
+        /// 固件 fcu_protocol_set_pressure_params() 对整帧做全字段校验（min==0、min/红/黄超量程、
+        /// 红黄序、区间序任一不符即拒收整帧）；本地逐条对齐并先给出字段级原因，
+        /// 避免用户只看到笼统的 0x82「参数错误」。
         /// </summary>
         private static ushort ParsePressureField(string text, string fieldName, int min)
         {
@@ -510,17 +531,17 @@ namespace FCU_氢燃料电池控.ViewModels
 
         private byte[] BuildPressureParamsData()
         {
-            // 量程为 0 会被固件静默接受并写入 Flash，导致压力恒为 0，必须拦截
-            ushort highPressureMin = ParsePressureField(HighPressureMin, "高压最小值", 0);
+            // min==0 会被固件整帧拒收；量程为 0 经「min>量程」同样被拒，本地先行拦截提示更明确
+            ushort highPressureMin = ParsePressureField(HighPressureMin, "高压最小值", 1);
             ushort highPressureRed = ParsePressureField(HighPressureRed, "高压红警值", 1);
             ushort highPressureYellow = ParsePressureField(HighPressureYellow, "高压黄警值", 1);
             ushort highPressureMax = ParsePressureField(HighPressureMax, "高压上限告警值", 1);
-            ushort lowPressureMin = ParsePressureField(LowPressureMin, "低压下限值", 0);
+            ushort lowPressureMin = ParsePressureField(LowPressureMin, "低压下限值", 1);
             ushort lowPressureMax = ParsePressureField(LowPressureMax, "低压上限值", 1);
             ushort highPressureRange = ParsePressureField(HighPressureRange, "高压量程", 1);
             ushort lowPressureRange = ParsePressureField(LowPressureRange, "低压量程", 1);
 
-            // 固件 fcu_handle_set_pressure() 唯一会拒绝的条件，先在本地给出明确原因
+            // 以下校验与固件 fcu_protocol_set_pressure_params() 的拒收条件逐条对齐
             if (highPressureRed >= highPressureYellow)
             {
                 throw new ArgumentException(
@@ -535,8 +556,28 @@ namespace FCU_氢燃料电池控.ViewModels
 
             if (highPressureMax <= highPressureMin)
             {
+                // 比固件更严（固件允许 min 与 max 交叉，min 是独立启动门限），
+                // 拦截是为了避免误设出“上限低于启动门限”的组合
                 throw new ArgumentException(
                     $"高压上限告警值({highPressureMax})必须大于高压最小值({highPressureMin})");
+            }
+
+            if (highPressureMin > highPressureRange)
+            {
+                throw new ArgumentException(
+                    $"高压最小值({highPressureMin})不能超过高压传感器量程({highPressureRange})，固件会拒绝整帧");
+            }
+
+            if (highPressureRed > highPressureRange)
+            {
+                throw new ArgumentException(
+                    $"高压红警值({highPressureRed})不能超过高压传感器量程({highPressureRange})，固件会拒绝整帧");
+            }
+
+            if (highPressureYellow > highPressureRange)
+            {
+                throw new ArgumentException(
+                    $"高压黄警值({highPressureYellow})不能超过高压传感器量程({highPressureRange})，固件会拒绝整帧");
             }
 
             if (highPressureMax > highPressureRange)
@@ -550,6 +591,12 @@ namespace FCU_氢燃料电池控.ViewModels
             {
                 throw new ArgumentException(
                     $"低压上限值({lowPressureMax})必须大于低压下限值({lowPressureMin})");
+            }
+
+            if (lowPressureMin > lowPressureRange)
+            {
+                throw new ArgumentException(
+                    $"低压下限值({lowPressureMin})不能超过低压传感器量程({lowPressureRange})，固件会拒绝整帧");
             }
 
             if (lowPressureMax > lowPressureRange)

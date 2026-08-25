@@ -438,9 +438,12 @@
                                         Margin="4"
                                         IsEnabled="{Binding IsConnected}"
                                         Click="btn_ReadPressureParams_Click"/>
-                                        <!-- 旧压力协议仍包含已从客户界面移除的红/黄阈值；在新字段映射确认前禁止整帧覆盖。 -->
-                                        <Button Content="写入FCU并固化（等待固件）" IsEnabled="False"
-                                        Style="{StaticResource SuccessButtonStyle}" Width="200" Margin="4"/>
+                                        <!-- 固件0x02已按18B新格式实现；红/黄阈值不在界面展示，整帧写入时取回读值/固件默认值原样回写。 -->
+                                        <Button Content="写入FCU并固化"
+                                        Style="{StaticResource SuccessButtonStyle}" Width="200" Margin="4"
+                                        IsEnabled="{Binding IsConnected}"
+                                        ToolTip="整帧写入18字节压力参数(0x02)并固化Flash。红/黄阈值不在界面展示：先「读取压力参数」再写入可保留设备当前值"
+                                        Click="btn_SetPressureParams_Click"/>
                                     </StackPanel>
 
                                     <!-- 按客户草图排列：最低限制 | 当前值 | 最高限制 | 量程 -->
@@ -580,14 +583,16 @@
                                 <StackPanel>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,8">
                                         <Button Name="btn_ReadFanTempParams"
-                                                Content="读取设备参数（等待固件）"
+                                                Content="读取风扇温度参数"
                                                 Style="{StaticResource StandardButtonStyle}"
                                                 Width="190" Margin="4"
-                                                IsEnabled="False"/>
-                                        <Button Content="写入FCU并固化（等待固件）"
+                                                IsEnabled="{Binding IsConnected}"
+                                                Click="btn_ReadFanTempParams_Click"/>
+                                        <Button Content="写入FCU并固化"
                                                 Style="{StaticResource SuccessButtonStyle}"
                                                 Width="200" Margin="4"
-                                                IsEnabled="False"/>
+                                                IsEnabled="{Binding IsConnected}"
+                                                Click="btn_SetFanTempParams_Click"/>
                                     </StackPanel>
 
                                     <!-- 温度：最低限制 | 当前温度 | 最高限制 -->
@@ -614,7 +619,7 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_TempMin" Style="{StaticResource StandardTextBoxStyle}"
-                                                     Text="-40.0" Margin="4" ToolTip="支持负温度；按0.1℃显示，等待固件确认有符号协议"/>
+                                                     Text="40.0" Margin="4" ToolTip="温度下限，按0.1℃显示；固件字段为无符号(uint16)不支持负值，且0会被拒收"/>
                                             <TextBlock Grid.Column="1" Text="℃" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
 
@@ -667,7 +672,7 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_FanLowDuty" Style="{StaticResource StandardTextBoxStyle}" Text="20" Margin="4"
-                                                     ToolTip="风扇1待机占空比；等待独立双路协议"/>
+                                                     ToolTip="风扇1待机占空比，随本组「写入FCU并固化」下发(0x06)"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource PressureLiveBoxStyle}">
@@ -682,7 +687,7 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_Fan1MaxDuty" Style="{StaticResource StandardTextBoxStyle}" Text="90" Margin="4"
-                                                     ToolTip="风扇1拉载占空比；等待独立双路协议"/>
+                                                     ToolTip="仅本地预览不下发；拉载占空比在工作流程参数(0x0E)中设置（固件默认30%）"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Grid Grid.Row="1" Grid.Column="4">
@@ -730,10 +735,10 @@
                                         </Grid>
                                     </Grid>
 
-                                    <TextBlock Text="风扇1为实测转速；风扇2无FG反馈，显示值为估算转速（百分比）。待机/拉载两档及双路独立控制等待固件协议接入。"
+                                    <TextBlock Text="风扇1为实测转速；风扇2无FG反馈，显示值为估算转速（百分比）。风扇1待机占空比随本组「写入FCU并固化」下发；拉载占空比在工作流程参数(0x0E)中设置；双路独立控制等待固件协议接入。"
                                                FontSize="11" Foreground="#757575" Margin="4,6,4,0" TextWrapping="Wrap"/>
 
-                                    <!-- 双路手动控制界面已完成；协议未定义前不得复用旧的单路0x0F命令 -->
+                                    <!-- 固件0x0F已实现单路手动控制(0x8F确认)；风扇2独立占空比仍待固件双路协议 -->
                                     <Border CornerRadius="4" Padding="10,8" Background="#F5F9FF"
                                             BorderBrush="#90CAF9" BorderThickness="1" Margin="4,10,4,0">
                                         <Grid>
@@ -753,7 +758,7 @@
                                             </Grid.RowDefinitions>
 
                                             <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="7"
-                                                       Text="风扇手动控制（运行态）" FontWeight="SemiBold" Foreground="#1565C0" Margin="0,0,0,6"/>
+                                                       Text="风扇手动控制" FontWeight="SemiBold" Foreground="#1565C0" Margin="0,0,0,6"/>
                                             <Label Grid.Row="1" Grid.Column="0" Content="风扇1:" Style="{StaticResource LabelStyle}" Margin="0,2,4,2"/>
                                             <Grid Grid.Row="1" Grid.Column="1" Margin="0,2,8,2">
                                                 <Grid.ColumnDefinitions>
@@ -770,20 +775,26 @@
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-                                                <TextBox Grid.Column="0" Name="tbx_Fan2ManualDuty" Style="{StaticResource StandardTextBoxStyle}" Text="60"
-                                                         ToolTip="风扇2手动占空比，0～100%；等待固件协议"/>
+                                                <TextBox Grid.Column="0" Name="tbx_Fan2ManualDuty" Style="{StaticResource StandardTextBoxStyle}" Text="60" IsEnabled="False"
+                                                         ToolTip="固件为单路PWM：手动占空比对风扇1生效，风扇2同占空比跟随；独立双路协议待固件"/>
                                                 <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                             </Grid>
                                             <Button Grid.Row="1" Grid.Column="4" Name="btn_EnableFanManual"
-                                                    Content="启用双路手动" Style="{StaticResource StandardButtonStyle}"
-                                                    Width="125" Margin="4,2" IsEnabled="False"/>
+                                                    Content="启用手动控制" Style="{StaticResource StandardButtonStyle}"
+                                                    Width="125" Margin="4,2"
+                                                    IsEnabled="{Binding IsConnected}"
+                                                    ToolTip="0x0F设置风扇1手动占空比(1~100%)，任意状态立即生效；仅本次上电有效不写Flash，重启/超温后自动恢复温控"
+                                                    Click="btn_EnableFanManual_Click"/>
                                             <Button Grid.Row="1" Grid.Column="5" Name="btn_RestoreFanAutomatic"
                                                     Content="恢复自动温控" Style="{StaticResource SuccessButtonStyle}"
-                                                    Width="125" Margin="4,2" IsEnabled="False"/>
+                                                    Width="125" Margin="4,2"
+                                                    IsEnabled="{Binding IsConnected}"
+                                                    ToolTip="0x0F enable=0，恢复PEM温度闭环"
+                                                    Click="btn_RestoreFanAutomatic_Click"/>
                                             <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="7"
                                                         Margin="0,6,0,0" VerticalAlignment="Center">
-                                                <TextBlock Name="tbk_FanManualMode" Text="等待双路独立控制协议" FontWeight="SemiBold" Foreground="#EF6C00"/>
-                                                <TextBlock Text="当前仅完成双路参数界面，不复用旧固件的一组公共PWM命令。"
+                                                <TextBlock Name="tbk_FanManualMode" Text="自动温控（手动控制为风扇1单路PWM）" FontWeight="SemiBold" Foreground="#2E7D32"/>
+                                                <TextBlock Text="手动占空比作用于风扇1（单路PWM，风扇2同占空比跟随）；任意状态立即生效，仅本次上电有效不写Flash，重启或超温保护后自动恢复PEM温度闭环。"
                                                            FontSize="11" Foreground="#616161" TextWrapping="Wrap"/>
                                             </StackPanel>
                                         </Grid>
