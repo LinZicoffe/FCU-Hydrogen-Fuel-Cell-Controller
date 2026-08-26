@@ -164,6 +164,13 @@ dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release
 
 ## 更新日志
 
+### 2026-08-26（V1.6.0 打包）
+
+- **配置变更：项目版本升级至 V1.6.0**（csproj Version/FileVersion/AssemblyVersion 同步），同版本出**两个安装包**：
+  - `FCU氢燃料电池控制器_v1.6.0.exe`（正式版，瑞达新能源（广州）有限公司，`setup.iss` + `publish_v1.6.0`）
+  - `FCU氢燃料电池控制器_v1.6.0_众赢普惠.exe`（OEM 定制版，深圳市众赢普惠科技有限公司，`setup_众赢普惠.iss` + `publish_v1.6.0_zyph`；构建方式：临时将 MainWindow.xaml.cs `CustomerCompanyName` 常量与 MainWindow.xaml 两处公司名默认文案改为众赢普惠后发布，产物不入版本库）
+- V1.6.0 功能内容即 2026-08-25 联合修复批次（解封三组等待固件按钮 / 风扇温度无符号化 / 0x0F 防护 / 报警表 0x000A/0x000B 等，详见上方条目与固件仓配套分支）
+
 ### 2026-08-25（工作日口径，部分提交时间戳为 08-26 凌晨）
 
 **上下位机联合修复（本轮 5 提交：7891fa0 / 1e5448c / a17701d / 4028afa / 0b68eda，配套固件 bd2c9a5/419a6de/4ec8acf/aff57c1）**
