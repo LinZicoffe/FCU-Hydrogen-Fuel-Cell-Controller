@@ -164,6 +164,13 @@ dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release
 
 ## 更新日志
 
+### 2026-08-29（V1.7.0 打包，含协议对齐与双审查收口）
+
+- **配置变更：项目版本升级至 V1.7.0**（csproj Version/FileVersion/AssemblyVersion 同步），同版本出**两个安装包**（AppId 相同，同机交叉安装按升级覆盖）：
+  - `Output\FCU氢燃料电池控制器_v1.7.0.exe`（正式版，瑞达新能源（广州）有限公司，`setup.iss` + `publish_v1.7.0`，54,113,838B，MD5 beee22ff5846b980dc6d628788ea6109）
+  - `Output\FCU氢燃料电池控制器_v1.7.0_众赢普惠.exe`（OEM 定制版，深圳市众赢普惠科技有限公司，`setup_众赢普惠.iss` + `publish_v1.7.0_zyph`，54,117,489B，MD5 d38b3233b069a3e1535bbdb71e5a7b58；构建方式同 V1.6.0：临时将 MainWindow.xaml.cs `CustomerCompanyName` 常量与 MainWindow.xaml 两处公司名默认文案改为众赢普惠后发布，发布目录已按 UTF-16 字节级验证仅含众赢普惠、不含瑞达，源码发布后即刻还原，产物不入版本库）
+- V1.7.0 功能内容即 2026-08-29 协议对齐批次（BL 波特率 9600 统一 / 0x11 软进入升级 / 阀门校验 V5.2 放宽 / 双审查收口，详见上方条目）
+
 ### 2026-08-29（协议对齐：BL 升级链路 9600 统一 + 0x11 软进入 + 阀门校验 V5.2）
 
 **与下位机 `450V_FCU_git` feature/rs485-iap 分支（协议 V5.2）全量比对后修复三处失配**：
