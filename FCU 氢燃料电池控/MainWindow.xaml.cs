@@ -2243,7 +2243,8 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private byte[] BuildValveParamsData()
         {
-            // 下位机 fcu_handle_set_valve() 的校验条件，命中则整帧 5 个字段全部不生效
+            // 下位机 fcu_protocol_set_valve_params() 的校验条件（V5.2 放宽: 两段非零即可, 不再要求 second>first;
+            // 固件默认 12/10 本身即 first>second），命中则整帧 5 个字段全部不生效
             ushort firstOpen = ParseRequiredField(tbx_ValveFirstOpen, "开机第一次时长", 1, ushort.MaxValue, "0.1s");
             ushort secondOpen = ParseRequiredField(tbx_ValveSecondOpen, "开机第二次时长", 1, ushort.MaxValue, "0.1s");
             ushort normalInterval = ParseRequiredField(tbx_ValveNormalInterval, "正常周期间隔", 1, ushort.MaxValue, "0.1s");
@@ -2254,11 +2255,6 @@ namespace FCU_氢燃料电池控
             {
                 throw new ArgumentException(
                     $"正常周期间隔({normalInterval})必须大于正常打开时长({normalOpen})，固件会拒绝整帧");
-            }
-            if (secondOpen <= firstOpen)
-            {
-                throw new ArgumentException(
-                    $"开机第二次时长({secondOpen})必须大于开机第一次时长({firstOpen})，固件会拒绝整帧");
             }
 
             byte[] data = new byte[12];

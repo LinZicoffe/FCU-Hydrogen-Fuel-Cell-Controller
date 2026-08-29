@@ -1151,14 +1151,16 @@
                                         </Grid>
                                     </Border>
 
-                                    <!-- 保留旧协议字段供旧响应解析，避免在新协议确定前误映射到新时序。 -->
+                                    <!-- 保留旧协议字段供旧响应解析，避免在新协议确定前误映射到新时序。
+                                         默认值与固件 V5.2 g_valve_params/g_flow_params 对齐:
+                                         阀门 12/10/150/3/5, purge 5/10/5, 排水保持 30。 -->
                                     <Grid Visibility="Collapsed">
-                                        <TextBox Name="tbx_PurgeH2Open1" Text="10"/>
+                                        <TextBox Name="tbx_PurgeH2Open1" Text="5"/>
                                         <TextBox Name="tbx_PurgeH2Close" Text="10"/>
-                                        <TextBox Name="tbx_PurgeH2Open2" Text="10"/>
+                                        <TextBox Name="tbx_PurgeH2Open2" Text="5"/>
                                         <TextBox Name="tbx_PurgeDrainHold" Text="30"/>
-                                        <TextBox Name="tbx_ValveFirstOpen" Text="5"/>
-                                        <TextBox Name="tbx_ValveSecondOpen" Text="20"/>
+                                        <TextBox Name="tbx_ValveFirstOpen" Text="12"/>
+                                        <TextBox Name="tbx_ValveSecondOpen" Text="10"/>
                                         <TextBox Name="tbx_ValveShutdownOpen" Text="5"/>
                                         <TextBox Name="tbx_LoadDuty" Text="30"/>
                                     </Grid>

@@ -45,7 +45,9 @@ namespace FCU_氢燃料电池控.Views
         }
 
         private const int CHUNK_SIZE = 1024;
-        private const int BL_BAUD = 115200;
+
+        /// <summary>BL 波特率: 板级 RS485 约束仅支持 9600 (BL/APP 同波特率, 固件 bl_uart.c BRR=26667)</summary>
+        private const int BL_BAUD = 9600;
         private const int APP_BAUD = 9600;
 
         private BlUpgradeClient _client = null!;
@@ -80,6 +82,9 @@ namespace FCU_氢燃料电池控.Views
 
         private byte[] BuildAppRequest(byte func)
             => ProtocolHandler.BuildRequestFrame(_bridge!.DeviceAddress, func, Array.Empty<byte>());
+
+        private byte[] BuildAppRequest(byte func, byte[] data)
+            => ProtocolHandler.BuildRequestFrame(_bridge!.DeviceAddress, func, data);
 
         /// <summary>升级模式下的串口字节入口 (由 MainWindow.SerialPort_DataReceived 分流调用)</summary>
         public void FeedSerialByte(byte b) => _client.FeedByte(b);
@@ -124,7 +129,7 @@ namespace FCU_氢燃料电池控.Views
                 string[] texts =
                 {
                     "① 选择升级包并核对", "② 前置检查 (电堆关机 / BMS 总线接管)",
-                    "③ 按提示断电重新上电 FCU, 等待 Bootloader 应答", "④ 擦除 / 写入 / 校验", "⑤ 重启验证"
+                    "③ 进入 Bootloader (自动软复位; 旧固件需按提示断电重启)", "④ 擦除 / 写入 / 校验", "⑤ 重启验证"
                 };
                 var tbs = new[] { _v.tbk_Step1, _v.tbk_Step2, _v.tbk_Step3, _v.tbk_Step4, _v.tbk_Step5 };
                 for (int i = 0; i < 5; i++)
@@ -253,7 +258,7 @@ namespace FCU_氢燃料电池控.Views
 
             var confirm = MessageBox.Show(
                 $"即将开始固件升级 (版本 0x{_pkg.FwVersion:X8}, {_pkg.FwSize / 1024.0:F1} KB)。\n\n" +
-                "升级过程中: ① 电堆必须处于关机状态 ② 过程中会提示断电重新上电 ③ 请勿关闭程序或拔出串口\n\n确认开始?",
+                "升级过程中: ① 电堆必须处于关机状态 ② 新固件自动软复位进入升级 (旧固件需按提示断电重新上电) ③ 请勿关闭程序或拔出串口\n\n确认开始?",
                 "固件升级", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (confirm != MessageBoxResult.Yes) return;
 
@@ -311,13 +316,13 @@ namespace FCU_氢燃料电池控.Views
                 else
                 {
                     /* [全量终审 P0-1] 自救回退: 上次升级在 EraseApp 后失败时设备 BL 常驻
-                     * (仅 115200/BL 协议应答), 0x07 永无应答 → 必须允许从这里直接续升,
+                     * (仅 BL 协议应答, 0x07 永无应答), 0x07 永无应答 → 必须允许从这里直接续升,
                      * 否则"重新执行升级即可修复"的承诺被 S1 硬门槛堵死 (485 级变砖)。 */
-                    Log("S1: 0x07 无应答, 探测 Bootloader 常驻模式 (115200)...");
+                    Log($"S1: 0x07 无应答, 探测 Bootloader 常驻模式 ({BL_BAUD})...");
                     _bridge!.SetBlMode(true);
                     if (!_bridge.ReopenSerial(BL_BAUD))
                     {
-                        throw new UpgradeException("0x07 无应答且切换 115200 失败, 请检查串口");
+                        throw new UpgradeException($"0x07 无应答且切换 {BL_BAUD} 失败, 请检查串口");
                     }
                     _client.Reset();
 
@@ -338,8 +343,37 @@ namespace FCU_氢燃料电池控.Views
                         _bridge.SetBlMode(false);
                         _bridge.ReopenSerial(APP_BAUD);    /* 尽力恢复, 失败由用户手动处理 */
                         throw new UpgradeException(
-                            "设备无应答: 既非运行中的应用 (0x07), 也非 Bootloader (115200 GetUID)。\n" +
+                            $"设备无应答: 既非运行中的应用 (0x07), 也非 Bootloader ({BL_BAUD} GetUID)。\n" +
                             "请检查供电/接线/设备地址后重试");
+                    }
+                }
+
+                /* ---------- S1.5 软复位进入 BL (0x11, 固件 V5.2 起支持; 旧固件无应答回退断电路径) ----------
+                 * APP 应答 0x91(错误码 0x00) 后约 50ms 安全停机+NVIC 复位进 BL 3s 同步窗口,
+                 * 免断电重启; BL 常驻路径 (info==null) 无 APP 可发, 跳过。 */
+                bool softEntered = false;
+                if (info != null)
+                {
+                    var iapReq = BuildAppRequest(ProtocolConstants.FUNC_ENTER_IAP, new byte[] { 0x01 });
+                    byte[]? iapResp = RequestAppFrame(iapReq, ProtocolConstants.RESP_ENTER_IAP, 1500, ct);
+                    if (iapResp != null && iapResp.Length >= 6 && iapResp[4] == 1)
+                    {
+                        byte iapErr = iapResp[5];
+                        if (iapErr == 0x00)
+                        {
+                            softEntered = true;
+                            Log("S1.5: 0x11 已确认, 设备将安全停机+软复位进 Bootloader (约 50ms) ✓");
+                        }
+                        else
+                        {
+                            throw new UpgradeException(
+                                $"设备拒绝进入升级 (0x91 错误码 0x{iapErr:X2}), 请确认电堆已关机 (OFF/FAULT 态才接受)");
+                        }
+                    }
+                    else
+                    {
+                        ct.ThrowIfCancellationRequested();   /* 区分取消与真无应答 */
+                        Log("S1.5: 0x11 无应答 (固件不支持), 回退人工断电重启路径");
                     }
                 }
 
@@ -356,23 +390,28 @@ namespace FCU_氢燃料电池控.Views
                 }
                 Log($"S1: 串口已切换 {BL_BAUD}, 进入升级模式");
 
-                /* ---------- S2 等待设备 (提示断电重启; BL 常驻续升时设备已在应答, 免提示) ---------- */
+                /* ---------- S2 等待设备 (BL 常驻/0x11 软复位均免断电提示; 仅旧固件回退断电路径) ---------- */
                 _ui.StepState(2, "done");
                 _ui.StepState(3, "active");
-                if (!blResident)
-                {
-                    Status("S2 等待设备 (请断电重新上电)");
-                    Log("S2: 请现在给 FCU 断电, 3 秒后重新上电 (30 秒内有效)");
-                }
-                else
+                if (blResident)
                 {
                     Status("S2 连接 Bootloader 常驻设备");
                     Log("S2: 设备已在升级模式, 直接获取 UID...");
                 }
+                else if (softEntered)
+                {
+                    Status("S2 连接 Bootloader (0x11 软复位)");
+                    Log("S2: 设备已软复位进 BL, 立即轮询 GetUID (3s 同步窗口)...");
+                }
+                else
+                {
+                    Status("S2 等待设备 (请断电重新上电)");
+                    Log("S2: 固件不支持 0x11 软进入, 请现在给 FCU 断电, 3 秒后重新上电 (30 秒内有效)");
+                }
 
                 byte[]? uid = null;
                 var s2Deadline = Environment.TickCount64 + 30_000;
-                /* 短超时(300ms)快探测 + 100ms 间隔 ≈ 400ms 周期, 保证 BL 上电 1s 同步窗口内 ≥2 次命中
+                /* 短超时(300ms)快探测 + 100ms 间隔 ≈ 400ms 周期, 保证 BL 上电 3s 同步窗口内 ≥2 次命中
                  * [批次2审查 P1: 原 2s 超时使周期 2.2s, 窗口命中率仅 ~45%] */
                 while (Environment.TickCount64 < s2Deadline && !ct.IsCancellationRequested)
                 {
@@ -388,7 +427,7 @@ namespace FCU_氢燃料电池控.Views
                 {
                     throw ct.IsCancellationRequested
                         ? new OperationCanceledException(ct)
-                        : new UpgradeException("30 秒内未收到 Bootloader 应答 (请确认已按提示断电重新上电)");
+                        : new UpgradeException("30 秒内未收到 Bootloader 应答 (0x11 路径: 设备未按预期软复位进 BL; 断电路径: 请确认已按提示断电重新上电)");
                 }
                 string uidStr = BitConverter.ToString(uid);
                 _ = Dispatcher.BeginInvoke(() => tbk_DeviceUid.Text = uidStr);

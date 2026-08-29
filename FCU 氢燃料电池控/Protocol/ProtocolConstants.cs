@@ -143,6 +143,18 @@ namespace FCU_氢燃料电池控.Protocol
         public const byte RESP_SOC_PARAMS = 0x90;
 
         /// <summary>
+        /// 功能码：进入升级模式（数据域1B：confirm=0x01）[RS485协议 V5.2 §4.16]。
+        /// 仅 OFF/FAULT 态接受；APP 应答 0x91 后约 50ms 安全停机+软复位进 Bootloader，
+        /// 免断电重启。旧固件（V5.2 之前）无此功能码，上位机回退断电路径。
+        /// </summary>
+        public const byte FUNC_ENTER_IAP = 0x11;
+
+        /// <summary>
+        /// 响应功能码：进入升级模式结果（数据域1B错误码）。
+        /// </summary>
+        public const byte RESP_ENTER_IAP = 0x91;
+
+        /// <summary>
         /// 响应功能码：读取配置参数
         /// </summary>
         public const byte RESP_READ_CONFIG = 0x8A;
@@ -420,6 +432,8 @@ namespace FCU_氢燃料电池控.Protocol
                 RESP_FAN_MANUAL => "风扇手动运行控制响应",
                 FUNC_SET_SOC_PARAMS => "设置BMS/SOC参数",
                 RESP_SOC_PARAMS => "BMS/SOC参数设置响应",
+                FUNC_ENTER_IAP => "进入升级模式",
+                RESP_ENTER_IAP => "进入升级模式响应",
                 FUNC_ALARM_REPORT => "报警信息上报",
                 FUNC_STATE_CHANGE_REPORT => "状态变更上报",
                 FUNC_LOAD_STATUS_REPORT => "拉载状态上报",
