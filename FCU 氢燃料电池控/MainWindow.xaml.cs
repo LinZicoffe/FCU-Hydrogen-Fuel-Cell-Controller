@@ -2475,6 +2475,9 @@ namespace FCU_氢燃料电池控
                         HandleSocParamsSetResponse(frame);
                         break;
 
+                    case ProtocolConstants.RESP_ENTER_IAP: // 进入升级模式响应(升级页 S1.5 已消费, 免"未知码"噪音)
+                        break;
+
                     case 0xF0: // 报警信息上报
                         HandleAlarmReport(frame);
                         break;

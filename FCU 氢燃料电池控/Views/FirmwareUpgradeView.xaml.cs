@@ -258,7 +258,7 @@ namespace FCU_氢燃料电池控.Views
 
             var confirm = MessageBox.Show(
                 $"即将开始固件升级 (版本 0x{_pkg.FwVersion:X8}, {_pkg.FwSize / 1024.0:F1} KB)。\n\n" +
-                "升级过程中: ① 电堆必须处于关机状态 ② 新固件自动软复位进入升级 (旧固件需按提示断电重新上电) ③ 请勿关闭程序或拔出串口\n\n确认开始?",
+                "升级过程中: ① 电堆必须处于关机/故障状态 ② 设备当前固件支持时自动软复位进入升级（旧固件需按提示断电重新上电） ③ 请勿关闭程序或拔出串口\n\n确认开始?",
                 "固件升级", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (confirm != MessageBoxResult.Yes) return;
 
@@ -306,12 +306,14 @@ namespace FCU_氢燃料电池控.Views
                     {
                         throw new UpgradeException($"电堆状态应答长度异常 (LEN={info[4]})");
                     }
-                    byte stackState = info[5];   /* 数据域首字节 = 工作状态 */
-                    if (stackState != 0)
+                    byte stackState = info[5];   /* 数据域首字节 = 工作状态 (0=OFF, 3=FAULT) */
+                    /* 与固件 0x11 接受域一致 [fcu_protocol.c fcu_handle_enter_iap]: 仅 OFF/FAULT 可升级;
+                     * FAULT 设备正是"靠升级修复"的目标场景, 固件 0x11 已为其做专门安全停机处理 */
+                    if (stackState != 0 && stackState != 3)
                     {
-                        throw new UpgradeException($"电堆未处于关机状态 (状态={stackState}), 请先关闭电堆再升级");
+                        throw new UpgradeException($"电堆未处于可升级状态 (状态={stackState}), 仅关机(0)/故障(3)态接受升级, 请先关闭电堆");
                     }
-                    Log($"S1: 电堆状态 = {stackState} (关机) ✓");
+                    Log($"S1: 电堆状态 = {stackState} ({(stackState == 0 ? "关机" : "故障")}) ✓");
                 }
                 else
                 {
@@ -373,7 +375,7 @@ namespace FCU_氢燃料电池控.Views
                     else
                     {
                         ct.ThrowIfCancellationRequested();   /* 区分取消与真无应答 */
-                        Log("S1.5: 0x11 无应答 (固件不支持), 回退人工断电重启路径");
+                        Log("S1.5: 0x11 无应答/发送失败 (固件可能不支持 0x11), 回退人工断电重启路径");
                     }
                 }
 
