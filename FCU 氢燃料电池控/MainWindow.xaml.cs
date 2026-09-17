@@ -1383,48 +1383,14 @@ namespace FCU_氢燃料电池控
         // btn_SetLowPressureRange_Click
         // 已全部被对应的 Command 替代
 
-        /// <summary>
-        /// 设置开机第一次时长
-        /// </summary>
-        private void btn_SetValveFirstOpen_Click(object sender, RoutedEventArgs e)
-        {
-            SetValveParamHelper("开机第一次时长");
-        }
+        // ❌ 已删除：5个阀门单项写入按钮事件处理方法
+        // btn_SetValveFirstOpen_Click, btn_SetValveSecondOpen_Click,
+        // btn_SetValveNormalInterval_Click, btn_SetValveNormalOpen_Click,
+        // btn_SetValveShutdownOpen_Click
+        // XAML 中已无对应按钮（deaff46 改版移除）；整组写入统一走 btn_SetValveParams_Click
 
         /// <summary>
-        /// 设置开机第二次时长
-        /// </summary>
-        private void btn_SetValveSecondOpen_Click(object sender, RoutedEventArgs e)
-        {
-            SetValveParamHelper("开机第二次时长");
-        }
-
-        /// <summary>
-        /// 设置正常周期间隔
-        /// </summary>
-        private void btn_SetValveNormalInterval_Click(object sender, RoutedEventArgs e)
-        {
-            SetValveParamHelper("正常周期间隔");
-        }
-
-        /// <summary>
-        /// 设置正常打开时长
-        /// </summary>
-        private void btn_SetValveNormalOpen_Click(object sender, RoutedEventArgs e)
-        {
-            SetValveParamHelper("正常打开时长");
-        }
-
-        /// <summary>
-        /// 设置关机打开时长
-        /// </summary>
-        private void btn_SetValveShutdownOpen_Click(object sender, RoutedEventArgs e)
-        {
-            SetValveParamHelper("关机打开时长");
-        }
-
-        /// <summary>
-        /// 阀门参数设置辅助方法
+        /// 阀门参数设置辅助方法（0x03 整帧写入，数据取 BuildValveParamsData）
         /// </summary>
         private void SetValveParamHelper(string paramName)
         {
@@ -1930,6 +1896,35 @@ namespace FCU_氢燃料电池控
         }
 
         /// <summary>
+        /// 解析秒值输入框并换算为协议 0.1s 单位（固件 u16：1~65535 即 0.1~6553.5s）。
+        /// 阀门页时序输入框为秒值（如 1.20），0x03/0x0E 数据域为 0.1s 整数（如 12）。
+        /// 失败时聚焦控件并抛出带字段名的异常（由 SetParameter 统一展示）。
+        /// 注意：必须先对 double 做范围检查再强转 ushort——
+        /// 负数或 >6553.5s 的强转会按 mod 65536 回绕成看似合法的错误值（如 "-1"→65526），
+        /// 绕过非零校验后被固件接受并固化 Flash。
+        /// </summary>
+        private static ushort ParseSecondsTo0P1(TextBox box, string fieldName)
+        {
+            if (!double.TryParse(box.Text?.Trim(), out double seconds))
+            {
+                box.Focus();
+                box.SelectAll();
+                throw new ArgumentException($"{fieldName}「{box.Text}」不是合法数值（秒）");
+            }
+
+            double rounded = Math.Round(seconds * 10.0, MidpointRounding.AwayFromZero);
+            /* 取反写法使 NaN 一并被拦截（NaN 与任何数比较均为 false） */
+            if (!(rounded >= 1.0 && rounded <= 65535.0))
+            {
+                box.Focus();
+                box.SelectAll();
+                throw new ArgumentException($"{fieldName}超出范围：{seconds}s，允许 0.1~6553.5s");
+            }
+
+            return (ushort)rounded;
+        }
+
+        /// <summary>
         /// 解析文本框中的 ushort 并做范围校验，失败时给出明确提示并聚焦到出错控件
         /// </summary>
         /// <param name="box">待校验的文本框</param>
@@ -2248,22 +2243,27 @@ namespace FCU_氢燃料电池控
         // 此处原有的同名重复实现已删除，避免默认值两处维护而不一致。
 
         /// <summary>
-        /// 读取所有阀门参数并构建数据帧（12字节）
+        /// 组包 0x03 阀门排水时序（数据域 12B：param_id 0x0201 + 5×u16 大端 0.1s）。
+        /// 数据源为时序图/正常运行排水输入框的秒值，经 ParseSecondsTo0P1 换算。
+        /// 固件 fcu_protocol_set_valve_params() 校验：两段开机排水非零、间隔>打开时长、
+        /// 关机时长非零（beforepined 与 V5.2 一致），命中则整帧 5 个字段全部不生效。
+        /// stop_duration 为固件死参数（可读写但控制逻辑未使用）：取隐藏框当前值
+        /// （「读取FCU参数」时已回填固件原值）原样回传，避免整帧写入误改。
         /// </summary>
         private byte[] BuildValveParamsData()
         {
-            // 下位机 fcu_protocol_set_valve_params() 的校验条件（V5.2 放宽: 两段非零即可, 不再要求 second>first;
-            // 固件默认 12/10 本身即 first>second），命中则整帧 5 个字段全部不生效
-            ushort firstOpen = ParseRequiredField(tbx_ValveFirstOpen, "开机第一次时长", 1, ushort.MaxValue, "0.1s");
-            ushort secondOpen = ParseRequiredField(tbx_ValveSecondOpen, "开机第二次时长", 1, ushort.MaxValue, "0.1s");
-            ushort normalInterval = ParseRequiredField(tbx_ValveNormalInterval, "正常周期间隔", 1, ushort.MaxValue, "0.1s");
-            ushort normalOpen = ParseRequiredField(tbx_ValveNormalOpen, "正常打开时长", 1, ushort.MaxValue, "0.1s");
-            ushort shutdownOpen = ParseRequiredField(tbx_ValveShutdownOpen, "关机打开时长", 1, ushort.MaxValue, "0.1s");
+            ushort firstOpen = ParseSecondsTo0P1(tbx_StartupDrainFirstOpen, "电堆吹扫①时长(start_first_duration)");
+            ushort secondOpen = ParseSecondsTo0P1(tbx_StartupDrainSecondOpen, "电堆吹扫②时长(start_second_duration)");
+            ushort normalInterval = ParseSecondsTo0P1(tbx_ValveNormalInterval, "排水间隔(normal_interval)");
+            ushort normalOpen = ParseSecondsTo0P1(tbx_ValveNormalOpen, "排水打开时长(normal_duration)");
+            ushort shutdownOpen = ParseRequiredField(tbx_ValveShutdownOpen, "关机排水时长(stop_duration)", 1, ushort.MaxValue, "0.1s");
 
             if (normalInterval <= normalOpen)
             {
+                tbx_ValveNormalInterval.Focus();
+                tbx_ValveNormalInterval.SelectAll();
                 throw new ArgumentException(
-                    $"正常周期间隔({normalInterval})必须大于正常打开时长({normalOpen})，固件会拒绝整帧");
+                    $"排水间隔({normalInterval / 10.0:F1}s)必须大于排水打开时长({normalOpen / 10.0:F1}s)，固件会拒绝整帧");
             }
 
             byte[] data = new byte[12];
@@ -3374,63 +3374,33 @@ namespace FCU_氢燃料电池控
             tbx_LoadDuty.Text = data.LoadDuty.ToString();
         }
 
-        /// <summary>
-        /// 读取工作流程参数按钮 (0x09读配置, 参数类型0x0601)
-        /// </summary>
-        // ❌ 已删除：btn_ReadFlowParams_Click - 已并入 btn_ReadValvePageParams_Click（0x0201+0x0601 顺序读取）
-
-        // ❌ 已删除：btn_ReadValveParams_Click - 已并入 btn_ReadValvePageParams_Click（0x0201+0x0601 顺序读取）
+        // ❌ 已删除：btn_ReadFlowParams_Click / btn_ReadValveParams_Click - 已并入 btn_ReadValvePageParams_Click（0x0201+0x0601 顺序读取）
 
         /// <summary>
-        /// 设置工作流程参数按钮 (0x0E, 数据域12B不含参数类型ID)
-        /// 前端校验与固件 fcu_protocol_set_flow_params 对齐:
-        /// drain_mode≤1(下拉保证) / low_normal_ref≥1 / load_duty≤100 [fcu_protocol.c:1402-1407]
+        /// 写入关机流程参数（0x0E，数据域 12B：purge 三段 + 排水保持 + 模式 + 阈值 + 拉载风扇占空比）。
+        /// 数据源为关机时序输入框的秒值，经 ParseSecondsTo0P1 换算。
+        /// 固件 fcu_protocol_set_flow_params() 校验：四个 purge 时长非零、drain_mode 仅 0、
+        /// 阈值非零、占空比≤100，命中则整帧不生效。
         /// </summary>
         private void btn_SetFlowParams_Click(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                if (!_isSerialOpen)
-                {
-                    HC.Growl.Warning("请先打开串口");
-                    return;
-                }
+            SetParameter("关机流程参数(0x0E)", ProtocolConstants.FUNC_SET_FLOW_PARAMS, BuildFlowParamsDataFromUi);
+        }
 
-                // 固件 fcu_protocol_set_flow_params() 要求四个 purge 时长均 ≥1，否则整帧 7 个字段全不生效
-                if (!TryParseRange(tbx_PurgeH2Open1, "purge进氢第一次开", 1, ushort.MaxValue, "0.1s", out ushort purgeOpen1) ||
-                    !TryParseRange(tbx_PurgeH2Close, "purge进氢关断", 1, ushort.MaxValue, "0.1s", out ushort purgeClose) ||
-                    !TryParseRange(tbx_PurgeH2Open2, "purge进氢第二次开", 1, ushort.MaxValue, "0.1s", out ushort purgeOpen2) ||
-                    !TryParseRange(tbx_PurgeDrainHold, "关机排水保持", 1, ushort.MaxValue, "0.1s", out ushort purgeDrainHold) ||
-                    !TryParseRange(tbx_LowNormalRef, "低压反馈排水阈值", 1, ushort.MaxValue, "kPa", out ushort lowNormalRef) ||
-                    !TryParseRange(tbx_LoadDuty, "拉载风扇占空比", 0, 100, "%", out ushort loadDuty))
-                {
-                    return;
-                }
-
-                var p = new FlowParams
-                {
-                    PurgeH2Open1 = purgeOpen1,
-                    PurgeH2Close = purgeClose,
-                    PurgeH2Open2 = purgeOpen2,
-                    PurgeDrainHold = purgeDrainHold,
-                    DrainMode = (byte)(cbx_DrainMode.SelectedIndex == 1 ? 1 : 0),
-                    LowNormalRef = lowNormalRef,
-                    LoadDuty = (byte)loadDuty
-                };
-
-                byte deviceAddress = byte.Parse(GetDeviceAddress());
-                byte[] data = ResponseParser.BuildFlowParamsData(p);
-                SendFrame(BuildFrame(deviceAddress, ProtocolConstants.FUNC_SET_FLOW_PARAMS, data));
-                UpdateStatus("已发送设置工作流程参数命令(0x0E)");
-            }
-            catch (FormatException)
+        private byte[] BuildFlowParamsDataFromUi()
+        {
+            var p = new FlowParams
             {
-                HC.Growl.Warning("参数格式错误, 请检查输入");
-            }
-            catch (Exception ex)
-            {
-                HC.Growl.Error($"设置工作流程参数失败: {ex.Message}");
-            }
+                PurgeH2Open1 = ParseSecondsTo0P1(tbx_ShutdownH2Open1, "氢阀补气①(purge_h2_open1)"),
+                PurgeH2Close = ParseSecondsTo0P1(tbx_ShutdownH2Close2, "氢阀关闭②(purge_h2_close)"),
+                PurgeH2Open2 = ParseSecondsTo0P1(tbx_ShutdownH2Open2, "氢阀补气②(purge_h2_open2)"),
+                PurgeDrainHold = ParseSecondsTo0P1(tbx_PurgeDrainHoldSec, "关机排水保持(purge_drain_hold)"),
+                DrainMode = 0,   // 固件仅接受定时模式（fcu_protocol_set_flow_params 拒绝非0），UI 也已限定
+                LowNormalRef = ParseRequiredField(tbx_LowNormalRef, "低压反馈排水阈值(low_normal_ref)", 1, ushort.MaxValue, "kPa"),
+                LoadDuty = (byte)ParseRequiredField(tbx_LoadDuty, "拉载风扇占空比(load_duty)", 0, 100, "%")
+            };
+
+            return ResponseParser.BuildFlowParamsData(p);
         }
 
         /// <summary>

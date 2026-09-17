@@ -918,17 +918,22 @@
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0"
-                                                   Text="本页完成上位机时序校验和波形预览；图中数值为示例，不会写入当前固件。"
+                                                   Text="读取FCU参数后回填固件实际值；写入按钮仅下发固件支持的字段，时序图中固件固定段落只作预览。"
                                                    Foreground="#EF6C00" VerticalAlignment="Center" TextWrapping="Wrap"/>
                                         <Button Grid.Column="1" Content="校验并刷新预览" Style="{StaticResource StandardButtonStyle}"
-                                                Width="150" Margin="4,0" Click="btn_ValidateValveTiming_Click"/>
+                                                Width="130" Margin="4,0" Click="btn_ValidateValveTiming_Click"/>
                                         <Button Grid.Column="2" Content="读取FCU参数" Style="{StaticResource StandardButtonStyle}"
-                                                Width="130" Margin="4,0" Click="btn_ReadValvePageParams_Click"
+                                                Width="120" Margin="4,0" Click="btn_ReadValvePageParams_Click"
                                                 ToolTip="读取阀门排水时序(0x0A+0x0201)与工作流程参数(0x0A+0x0601)，回填到本页输入框"/>
-                                        <Button Grid.Column="3" Content="写入FCU（等待固件）" IsEnabled="False"
-                                                Style="{StaticResource SuccessButtonStyle}" Width="170" Margin="4,0"/>
+                                        <Button Grid.Column="3" Content="写入排水时序(0x03)" Style="{StaticResource SuccessButtonStyle}"
+                                                Width="140" Margin="4,0" Click="btn_SetValveParams_Click"
+                                                ToolTip="写入电堆吹扫①/②、排水间隔/打开时长（0x03 整帧）；关机排水时长为固件死参数，按当前保留值原样回传"/>
+                                        <Button Grid.Column="4" Content="写入关机流程(0x0E)" Style="{StaticResource SuccessButtonStyle}"
+                                                Width="140" Margin="4,0" Click="btn_SetFlowParams_Click"
+                                                ToolTip="写入氢阀补气①/关闭②/补气②、关机排水保持、排水模式(定时)、低压阈值、拉载风扇占空比（0x0E 整帧）"/>
                                     </Grid>
 
                                     <!-- 开机阶段 -->
@@ -1097,21 +1102,21 @@
                                                     <StackPanel>
                                                         <TextBlock Text="氢阀补气①" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_ShutdownH2Open1" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBox Name="tbx_ShutdownH2Open1" Style="{StaticResource TimingTextBoxStyle}" Text="0.50" TextChanged="ValveTimingInput_TextChanged"/>
                                                             <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                         </StackPanel>
                                                     </StackPanel>
                                                     <StackPanel>
                                                         <TextBlock Text="氢阀关闭②" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_ShutdownH2Close2" Style="{StaticResource TimingTextBoxStyle}" Text="0.50" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBox Name="tbx_ShutdownH2Close2" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
                                                             <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                         </StackPanel>
                                                     </StackPanel>
                                                     <StackPanel>
                                                         <TextBlock Text="氢阀补气②" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_ShutdownH2Open2" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBox Name="tbx_ShutdownH2Open2" Style="{StaticResource TimingTextBoxStyle}" Text="0.50" TextChanged="ValveTimingInput_TextChanged"/>
                                                             <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                         </StackPanel>
                                                     </StackPanel>
@@ -1124,7 +1129,7 @@
                                                     <TextBlock Text="排氢关机时长" FontWeight="SemiBold" HorizontalAlignment="Center"
                                                                ToolTip="排水阀从收到关机指令起持续打开的总时长"/>
                                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                        <TextBox Name="tbx_ShutdownTotal" Style="{StaticResource TimingTextBoxStyle}" Text="5.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                        <TextBox Name="tbx_ShutdownTotal" Style="{StaticResource TimingTextBoxStyle}" Text="8.00" TextChanged="ValveTimingInput_TextChanged"/>
                                                         <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                     </StackPanel>
                                                 </StackPanel>
@@ -1174,17 +1179,10 @@
                                         </Grid>
                                     </Border>
 
-                                    <!-- 保留旧协议字段供旧响应解析，避免在新协议确定前误映射到新时序。
-                                         默认值与固件 V5.2 g_valve_params/g_flow_params 对齐:
-                                         阀门 12/10/150/3/5, purge 5/10/5, 排水保持 30。
-                                         tbx_LoadDuty 已移至关机流程参数区（可见）。 -->
+                                    <!-- stop_duration(0x03 关机排水时长)：固件死参数（可读写但关机控制逻辑未使用，
+                                         实际排水保持由 0x0E purge_drain_hold + 固定排空5s 决定）。
+                                         保留隐藏框仅为 0x03 整帧写入时原样回传，避免误改设备存储值。 -->
                                     <Grid Visibility="Collapsed">
-                                        <TextBox Name="tbx_PurgeH2Open1" Text="5"/>
-                                        <TextBox Name="tbx_PurgeH2Close" Text="10"/>
-                                        <TextBox Name="tbx_PurgeH2Open2" Text="5"/>
-                                        <TextBox Name="tbx_PurgeDrainHold" Text="30"/>
-                                        <TextBox Name="tbx_ValveFirstOpen" Text="12"/>
-                                        <TextBox Name="tbx_ValveSecondOpen" Text="10"/>
                                         <TextBox Name="tbx_ValveShutdownOpen" Text="5"/>
                                     </Grid>
                                 </StackPanel>
