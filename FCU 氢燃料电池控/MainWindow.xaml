@@ -1027,14 +1027,15 @@
                                     <Border BorderBrush="#A5D6A7" BorderThickness="1" CornerRadius="6" Margin="4" Padding="10">
                                         <StackPanel>
                                             <TextBlock Text="正常运行排水" FontSize="15" FontWeight="SemiBold" Foreground="#2E7D32"/>
-                                            <TextBlock Text="定时或低压反馈触发 → 排水阀打开 → 关闭 → 重新计时/检测"
+                                            <TextBlock Text="定时触发 → 排水阀打开 → 关闭 → 重新计时（低压反馈模式当前固件未开放）"
                                                        FontSize="11" Foreground="#616161" Margin="0,2,0,6"/>
                                             <WrapPanel ItemWidth="225">
                                                 <StackPanel Orientation="Horizontal">
                                                     <Label Content="排水模式" Style="{StaticResource LabelStyle}" Width="105"/>
                                                     <hc:ComboBox Name="cbx_DrainMode" SelectedIndex="0" Width="120" Margin="4,2">
                                                         <ComboBoxItem Content="定时"/>
-                                                        <ComboBoxItem Content="低压反馈"/>
+                                                        <ComboBoxItem Content="低压反馈" IsEnabled="False"
+                                                                      ToolTip="当前固件 0x0E 的 drain_mode 仅接受 0=定时（fcu_protocol_set_flow_params 校验非 0 拒收，错误码 0x02 参数无效）"/>
                                                     </hc:ComboBox>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal">
@@ -1053,7 +1054,7 @@
                                                     <TextBlock Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
                                                 </StackPanel>
                                             </WrapPanel>
-                                            <TextBlock Text="低压反馈阈值始终可编辑；触发方向、回差和复位条件等待固件协议确认。"
+                                            <TextBlock Text="低压反馈模式当前固件不支持（drain_mode 仅接受定时）；阈值字段随 0x0E 保存（固件要求非 0），不参与定时排水控制。"
                                                        FontSize="11" Foreground="#757575" Margin="4,5,4,0"/>
                                         </StackPanel>
                                     </Border>

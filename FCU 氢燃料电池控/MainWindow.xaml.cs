@@ -3424,17 +3424,6 @@ namespace FCU_氢燃料电池控
         }
 
         /// <summary>
-        /// 排水模式切换: 仅低压反馈模式启用阈值输入
-        /// </summary>
-        private void cbx_DrainMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (tbx_LowNormalRef != null)
-            {
-                tbx_LowNormalRef.IsEnabled = cbx_DrainMode.SelectedIndex == 1;
-            }
-        }
-
-        /// <summary>
         /// 更新通用参数显示
         /// </summary>
         private void UpdateGeneralParams(GeneralParams data)
