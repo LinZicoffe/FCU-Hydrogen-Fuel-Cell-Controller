@@ -965,7 +965,8 @@
                                                         <TextBlock Text="氢阀等待" FontWeight="SemiBold" HorizontalAlignment="Center"
                                                                    ToolTip="t=0 起，氢阀保持关闭至第一次打开"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_StartupH2FirstDelay" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBox Name="tbx_StartupH2FirstDelay" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged" IsEnabled="False"
+                                                                     ToolTip="固件固定：FCU_VALVE_T_H2_PULSE_C1=3（0.3s），无协议字段，仅预览"/>
                                                             <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                         </StackPanel>
                                                     </StackPanel>
@@ -973,7 +974,8 @@
                                                         <TextBlock Text="氢阀打开①" FontWeight="SemiBold" HorizontalAlignment="Center"
                                                                    ToolTip="氢阀第一次打开保持时长"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_StartupH2FirstOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBox Name="tbx_StartupH2FirstOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged" IsEnabled="False"
+                                                                     ToolTip="固件固定：FCU_VALVE_T_H2_PULSE_O1=10（1.0s），无协议字段，仅预览"/>
                                                             <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                         </StackPanel>
                                                     </StackPanel>
@@ -981,7 +983,8 @@
                                                         <TextBlock Text="氢阀关闭 / 再开延时" FontWeight="SemiBold" HorizontalAlignment="Center"
                                                                    ToolTip="从电堆吹扫②开始，到氢阀再次打开的延时"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_StartupH2ReopenDelay" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBox Name="tbx_StartupH2ReopenDelay" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged" IsEnabled="False"
+                                                                     ToolTip="固件固定：FCU_VALVE_T_H2_PULSE_C2=3（0.3s），无协议字段，仅预览"/>
                                                             <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                         </StackPanel>
                                                     </StackPanel>
@@ -1002,7 +1005,8 @@
                                                     <StackPanel>
                                                         <TextBlock Text="吹扫停止①" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_StartupDrainFirstClose" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBox Name="tbx_StartupDrainFirstClose" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged" IsEnabled="False"
+                                                                     ToolTip="固件固定：FCU_VALVE_T_START_PAUSE1=3（0.3s），无协议字段，仅预览"/>
                                                             <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                         </StackPanel>
                                                     </StackPanel>
@@ -1016,19 +1020,23 @@
                                                     <StackPanel>
                                                         <TextBlock Text="吹扫停止②" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_StartupDrainThirdInterval" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBox Name="tbx_StartupDrainThirdInterval" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged" IsEnabled="False"
+                                                                     ToolTip="固件固定：FCU_VALVE_T_START_PAUSE2=3（0.3s），无协议字段，仅预览"/>
                                                             <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                         </StackPanel>
                                                     </StackPanel>
                                                     <StackPanel>
                                                         <TextBlock Text="电堆吹扫③" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_StartupDrainThirdOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBox Name="tbx_StartupDrainThirdOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged" IsEnabled="False"
+                                                                     ToolTip="固件固定：FCU_VALVE_T_START_THIRD=10（1.0s），无协议字段，仅预览"/>
                                                             <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                         </StackPanel>
                                                     </StackPanel>
                                                 </UniformGrid>
                                             </Grid>
+                                            <TextBlock Text="置灰字段为固件固定时序（氢阀脉冲三段、吹扫停止①②、吹扫③，固件 FCU_VALVE_T_* 常量，无协议字段），仅参与预览绘制，不随写入下发；可编辑的吹扫①/②随「写入排水时序(0x03)」写入。"
+                                                       FontSize="11" Foreground="#757575" Margin="4,6,4,0" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </Border>
 
@@ -1095,7 +1103,8 @@
                                                     <StackPanel>
                                                         <TextBlock Text="氢阀关闭①" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_ShutdownH2Close1" Style="{StaticResource TimingTextBoxStyle}" Text="0.50" TextChanged="ValveTimingInput_TextChanged"/>
+                                                            <TextBox Name="tbx_ShutdownH2Close1" Style="{StaticResource TimingTextBoxStyle}" Text="0.50" TextChanged="ValveTimingInput_TextChanged" IsEnabled="False"
+                                                                     ToolTip="固件无此参数：关机 purge 序列直接从运行态开阀进入补气①（fcu_valve.c h2_purge_phase），仅预览"/>
                                                             <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                         </StackPanel>
                                                     </StackPanel>
@@ -1129,7 +1138,8 @@
                                                     <TextBlock Text="排氢关机时长" FontWeight="SemiBold" HorizontalAlignment="Center"
                                                                ToolTip="排水阀从收到关机指令起持续打开的总时长"/>
                                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                        <TextBox Name="tbx_ShutdownTotal" Style="{StaticResource TimingTextBoxStyle}" Text="8.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                        <TextBox Name="tbx_ShutdownTotal" Style="{StaticResource TimingTextBoxStyle}" Text="8.00" TextChanged="ValveTimingInput_TextChanged" IsEnabled="False"
+                                                                 ToolTip="自动计算：关机排水保持 + 固定排空5.0s（FCU_VALVE_T_SHUTDOWN_EMPTY=50），读取FCU参数后回填，仅预览"/>
                                                         <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                     </StackPanel>
                                                 </StackPanel>
@@ -1150,7 +1160,7 @@
                                                     <TextBlock Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                                 </StackPanel>
                                             </WrapPanel>
-                                            <TextBlock Text="排氢关机时长 = 关机排水保持 + 固定排空 5.0s（固件固定值 FCU_VALVE_T_SHUTDOWN_EMPTY）；读取FCU参数后按此自动回填。"
+                                            <TextBlock Text="置灰字段说明：氢阀关闭①为固件固定的运行态延续（关机 purge 序列直接进入补气①，无协议字段）；排氢关机时长 = 关机排水保持 + 固定排空 5.0s（FCU_VALVE_T_SHUTDOWN_EMPTY），读取FCU参数后自动回填。可编辑的补气①/关闭②/补气②随「写入关机流程(0x0E)」写入。"
                                                        FontSize="11" Foreground="#757575" Margin="4,5,4,0" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </Border>
