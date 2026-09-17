@@ -1,5 +1,4 @@
 using System;
-using System.Text;
 using FCU_氢燃料电池控.Models;
 
 namespace FCU_氢燃料电池控.Protocol
@@ -118,12 +117,17 @@ namespace FCU_氢燃料电池控.Protocol
         /// 解析设备序列号（功能码0x81）
         /// </summary>
         /// <param name="frame">完整帧数据</param>
-        /// <returns>设备序列号字符串</returns>
+        /// <returns>设备序列号字符串（12字节UID的大写十六进制，24字符）</returns>
+        /// <remarks>
+        /// 固件 fcu_handle_read_serial（App/Src/fcu_protocol.c）通过 HAL_GetUIDw0/1/2
+        /// 读取 STM32 96bit UID，按内存序原样拷贝 12 字节二进制到数据域（非 ASCII 字符串），
+        /// 故按十六进制展示，避免乱码。
+        /// </remarks>
         public static string ParseSerialNumber(byte[] frame)
         {
             try
             {
-                // 数据域：12字节ASCII字符串
+                // 数据域：12字节二进制UID
                 byte dataLen = frame[4];
                 if (dataLen != 12)
                     return "--";
@@ -131,7 +135,7 @@ namespace FCU_氢燃料电池控.Protocol
                 byte[] serialData = new byte[12];
                 Array.Copy(frame, 5, serialData, 0, 12);
 
-                return Encoding.ASCII.GetString(serialData).TrimEnd('\0');
+                return BitConverter.ToString(serialData).Replace("-", string.Empty);
             }
             catch
             {
