@@ -20,6 +20,10 @@
         <!-- 升级包选择 -->
         <Border Grid.Row="0" Background="{DynamicResource RegionBrush}" CornerRadius="4" Padding="10" Margin="0,0,0,8">
             <StackPanel>
+                <!-- [beforepined 适配] 在线升级禁用告示（恢复方法见 code-behind UpgradeDisabledForCurrentFirmware 注释） -->
+                <TextBlock Name="tbk_UpgradeDisabledNotice"
+                           Text="⚠ 在线升级已禁用：当前目标固件（beforepined 版本）未包含 RS485 Bootloader，也不支持 0x11 进入升级命令，升级流程无法完成。需为 FCU 烧录带 Bootloader 的固件（main/V5.2 及以上）后方可恢复使用。"
+                           TextWrapping="Wrap" Foreground="#E65100" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <StackPanel Orientation="Horizontal">
                     <Button Content="选择 .upg 升级包..." Padding="12,4" Click="BtnSelectFile_Click"/>
                     <TextBlock Name="tbk_FilePath" Text="未选择" VerticalAlignment="Center" Margin="10,0,0,0"

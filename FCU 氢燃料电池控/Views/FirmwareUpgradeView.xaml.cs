@@ -46,6 +46,16 @@ namespace FCU_氢燃料电池控.Views
 
         private const int CHUNK_SIZE = 1024;
 
+        /// <summary>
+        /// [beforepined 适配] 在线升级禁用开关。
+        /// 目标固件 beforepined 分支无 RS485 Bootloader（APP 链接于 0x08000000，占满 124K Flash，
+        /// 见固件 STM32G474CBTX_FLASH.ld），且功能码表仅定义到 0x10、无 0x11 进入升级命令
+        /// （见固件 App/Inc/fcu_protocol.h），S1.5 软进入与断电路径均无法连上 Bootloader。
+        /// 恢复方法：本字段置 false（并移除 XAML 顶部 tbk_UpgradeDisabledNotice 告示）。
+        /// （用 static readonly 而非 const，避免 const 常量传播触发 CS0162 不可达代码警告）
+        /// </summary>
+        private static readonly bool UpgradeDisabledForCurrentFirmware = true;
+
         /// <summary>BL 波特率: 板级 RS485 约束仅支持 9600 (BL/APP 同波特率, 固件 bl_uart.c BRR=26667)</summary>
         private const int BL_BAUD = 9600;
         private const int APP_BAUD = 9600;
@@ -67,6 +77,12 @@ namespace FCU_氢燃料电池控.Views
         public FirmwareUpgradeView()
         {
             InitializeComponent();
+
+            if (UpgradeDisabledForCurrentFirmware)
+            {
+                /* [beforepined 适配] 禁用升级入口，告示横幅见 XAML tbk_UpgradeDisabledNotice */
+                btn_Start.IsEnabled = false;
+            }
         }
 
         /// <summary>由 MainWindow 在启动时注入串口管理器与宿主桥接</summary>
@@ -237,6 +253,16 @@ namespace FCU_氢燃料电池控.Views
 
         private void BtnStart_Click(object sender, RoutedEventArgs e)
         {
+            /* [beforepined 适配] 防御性拦截：按钮已禁用，仍拦截程序化触发路径 */
+            if (UpgradeDisabledForCurrentFirmware)
+            {
+                MessageBox.Show(
+                    "在线升级已禁用：当前目标固件（beforepined 版本）无 RS485 Bootloader，也不支持 0x11 进入升级命令。\n" +
+                    "需为 FCU 烧录带 Bootloader 的固件（main/V5.2 及以上）后方可使用本功能。",
+                    "功能不可用", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             if (_busy) return;
             if (_bridge == null)
             {
