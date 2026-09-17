@@ -1112,7 +1112,11 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 读取阀门参数
         /// </summary>
-        private void btn_ReadValveParams_Click(object sender, RoutedEventArgs e)
+        /// <summary>
+        /// 读取阀门页全部FCU参数（0x0A+0x0201 阀门排水时序、0x0A+0x0601 工作流程），回填到本页输入框。
+        /// 两帧间隔100ms，避免RS485半双工总线与固件应答冲突（同 btn_ReadLoadParams_Click 既有模式）。
+        /// </summary>
+        private void btn_ReadValvePageParams_Click(object sender, RoutedEventArgs e)
         {
             try
             {
@@ -1123,12 +1127,17 @@ namespace FCU_氢燃料电池控
                 }
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
+
                 SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_VALVE >> 8), (byte)(ProtocolConstants.PARAM_TYPE_VALVE & 0xFF));
-                UpdateStatus("已发送读取阀门参数命令");
+                System.Threading.Thread.Sleep(100);
+
+                SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_FLOW >> 8), (byte)(ProtocolConstants.PARAM_TYPE_FLOW & 0xFF));
+
+                UpdateStatus("已发送读取阀门/工作流程参数命令");
             }
             catch (Exception ex)
             {
-                HC.Growl.Error($"读取阀门参数失败: {ex.Message}");
+                HC.Growl.Error($"读取阀门页参数失败: {ex.Message}");
             }
         }
 
@@ -3303,12 +3312,20 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 更新阀门参数显示
         /// </summary>
+        /// <summary>
+        /// 0x0A+0x0201 阀门参数回填：协议 0.1s 单位 ÷10 转为界面秒值。
+        /// 字段映射（固件 fcu_protocol.c read_config 0x0201）：
+        ///   start_first_duration  → 电堆吹扫①（开机时序区）
+        ///   start_second_duration → 电堆吹扫②（开机时序区）
+        ///   normal_interval/duration → 排水间隔/排水打开（正常运行排水区）
+        ///   stop_duration → 隐藏框原值保留（固件死参数：可读写但控制逻辑未使用，写入时原样回传）
+        /// </summary>
         private void UpdateValveParams(ValveParams data)
         {
-            tbx_ValveFirstOpen.Text = data.FirstOpenTime.ToString();
-            tbx_ValveSecondOpen.Text = data.SecondOpenTime.ToString();
-            tbx_ValveNormalInterval.Text = data.NormalInterval.ToString();
-            tbx_ValveNormalOpen.Text = data.NormalOpenTime.ToString();
+            tbx_StartupDrainFirstOpen.Text = (data.FirstOpenTime / 10.0).ToString("F2");
+            tbx_StartupDrainSecondOpen.Text = (data.SecondOpenTime / 10.0).ToString("F2");
+            tbx_ValveNormalInterval.Text = (data.NormalInterval / 10.0).ToString("F2");
+            tbx_ValveNormalOpen.Text = (data.NormalOpenTime / 10.0).ToString("F2");
             tbx_ValveShutdownOpen.Text = data.ShutdownOpenTime.ToString();
         }
 
@@ -3337,13 +3354,22 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 更新工作流程参数显示 (0x0601)
         /// </summary>
+        /// <summary>
+        /// 0x0A+0x0601 工作流程参数回填：协议 0.1s 单位 ÷10 转为界面秒值。
+        /// 字段映射（固件 fcu_valve.c 关机序列 open1→close→open2，客户模型首段"关闭①"为运行态延续，无协议字段）：
+        ///   purge_h2_open1/close/open2 → 氢阀补气① / 关闭② / 补气②（关机时序区）
+        ///   purge_drain_hold → 关机排水保持（关机流程参数区）
+        ///   排氢关机时长 = 关机排水保持 + 固定排空 5.0s（FCU_VALVE_T_SHUTDOWN_EMPTY=50）
+        ///   drain_mode 仅 0=定时（固件 fcu_protocol_set_flow_params 拒绝非0）
+        /// </summary>
         private void UpdateFlowParams(FlowParams data)
         {
-            tbx_PurgeH2Open1.Text = data.PurgeH2Open1.ToString();
-            tbx_PurgeH2Close.Text = data.PurgeH2Close.ToString();
-            tbx_PurgeH2Open2.Text = data.PurgeH2Open2.ToString();
-            tbx_PurgeDrainHold.Text = data.PurgeDrainHold.ToString();
-            cbx_DrainMode.SelectedIndex = data.DrainMode == 1 ? 1 : 0;
+            tbx_ShutdownH2Open1.Text = (data.PurgeH2Open1 / 10.0).ToString("F2");
+            tbx_ShutdownH2Close2.Text = (data.PurgeH2Close / 10.0).ToString("F2");
+            tbx_ShutdownH2Open2.Text = (data.PurgeH2Open2 / 10.0).ToString("F2");
+            tbx_PurgeDrainHoldSec.Text = (data.PurgeDrainHold / 10.0).ToString("F2");
+            tbx_ShutdownTotal.Text = (data.PurgeDrainHold / 10.0 + 5.0).ToString("F2");
+            cbx_DrainMode.SelectedIndex = 0;
             tbx_LowNormalRef.Text = data.LowNormalRef.ToString();
             tbx_LoadDuty.Text = data.LoadDuty.ToString();
         }
@@ -3351,25 +3377,9 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 读取工作流程参数按钮 (0x09读配置, 参数类型0x0601)
         /// </summary>
-        private void btn_ReadFlowParams_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                if (!_isSerialOpen)
-                {
-                    HC.Growl.Warning("请先打开串口");
-                    return;
-                }
+        // ❌ 已删除：btn_ReadFlowParams_Click - 已并入 btn_ReadValvePageParams_Click（0x0201+0x0601 顺序读取）
 
-                byte deviceAddress = byte.Parse(GetDeviceAddress());
-                SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_FLOW >> 8), (byte)(ProtocolConstants.PARAM_TYPE_FLOW & 0xFF));
-                UpdateStatus("已发送读取工作流程参数命令");
-            }
-            catch (Exception ex)
-            {
-                HC.Growl.Error($"读取工作流程参数失败: {ex.Message}");
-            }
-        }
+        // ❌ 已删除：btn_ReadValveParams_Click - 已并入 btn_ReadValvePageParams_Click（0x0201+0x0601 顺序读取）
 
         /// <summary>
         /// 设置工作流程参数按钮 (0x0E, 数据域12B不含参数类型ID)
