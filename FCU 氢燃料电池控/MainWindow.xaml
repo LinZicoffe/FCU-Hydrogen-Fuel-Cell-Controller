@@ -1301,10 +1301,10 @@
                                     <TextBox Grid.Row="5" Grid.Column="2" Name="tbx_Seq5_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0.50" Margin="4"/>
                                     <TextBlock Grid.Row="6" Grid.Column="0" Text="6" Style="{StaticResource PressureRowHeaderStyle}" HorizontalAlignment="Center"/>
                                     <TextBox Grid.Row="6" Grid.Column="1" Name="tbx_Seq6_Current" Style="{StaticResource StandardTextBoxStyle}" Text="11.0" Margin="4"/>
-                                    <TextBox Grid.Row="6" Grid.Column="2" Name="tbx_Seq6_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0.70" Margin="4"/>
+                                    <TextBox Grid.Row="6" Grid.Column="2" Name="tbx_Seq6_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0.75" Margin="4"/>
                                     <TextBlock Grid.Row="7" Grid.Column="0" Text="7" Style="{StaticResource PressureRowHeaderStyle}" HorizontalAlignment="Center"/>
                                     <TextBox Grid.Row="7" Grid.Column="1" Name="tbx_Seq7_Current" Style="{StaticResource StandardTextBoxStyle}" Text="15.0" Margin="4"/>
-                                    <TextBox Grid.Row="7" Grid.Column="2" Name="tbx_Seq7_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0.70" Margin="4"/>
+                                    <TextBox Grid.Row="7" Grid.Column="2" Name="tbx_Seq7_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0.75" Margin="4"/>
                                     <TextBlock Grid.Row="8" Grid.Column="0" Text="8" Style="{StaticResource PressureRowHeaderStyle}" HorizontalAlignment="Center"/>
                                     <TextBox Grid.Row="8" Grid.Column="1" Name="tbx_Seq8_Current" Style="{StaticResource StandardTextBoxStyle}" Text="21.0" Margin="4"/>
                                     <TextBox Grid.Row="8" Grid.Column="2" Name="tbx_Seq8_Time" Style="{StaticResource StandardTextBoxStyle}" Text="1.00" Margin="4"/>
@@ -1327,8 +1327,10 @@
                                     <TextBox Grid.Row="14" Grid.Column="1" Name="tbx_Seq14_Current" Style="{StaticResource StandardTextBoxStyle}" Text="34.0" Margin="4"/>
                                     <TextBox Grid.Row="14" Grid.Column="2" Name="tbx_Seq14_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0.50" Margin="4"/>
                                     <TextBlock Grid.Row="15" Grid.Column="0" Text="15" Style="{StaticResource PressureRowHeaderStyle}" HorizontalAlignment="Center"/>
-                                    <TextBox Grid.Row="15" Grid.Column="1" Name="tbx_Seq15_Current" Style="{StaticResource StandardTextBoxStyle}" Text="50.0" Margin="4"/>
-                                    <TextBox Grid.Row="15" Grid.Column="2" Name="tbx_Seq15_Time" Style="{StaticResource StandardTextBoxStyle}" Text="0.50" Margin="4"/>
+                                    <TextBox Grid.Row="15" Grid.Column="1" Name="tbx_Seq15_Current" Style="{StaticResource StandardTextBoxStyle}" Text="" Margin="4"
+                                             ToolTip="固件默认时序为 14 条（扫描后由控制器计算工作电流）；第 15 条留空则按 14 条发送，填写则按 15 条发送"/>
+                                    <TextBox Grid.Row="15" Grid.Column="2" Name="tbx_Seq15_Time" Style="{StaticResource StandardTextBoxStyle}" Text="" Margin="4"
+                                             ToolTip="固件默认时序为 14 条；第 15 条留空则按 14 条发送，填写则按 15 条发送"/>
 
                                     <Button Grid.Row="16" Grid.Column="0" Grid.ColumnSpan="3"
                                             Name="btn_SetLoadSequenceParams"

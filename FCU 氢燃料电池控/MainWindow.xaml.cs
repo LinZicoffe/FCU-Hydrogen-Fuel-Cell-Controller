@@ -1561,12 +1561,6 @@ namespace FCU_氢燃料电池控
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
 
-                // 15个时序，每个时序4字节（电流2字节 + 时间2字节）
-                byte[] data = new byte[2 + 1 + 15 * 4];
-                data[0] = 0x05; // 参数类型ID 高字节
-                data[1] = 0x01; // 参数类型ID 低字节
-                data[2] = 15;   // 时序总数
-
                 TextBox[] currentBoxes = {
                     tbx_Seq1_Current, tbx_Seq2_Current, tbx_Seq3_Current,
                     tbx_Seq4_Current, tbx_Seq5_Current, tbx_Seq6_Current,
@@ -1582,15 +1576,22 @@ namespace FCU_氢燃料电池控
                     tbx_Seq13_Time, tbx_Seq14_Time, tbx_Seq15_Time
                 };
 
-                // 下位机对时序表整帧校验，任一步非法则 15 步全部不生效，
-                // 因此发送前先逐步校验并明确指出出错的时序编号
+                // 下位机对时序表整帧校验，任一步非法则整张表不生效，
+                // 因此发送前先逐步校验并明确指出出错的时序编号；
+                // 第 15 条留空 → count=14（对齐固件 V1.2 默认 14 条）
                 if (!TryParseLoadSequences(currentBoxes, timeBoxes,
-                        out ushort[] currents, out ushort[] times))
+                        out int seqCount, out ushort[] currents, out ushort[] times))
                 {
                     return;
                 }
 
-                for (int i = 0; i < 15; i++)
+                // count 个时序，每个时序 4 字节（电流 2 字节 + 时间 2 字节）
+                byte[] data = new byte[2 + 1 + seqCount * 4];
+                data[0] = 0x05; // 参数类型ID 高字节
+                data[1] = 0x01; // 参数类型ID 低字节
+                data[2] = (byte)seqCount;   // 时序总数（14 或 15）
+
+                for (int i = 0; i < seqCount; i++)
                 {
                     data[3 + i * 4] = (byte)(currents[i] >> 8);
                     data[4 + i * 4] = (byte)(currents[i] & 0xFF);
@@ -1600,7 +1601,7 @@ namespace FCU_氢燃料电池控
 
                 byte[] frame = BuildFrame(deviceAddress, ProtocolConstants.FUNC_SET_LOAD_PARAMS, data);
                 SendFrame(frame);
-                UpdateStatus("已发送设置拉载时序参数命令");
+                UpdateStatus($"已发送设置拉载时序参数命令（{seqCount} 条）");
             }
             catch (Exception ex)
             {
@@ -2022,23 +2023,72 @@ namespace FCU_氢燃料电池控
         }
 
         /// <summary>
-        /// 校验并解析 15 组拉载时序。下位机对时序表整帧校验（电流 1~500、时间 ≥1），
-        /// 任一步非法会导致整张表都不生效，因此这里逐步校验并指明出错的时序编号。
+        /// 尾部"空行"判定：两格均空白，或两格均为 0（方案页未用行默认填 "0"；电流/时间合法下限均为 1，0 永远不是有效值）。
+        /// 返回 null 表示两格状态不一致（一空一有值），交由逐行校验报错。
         /// </summary>
-        /// <param name="currentBoxes">15 个电流文本框</param>
-        /// <param name="timeBoxes">15 个时间文本框</param>
-        /// <param name="currents">解析出的电流数组（0.1A）</param>
-        /// <param name="times">解析出的时间数组（0.01s）</param>
+        private static bool? IsTailEmptyRow(string currentText, string timeText)
+        {
+            bool curBlank = string.IsNullOrWhiteSpace(currentText);
+            bool timeBlank = string.IsNullOrWhiteSpace(timeText);
+            if (curBlank && timeBlank) return true;
+            if (curBlank != timeBlank) return null;
+
+            bool curZero = decimal.TryParse(currentText?.Trim(), out var c) && c == 0m;
+            bool timeZero = decimal.TryParse(timeText?.Trim(), out var t) && t == 0m;
+            if (curZero && timeZero) return true;
+            if (curZero != timeZero) return null;
+            return false;
+        }
+
+        /// <summary>
+        /// 校验并解析拉载时序（支持尾部空行）。下位机对时序表整帧校验（电流 1~500、时间 ≥1，条数 ≤64），
+        /// 任一步非法会导致整张表都不生效，因此这里逐步校验并指明出错的时序编号。
+        /// 规则：仅允许"尾部连续空行"（第 15 条留空/为 0 → 按 14 条发送，对齐固件 V1.2 默认 14 条时序表）；
+        /// 中间空行（前一行有值、后一行也有值）拒绝——固件时序表不支持空洞。
+        /// </summary>
+        /// <param name="currentBoxes">时序电流文本框（15 个）</param>
+        /// <param name="timeBoxes">时序时间文本框（15 个）</param>
+        /// <param name="count">实际有效时序条数（尾部空行不计）</param>
+        /// <param name="currents">解析出的电流数组（0.1A，仅前 count 个有效）</param>
+        /// <param name="times">解析出的时间数组（0.01s，仅前 count 个有效）</param>
         /// <returns>全部校验通过返回 true</returns>
         private static bool TryParseLoadSequences(TextBox[] currentBoxes, TextBox[] timeBoxes,
-            out ushort[] currents, out ushort[] times)
+            out int count, out ushort[] currents, out ushort[] times)
         {
-            int count = currentBoxes.Length;
-            currents = new ushort[count];
-            times = new ushort[count];
+            int total = currentBoxes.Length;
+            currents = new ushort[total];
+            times = new ushort[total];
 
-            for (int i = 0; i < count; i++)
+            /* 从后往前找出最后一个有效行，其后为允许的尾部空行（含双 0 行） */
+            int lastFilled = -1;
+            for (int i = total - 1; i >= 0; i--)
             {
+                var emptyState = IsTailEmptyRow(currentBoxes[i].Text, timeBoxes[i].Text);
+                if (emptyState == false) { lastFilled = i; break; }
+                if (emptyState == null) { lastFilled = i; break; }   /* 一空一有值: 视为有效行, 由逐行校验报错 */
+            }
+            count = lastFilled + 1;
+            if (count == 0)
+            {
+                HC.Growl.Warning("时序表为空：请至少填写第 1 条时序");
+                return false;
+            }
+
+            for (int i = 0; i <= lastFilled; i++)
+            {
+                /* 中间空行/双零行检测：有效区内电流与时间必须成对为非零有效值 */
+                var emptyState = IsTailEmptyRow(currentBoxes[i].Text, timeBoxes[i].Text);
+                if (emptyState == true)
+                {
+                    HC.Growl.Warning($"时序{i + 1} 电流与时间必须成对填写为有效值（仅允许末尾连续空行，固件时序表不支持空洞）");
+                    return false;
+                }
+                if (emptyState == null)
+                {
+                    HC.Growl.Warning($"时序{i + 1} 电流与时间必须成对填写（两格需同时留空或同时为有效值）");
+                    return false;
+                }
+
                 if (!TryParseScaledRange(currentBoxes[i], $"时序{i + 1}电流",
                         10m, 1, LoadMaxCurrent0P1A, "A", out currents[i]))
                 {
@@ -3453,6 +3503,14 @@ namespace FCU_氢燃料电池控
                     currentBoxes[i].Text = (data.Currents[i] / 10m).ToString("0.0", CultureInfo.CurrentCulture);
                     timeBoxes[i].Text = (data.Times[i] / 100m).ToString("0.00", CultureInfo.CurrentCulture);
                 }
+
+                /* 超出 count 的行清空：固件默认时序为 14 条，回读 14 条设备后
+                 * 第 15 行若残留旧值，用户点写入会按 15 条重发陈旧条目（固件静默接受） */
+                for (int i = count; i < currentBoxes.Length; i++)
+                {
+                    currentBoxes[i].Text = string.Empty;
+                    timeBoxes[i].Text = string.Empty;
+                }
             }
             catch
             {
@@ -4364,12 +4422,6 @@ namespace FCU_氢燃料电池控
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
 
-                // 构建63字节数据域：参数类型ID(2) + 时序数(1) + 15组(电流2+时间2)
-                byte[] data = new byte[2 + 1 + 15 * 4];
-                data[0] = 0x05; // 参数类型ID 高字节
-                data[1] = 0x01; // 参数类型ID 低字节
-                data[2] = 15;   // 时序总数
-
                 TextBox[] currentBoxes = {
                     tbx_RecipeSeq1_Current, tbx_RecipeSeq2_Current, tbx_RecipeSeq3_Current,
                     tbx_RecipeSeq4_Current, tbx_RecipeSeq5_Current, tbx_RecipeSeq6_Current,
@@ -4385,13 +4437,20 @@ namespace FCU_氢燃料电池控
                     tbx_RecipeSeq13_Time, tbx_RecipeSeq14_Time, tbx_RecipeSeq15_Time
                 };
 
+                // 第 15 条留空（默认值为 0/空）→ count=14，对齐固件 V1.2 默认 14 条
                 if (!TryParseLoadSequences(currentBoxes, timeBoxes,
-                        out ushort[] currents, out ushort[] times))
+                        out int seqCount, out ushort[] currents, out ushort[] times))
                 {
                     return;
                 }
 
-                for (int i = 0; i < 15; i++)
+                // count 个时序，每个时序 4 字节（电流 2 字节 + 时间 2 字节）
+                byte[] data = new byte[2 + 1 + seqCount * 4];
+                data[0] = 0x05; // 参数类型ID 高字节
+                data[1] = 0x01; // 参数类型ID 低字节
+                data[2] = (byte)seqCount;   // 时序总数（14 或 15）
+
+                for (int i = 0; i < seqCount; i++)
                 {
                     data[3 + i * 4] = (byte)(currents[i] >> 8);
                     data[4 + i * 4] = (byte)(currents[i] & 0xFF);
@@ -4496,6 +4555,14 @@ namespace FCU_氢燃料电池控
                 {
                     currentBoxes[i].Text = data.Currents[i].ToString();
                     timeBoxes[i].Text = data.Times[i].ToString();
+                }
+
+                /* 超出 count 的行回归"0"未用行约定（与主页面清空逻辑对称,
+                 * 防止先选 15 条配方再读 14 条设备时第 15 行残留陈旧值） */
+                for (int i = count; i < currentBoxes.Length; i++)
+                {
+                    currentBoxes[i].Text = "0";
+                    timeBoxes[i].Text = "0";
                 }
             }
             catch
