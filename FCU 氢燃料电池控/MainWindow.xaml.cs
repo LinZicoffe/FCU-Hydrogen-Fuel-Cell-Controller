@@ -64,6 +64,17 @@ namespace FCU_氢燃料电池控
         // BMS 总线仲裁 (0x0D set_bms_poll) [SOC计划 §1.3]
         private volatile bool _bmsPollAckReceived;
 
+        // 电堆信息轮询健康监测 [轮询修复]: 固件对 0x07 恒回 0x87 (fcu_protocol.c fcu_handle_read_stack_info),
+        // 一个轮询周期内未收到响应即记一次未命中; 连续多次未命中时自动发广播探针鉴别
+        // "设备地址不匹配" 与 "链路不通" (固件 fcu_protocol.c:527-530 接受广播地址 0x00)
+        private volatile bool _awaitingStackInfo;      // 上一轮轮询尚无 0x87 响应 (RX 线程清除)
+        private volatile int _stackInfoMissCount;      // 连续未命中计数
+        private volatile bool _diagProbePending;       // 广播探针在途 (RX 线程清除)
+        private volatile byte _diagProbeFunc;          // 广播探针响应的功能码
+        private DispatcherTimer? _diagProbeTimer;      // 探针判定定时器 (一次性, UI 线程)
+        private bool _diagDoneForConnection;           // 本连接内已自动诊断过 (防周期性重复弹窗)
+        private const int StackInfoMissThreshold = 5;  // 触发诊断的连续未命中次数
+
         // 风扇手动运行控制(0x0F)：记录最近一次待确认命令，成功响应后再更新界面状态。
         private bool? _pendingFanManualEnable;
         private byte _pendingFanManualDuty;
@@ -617,7 +628,9 @@ namespace FCU_氢燃料电池控
                 }
                 else
                 {
-                    SendBmsPollEnable(0);
+                    // [轮询修复] 单发 0x0D 有概率落入固件 BMS 轮询等待窗口被吞,
+                    // 改为 0x8D 确认 + 有界重试 (见 TakeOverBmsBusWithConfirm)
+                    TakeOverBmsBusWithConfirm();
                 }
             }
             else
@@ -632,6 +645,13 @@ namespace FCU_氢燃料电池控
                 {
                     _pollingTimer.Stop();
                 }
+
+                // 轮询健康监测状态复位 (探针定时器一并停止, 防跨会话残留误报)
+                _awaitingStackInfo = false;
+                _stackInfoMissCount = 0;
+                _diagProbePending = false;
+                _diagDoneForConnection = false;
+                StopStackInfoLinkDiagnosis();
                 
                 // 停止BMS Modbus轮询并清显示
                 _bmsService?.StopPolling();
@@ -1069,7 +1089,35 @@ namespace FCU_氢燃料电池控
                 if (!SerialPortHelper.TryParseDeviceAddress(GetDeviceAddress(), out byte deviceAddress, showError: false))
                     return;
 
+                // [轮询修复] 上一轮至今未收到 0x87: 固件对 0x07 恒有响应, 持续未命中
+                // 说明请求未到达或被固件 BMS 轮询窗口吞掉, 必须显式反馈而非静默
+                if (_awaitingStackInfo)
+                {
+                    _stackInfoMissCount++;
+                    if (_stackInfoMissCount == StackInfoMissThreshold)
+                    {
+                        if (_diagDoneForConnection)
+                        {
+                            // 本连接已自动诊断过: 不重复弹窗 (探针回包会清零计数导致周期性
+                            // 重新触发), 仅状态栏滚动提示; 改对地址恢复响应后自动归零
+                            UpdateStatus($"电堆信息轮询仍无 0x87 响应 (连续{_stackInfoMissCount}次)");
+                        }
+                        else
+                        {
+                            _diagDoneForConnection = true;
+                            HC.Growl.Warning($"电堆信息轮询已连续{StackInfoMissThreshold}次无响应，正在自动诊断原因…");
+                            UpdateStatus($"电堆信息轮询连续{_stackInfoMissCount}次无 0x87 响应，启动链路诊断");
+                            StartStackInfoLinkDiagnosis(deviceAddress);
+                        }
+                    }
+                }
+                else
+                {
+                    _stackInfoMissCount = 0;
+                }
+
                 byte[] frame = BuildReadFrame(deviceAddress, ProtocolConstants.FUNC_READ_STACK_INFO);
+                _awaitingStackInfo = true;
                 SendFrame(frame);
             }
             catch
@@ -1136,11 +1184,71 @@ namespace FCU_氢燃料电池控
                 btn_StopPolling.IsEnabled = false;
                 cbx_PollingInterval.IsEnabled = true;
 
+                // 轮询健康监测状态复位, 防下次启动时把停止期间的静默误记为未命中
+                _awaitingStackInfo = false;
+                _stackInfoMissCount = 0;
+                _diagDoneForConnection = false;
+
                 UpdateStatus("已停止电堆信息自动刷新");
             }
             catch (Exception ex)
             {
                 HC.Growl.Error($"停止自动刷新失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// [轮询修复] 轮询持续无响应时的链路诊断: 发一次广播(0x00)读电堆信息探针。
+        /// 固件依据: fcu_protocol.c:527-530 接受广播地址, fcu_handle_read_stack_info 恒回
+        /// 0x87 (地址回显 0x00)。探针有响应 → 链路正常, 是设备地址不匹配;
+        /// 无响应 → 命令根本没到 FCU (接线/方向/供电, 或 FCU 侧 BMS 轮询窗口持续吞帧)。
+        /// 注意: 广播探针假定总线上仅这一台 FCU, 多机共线会同时应答造成碰撞
+        /// (产品使用模型为单 FCU, 与升级页/多机切换页的假定一致)。
+        /// </summary>
+        private void StartStackInfoLinkDiagnosis(byte deviceAddress)
+        {
+            if (deviceAddress == 0)
+            {
+                // 本身就以广播地址轮询, 无第二种地址可鉴别, 直接按链路不通提示
+                ShowStackInfoDiagnosisResult(false);
+                return;
+            }
+
+            _diagProbePending = true;
+            _diagProbeFunc = 0;
+            SendFrame(BuildReadFrame(0x00, ProtocolConstants.FUNC_READ_STACK_INFO));
+
+            _diagProbeTimer?.Stop();
+            _diagProbeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+            _diagProbeTimer.Tick += (s, e) =>
+            {
+                StopStackInfoLinkDiagnosis();
+                ShowStackInfoDiagnosisResult(!_diagProbePending && _diagProbeFunc == 0x87);
+            };
+            _diagProbeTimer.Start();
+        }
+
+        private void StopStackInfoLinkDiagnosis()
+        {
+            _diagProbeTimer?.Stop();
+            _diagProbeTimer = null;
+        }
+
+        /// <summary>诊断结论提示: 区分地址不匹配与链路不通, 给出对应处置</summary>
+        private void ShowStackInfoDiagnosisResult(bool probeAnswered)
+        {
+            if (probeAnswered)
+            {
+                HC.Growl.Warning($"广播探测已获 FCU 响应: 链路正常, 但设备地址[{GetDeviceAddress()}]的轮询无响应——" +
+                                 "FCU 实际地址与上位机设置不一致, 请核对后在连接区修改设备地址");
+                UpdateStatus("轮询诊断: 链路正常, 疑似设备地址不匹配");
+            }
+            else
+            {
+                HC.Growl.Warning("广播探测无响应: 上位机命令未到达 FCU——请检查 485 接线/转换器方向/FCU 供电。" +
+                                 "若连接时曾提示「BMS 总线接管未确认」, 也可能是 FCU 侧 BMS 轮询窗口持续吞帧, 请断开重新连接。" +
+                                 "注意: 串口工具上每 2 秒出现的 01 03 00 80 00 19 开头帧是 FCU 自身轮询 BMS 的流量, 并非对本机命令的回复");
+                UpdateStatus("轮询诊断: 广播无响应, 链路不通或 FCU 未上电");
             }
         }
 
@@ -2644,6 +2752,14 @@ namespace FCU_氢燃料电池控
             // 广播给固件升级页 (S1 前置检查读 0x87 / S8 存活确认等 0x81) [BL设计 §4.2]
             BlAppFrameReceived?.Invoke(frame);
 
+            // [轮询修复] 广播探针响应判定: 帧地址 0x00 即探针回包
+            // (正常轮询/读取用配置地址, 只有诊断探针用 0 地址; RX 线程调用)
+            if (_diagProbePending && frame.Length > 4 && frame[2] == 0x00)
+            {
+                _diagProbePending = false;
+                _diagProbeFunc = frame[3];
+            }
+
             byte functionCode = 0;
             try
             {
@@ -2760,14 +2876,21 @@ namespace FCU_氢燃料电池控
         private void HandleStackInfoResponse(byte[] frame)
         {
             StackInfoData data = ResponseParser.ParseStackInfo(frame);
+            // [轮询修复] 收到 0x87 即链路存活, 清除轮询未命中计数 (RX 线程调用, 字段为 volatile)
+            _awaitingStackInfo = false;
+            _stackInfoMissCount = 0;
             // 更新功率曲线图数据（DCDC电压/电流）
             UpdateStackInfo(data);
+            bool isDiagProbe = frame.Length > 2 && frame[2] == 0x00;
             Dispatcher.Invoke(() =>
             {
                 if (_viewModel != null)
                 {
                     UpdateViewModelStackInfo(data);
-                    _viewModel.StatusMessage = "电堆信息读取成功";
+                    // 广播回包是诊断探针的应答, 不与正常读取的成功提示混淆
+                    _viewModel.StatusMessage = isDiagProbe
+                        ? "诊断探针已获 FCU 响应 (广播地址)"
+                        : "电堆信息读取成功";
                 }
             });
         }
@@ -3034,6 +3157,48 @@ namespace FCU_氢燃料电池控
                 return;
 
             SendFrame(BuildFrame(byte.Parse(GetDeviceAddress()), ProtocolConstants.FUNC_SET_BMS_POLL, new[] { en }));
+        }
+
+        /// <summary>
+        /// [轮询修复] 连接时接管 BMS 总线 (0x0D en=0) 并等 0x8D 确认, 最多 3 次。
+        /// 固件依据: 固件自轮询 BMS 的等待窗口 (fcu_modbus.c g_modbus_rx_active,
+        /// 无 BMS 应答时每 2s 有约 200ms) 会把窗口内到达的 AA55 字节喂进 Modbus 缓冲
+        /// (fcu_protocol.c:486-488), 单发 en=0 有概率被吞且整个会话无法恢复。
+        /// 无 0x8D = 指令未被解析 = 未写 Flash (fcu_handle_set_bms_poll 成功才写),
+        /// 重试无副作用; 300ms 间隔大于单个吞帧窗口(200ms), 3 次内必有落点。
+        /// </summary>
+        private void TakeOverBmsBusWithConfirm()
+        {
+            for (int attempt = 1; attempt <= 3; attempt++)
+            {
+                // 泵送期间用户可能已点断开: 静默退出, 防止对已断开链路弹出陈旧指引
+                if (!_isSerialOpen)
+                    return;
+
+                _bmsPollAckReceived = false;
+                SendBmsPollEnable(0);
+
+                // DoEvents 泵送使 0x8D 确认帧可被接收线程处理 (与断开路径同款等待模式)。
+                // 断开路径归还 en=1 的 0x8D 会点亮共用确认标志, 必须同时查连接状态防误报
+                int start = Environment.TickCount;
+                while (!_bmsPollAckReceived && Environment.TickCount - start < 300)
+                {
+                    if (!_isSerialOpen)
+                        return;
+                    DoEvents();
+                    Thread.Sleep(10);
+                }
+
+                if (_bmsPollAckReceived && _isSerialOpen)
+                {
+                    UpdateStatus($"BMS 总线接管成功 (第{attempt}次尝试获 FCU 确认)");
+                    return;
+                }
+            }
+
+            HC.Growl.Warning("BMS 总线接管未获 FCU 确认 (3 次无 0x8D 应答): FCU 可能仍在自行轮询 BMS, " +
+                             "其等待窗口会间歇吞掉电堆信息请求; 也可能是设备地址与 FCU 不匹配。建议核对设备地址后断开重新连接");
+            UpdateStatus("BMS 总线接管未确认, FCU 可能仍占用总线或地址不匹配");
         }
 
         /// <summary>
@@ -4251,6 +4416,8 @@ namespace FCU_氢燃料电池控
                 _loadManualResponseTimeoutTimer.Stop();
                 _loadManualResponseTimeoutTimer.Tick -= LoadManualResponseTimeoutTimer_Tick;
             }
+            // [轮询修复] 诊断探针定时器 (Tick 为 lambda, Stop 即可)
+            StopStackInfoLinkDiagnosis();
 
             if (_viewModel != null)
             {
