@@ -1115,7 +1115,8 @@ namespace FCU_氢燃料电池控
                 if (_awaitingStackInfo)
                 {
                     _stackInfoMissCount++;
-                    if (_stackInfoMissCount == StackInfoMissThreshold)
+                    // >= 而非 ==: 与 RX 线程清零交错时防跳过触发 (交错最多丢一次自增)
+                    if (_stackInfoMissCount >= StackInfoMissThreshold)
                     {
                         if (_diagDoneForConnection)
                         {
@@ -1251,8 +1252,8 @@ namespace FCU_氢燃料电池控
                 return;
             }
 
+            _diagProbeFunc = 0;      /* 先复位 func 再置 pending: 与 RX 侧写序镜像, 防上一轮迟响应的覆盖竞态 */
             _diagProbePending = true;
-            _diagProbeFunc = 0;
             SendFrame(BuildReadFrame(0x00, ProtocolConstants.FUNC_READ_STACK_INFO));
 
             _diagProbeTimer?.Stop();
@@ -2812,11 +2813,13 @@ namespace FCU_氢燃料电池控
             BlAppFrameReceived?.Invoke(frame);
 
             // [轮询修复] 广播探针响应判定: 帧地址 0x00 即探针回包
-            // (正常轮询/读取用配置地址, 只有诊断探针用 0 地址; RX 线程调用)
+            // (正常轮询/读取用配置地址, 只有诊断探针用 0 地址; RX 线程调用)。
+            // [审查修复 P3] 写序: 先写 func 再清 pending (volatile 释放序),
+            // 保证 UI 侧读到 pending=false 时 func 已可见
             if (_diagProbePending && frame.Length > 4 && frame[2] == 0x00)
             {
-                _diagProbePending = false;
                 _diagProbeFunc = frame[3];
+                _diagProbePending = false;
             }
 
             byte functionCode = 0;
@@ -4039,23 +4042,27 @@ namespace FCU_氢燃料电池控
         }
 
         /// <summary>
-        /// 显示报警消息
+        /// 显示报警消息。Growl 非模态通知 [审查修复 P3]: 原模态 MessageBox 在无人值守场景下
+        /// 会冻结 UI 并使编组的界面回调排队, 报警流持续时弹窗需人工逐个关闭、长期占用界面。
         /// </summary>
         private void ShowAlarmMessage(AlarmData alarm)
         {
             string title = $"{alarm.GetAlarmLevelName()}报警";
             string message = $"报警类型：{alarm.GetAlarmTypeName()}\n报警数值：{alarm.GetAlarmValueDescription()}";
 
-            MessageBoxImage icon = alarm.AlarmLevel switch
+            switch (alarm.AlarmLevel)
             {
-                0x01 => MessageBoxImage.Information,
-                0x02 => MessageBoxImage.Warning,
-                0x03 => MessageBoxImage.Error,
-                0x04 => MessageBoxImage.Error,
-                _ => MessageBoxImage.Information
-            };
-
-            MessageBox.Show(message, title, MessageBoxButton.OK, icon);
+                case 0x03:
+                case 0x04:
+                    HC.Growl.Error($"{title}: {message}");
+                    break;
+                case 0x02:
+                    HC.Growl.Warning($"{title}: {message}");
+                    break;
+                default:
+                    HC.Growl.Info($"{title}: {message}");
+                    break;
+            }
             UpdateStatus($"收到报警：{alarm.GetAlarmTypeName()}");
         }
 

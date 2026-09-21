@@ -177,7 +177,15 @@ namespace FCU_氢燃料电池控.Managers
                     return false;
                 }
 
-                _serialPort!.Write(data, 0, data.Length);
+                // 局部快照: IsOpen 检查与 Write 之间 _serialPort 可能被 UI 线程 Close 置 null
+                // (升级线程发送场景), 显式判空给出领域文案 [审查修复 P3]
+                var port = _serialPort;
+                if (port == null)
+                {
+                    ErrorOccurred?.Invoke(this, "串口未打开");
+                    return false;
+                }
+                port.Write(data, 0, data.Length);
 
                 try
                 {

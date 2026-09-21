@@ -89,6 +89,13 @@ namespace FCU_氢燃料电池控.Protocol
                             _bufferIndex = 2;
                             _state = ReceiveState.Address;
                         }
+                        else if (data == 0xAA)
+                        {
+                            // 帧头再同步: 连续 0xAA 保持帧头态, 防 "AA AA 55" 序列漏帧
+                            // (对齐下位机 fcu_protocol.c fcu_frame_receive_byte 同款处理)
+                            _receiveBuffer[0] = data;
+                            _bufferIndex = 1;
+                        }
                         else
                         {
                             // 帧头错误，重置
