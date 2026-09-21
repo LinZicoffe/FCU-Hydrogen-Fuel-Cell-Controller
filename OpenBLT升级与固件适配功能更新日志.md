@@ -1,0 +1,65 @@
+# OpenBLT升级与固件适配功能更新日志
+
+## 当前目标
+
+按《docs/实施步骤-OpenBLT升级与固件适配.md》（3 轮评审通过）完成上位机开发：①新增基于 OpenBLT XCP over RS485（57600bps）的在线升级功能（S-record 解析、XCP 客户端、升级页重写、旧 .upg 路径 UI 下线）；②完成固件 2026-09-17 更新引出的 5 项协议适配（SOC/压力/锁定系数/时序表/拉载反馈）。
+
+## 开发约束
+
+1. 不修改任何嵌入式代码（450V_FCU、Boot-For-FCU 两仓库只读）
+2. 每步修改须有嵌入式源码依据（实施文档已逐条给出，实现时照引）
+3. 每步：修改 → 编译 0 警告 0 错误 → 独立 Agent 审查 → 通过后本地 git 提交
+4. 旧 BlProtocolHelper/BlUpgFile/BlUpgradeClient 三文件保留不删，仅下线 UI 引用
+5. 不做拉载时序表 15→64 行 UI 扩展；不升版本号、不打包
+6. 范围外文件：用户文件《FCU参数新增与建议清单(1).md》（未跟踪，不提交不修改）
+
+## 待办列表
+
+| ID | 待办描述 | 预计代码位置 | 状态 |
+|----|----------|--------------|------|
+| A | S-record 解析模型（S1/S2/S3 解析+地址窗/首地址/0x1D8 占位字强校验） | Models/SrecFile.cs（新建，实际 246 行） | 已完成 |
+| B | XCP 主机协议客户端（9 命令+帧重组器+线程安全+常量段） | Protocol/OpenBltXcpClient.cs（新建）、Protocol/ProtocolConstants.cs | 未开始 |
+| C | 升级页 UI 切换与旧路径下线（横幅/过滤器/BL_BAUD/死注释清理/占位提示） | Views/FirmwareUpgradeView.xaml(.cs) | 未开始 |
+| D | XCP 升级状态机（RunUpgradeAsync 重写+接线+加载指令+断电回退+归一化） | Views/FirmwareUpgradeView.xaml.cs、MainWindow.xaml.cs（桥接复用） | 未开始 |
+| E | SOC 参数适配（默认 60/61、start<stop 交叉校验、三处文案） | MainWindow.xaml:852-876、MainWindow.xaml.cs:92-94/421-440/3215 | 未开始 |
+| F | 压力参数默认值适配（100/35/65+ToolTip） | ViewModels/MainViewModel.cs:270-277、MainWindow.xaml:492/541/560 | 未开始 |
+| G | 锁定系数置灰（死参数透传+回读缓存） | MainWindow.xaml:1361、MainWindow.xaml.cs:1645-1697/3448-3454 | 未开始 |
+| H | 时序表默认值与回读适配（0.75s/第15行清空/count动态/回读清空） | MainWindow.xaml:1304/1307/1330-1331、MainWindow.xaml.cs:1536-1594/2007-2037/3417-3443/4331-4390 | 未开始 |
+| I | 拉载手动命令 Growl 反馈（0x0504 专用处理器+在途互斥+超时） | MainWindow.xaml.cs:2049-2076/2447-2450、新增 HandleLoadManualResponse | 未开始 |
+
+## 已知风险
+
+1. 真机联调被固件侧阻塞：codex/openblt-app-upgrade 分支尖端 abc0115 链接基址合并回退（实施文档 §3.3），联调须用 c5fcd2e 产物或等固件修复——不影响本分支全部开发步骤
+2. 加载指令帧格式待固件适配后对齐（实施文档待确认①）；固件未落地前 D 步骤恒走断电回退路径
+
+## 其他
+
+1. 范围外遗留：诊断用二补数预估日志（联调时按需实现）；版本号升级与安装包重打另行安排
+2. SrecFile 的 S5 记录数一致性校验（审查建议的增强项，不采纳实施，理由：非本待办要求，objcopy 产物截断场景已由行 checksum+占位字校验兜底）
+
+---
+
+## 更新记录
+
+### 2026年09月21日（更新1）
+
+**更新内容**
+
+待办 A：新增 `SrecFile`——OpenBLT 升级用 S-record(Motorola S1/S2/S3) 解析与校验。逐行校验 byte count 与行 checksum；五条强校验（地址窗 [0x08003000,0x0801F000)、首地址=基址、跨度 ≤112K、镜像偏移 0x1D8 处小端占位字 0x55AA11EE、排序后相邻无重叠）；产物合并为连续镜像（间隙 0xFF 填充并记入 Warnings）。自测抓出并修复地址长度 bug（S1/S2/S3 地址字节数应为类型号+1）。API 为 `TryLoad(path, out error)`（与 BlUpgFile 风格一致；实施文档示意签名 TryParse 的合理偏离，后续步骤 D 接线时按 TryLoad 调用）。
+验证：主工程编译 0 警告 0 错误；临时控制台工程 13 个边界用例全过（正常分片/空数据/低于基址/越过参数页/恰好 112K/缺 0x1D8/占位字错/坏 checksum/乱序行/重叠/间隙警告+0xFF 填充/S7+空行/镜像内容抽验）。
+
+**涉及位置**
+
+- FCU 氢燃料电池控/Models/SrecFile.cs（新增）
+
+**对应待办**
+
+- A
+
+**审查结果**
+
+通过（第 1 轮，独立 Reviewer 零阻塞）。建议落实：删除死变量 copied、新增地址环绕检测（均已修改并复验 13/13 通过）；不采纳：S5 记录数校验（增强项，记入"其他"）。
+
+**Git Commit**
+
+feat(A): S-record解析模型SrecFile，五条强校验+间隙0xFF合并
