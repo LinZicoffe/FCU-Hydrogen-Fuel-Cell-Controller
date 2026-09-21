@@ -401,6 +401,88 @@ namespace FCU_氢燃料电池控.Protocol
 
         #endregion
 
+        #region OpenBLT XCP 常量
+        // 依据: Boot-For-FCU @2a3904b (OpenBLT 移植, XCP over RS485)
+        //   命令码 Source/xcp.h:166-208, 帧格式 Source/ARMCM4_STM32G4/rs232.c:150-308,
+        //   波特率 App/blt_conf.h:98 (APP 侧 AA55 仍为 DEFAULT_BAUD_RATE=9600, 不另设常量)
+
+        /// <summary>Bootloader XCP 波特率 (blt_conf.h:98, 2026-09-21 提交 2a3904b 改 57600; 再变更时只改此处)</summary>
+        public const int XCP_BL_BAUD_RATE = 57600;
+
+        /// <summary>XCP 最大 CTO 包长 (含命令码, plausibility.h:93/97)</summary>
+        public const int XCP_MAX_CTO = 129;
+
+        /// <summary>PROGRAM_MAX 定长数据 128B (xcp.c:1379 programLen=XCP_CTO_PACKET_LEN-1)</summary>
+        public const int XCP_PROGRAM_MAX_DATA = 128;
+
+        /// <summary>PROGRAM 命令单块数据上限 127B (xcp.c:1433-1437 超限拒绝)</summary>
+        public const int XCP_PROGRAM_DATA_MAX = 127;
+
+        /// <summary>响应包标识 PID_RES (xcp.h:142)</summary>
+        public const byte XCP_PID_RES = 0xFF;
+
+        /// <summary>错误包标识 PID_ERR (xcp.h:144)</summary>
+        public const byte XCP_PID_ERR = 0xFE;
+
+        /// <summary>CONNECT 命令码 (xcp.h:166)</summary>
+        public const byte XCP_CMD_CONNECT = 0xFF;
+
+        /// <summary>SYNCH 命令码 (xcp.h:174)</summary>
+        public const byte XCP_CMD_SYNCH = 0xFC;
+
+        /// <summary>SET_MTA 命令码 (xcp.h:180)</summary>
+        public const byte XCP_CMD_SET_MTA = 0xF6;
+
+        /// <summary>UPLOAD 命令码 (xcp.h:182)</summary>
+        public const byte XCP_CMD_UPLOAD = 0xF5;
+
+        /// <summary>PROGRAM_START 命令码 (xcp.h:198)</summary>
+        public const byte XCP_CMD_PROGRAM_START = 0xD2;
+
+        /// <summary>PROGRAM_CLEAR 命令码 (xcp.h:200)</summary>
+        public const byte XCP_CMD_PROGRAM_CLEAR = 0xD1;
+
+        /// <summary>PROGRAM 命令码 (xcp.h:202)</summary>
+        public const byte XCP_CMD_PROGRAM = 0xD0;
+
+        /// <summary>PROGRAM_RESET 命令码 (xcp.h:204)</summary>
+        public const byte XCP_CMD_PROGRAM_RESET = 0xCF;
+
+        /// <summary>PROGRAM_MAX 命令码 (xcp.h:208)</summary>
+        public const byte XCP_CMD_PROGRAM_MAX = 0xC9;
+
+        /// <summary>XCP 常规应答超时 (主机侧默认)</summary>
+        public const int XCP_RESPONSE_TIMEOUT_MS = 1000;
+
+        /// <summary>CONNECT 轮询单次应答等待 (实施文档 §4.3: 50ms 发送周期 + 单次等待 300ms)</summary>
+        public const int XCP_CONNECT_WAIT_MS = 300;
+
+        /// <summary>CONNECT 轮询发送周期</summary>
+        public const int XCP_CONNECT_POLL_INTERVAL_MS = 50;
+
+        /// <summary>PROGRAM_CLEAR 整区擦除超时 (BL 逐扇区擦+喂狗, 实测后可调)</summary>
+        public const int XCP_PROGRAM_CLEAR_TIMEOUT_MS = 10000;
+
+        /// <summary>帧间隙超时, 半帧作废 (镜像 BL 侧 rs232.c:49 RS232_CTO_RX_PACKET_TIMEOUT_MS=200)</summary>
+        public const int XCP_FRAME_GAP_TIMEOUT_MS = 200;
+
+        /// <summary>
+        /// XCP 错误码 → 中文描述 (xcp.h:148-162; 仅主机端可能遇到的条目)
+        /// </summary>
+        public static string GetXcpErrorDescription(byte code) => code switch
+        {
+            0x00 => "命令同步丢失",
+            0x10 => "命令处理忙",
+            0x20 => "未知命令",
+            0x22 => "参数超范围",
+            0x25 => "资源锁定(需解锁)",
+            0x29 => "命令序列错误",
+            0x31 => "编程/擦除通用错误",
+            _ => $"未知XCP错误(0x{code:X2})"
+        };
+
+        #endregion
+
         #region 辅助方法
 
         /// <summary>

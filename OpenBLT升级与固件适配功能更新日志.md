@@ -18,7 +18,7 @@
 | ID | 待办描述 | 预计代码位置 | 状态 |
 |----|----------|--------------|------|
 | A | S-record 解析模型（S1/S2/S3 解析+地址窗/首地址/0x1D8 占位字强校验） | Models/SrecFile.cs（新建，实际 246 行） | 已完成 |
-| B | XCP 主机协议客户端（9 命令+帧重组器+线程安全+常量段） | Protocol/OpenBltXcpClient.cs（新建）、Protocol/ProtocolConstants.cs | 未开始 |
+| B | XCP 主机协议客户端（9 命令+帧重组器+线程安全+常量段） | Protocol/OpenBltXcpClient.cs（新建）、Protocol/ProtocolConstants.cs（新增 XCP region） | 已完成 |
 | C | 升级页 UI 切换与旧路径下线（横幅/过滤器/BL_BAUD/死注释清理/占位提示） | Views/FirmwareUpgradeView.xaml(.cs) | 未开始 |
 | D | XCP 升级状态机（RunUpgradeAsync 重写+接线+加载指令+断电回退+归一化） | Views/FirmwareUpgradeView.xaml.cs、MainWindow.xaml.cs（桥接复用） | 未开始 |
 | E | SOC 参数适配（默认 60/61、start<stop 交叉校验、三处文案） | MainWindow.xaml:852-876、MainWindow.xaml.cs:92-94/421-440/3215 | 未开始 |
@@ -40,6 +40,31 @@
 ---
 
 ## 更新记录
+
+### 2026年09月21日（更新2）
+
+**更新内容**
+
+待办 B：新增 `OpenBltXcpClient`——XCP over RS485 主机端。帧重组器 `[len][payload]`（len∈[1,129]、整帧首字节起 200ms 超时忠实镜像 rs232.c:248/297、错误帧 [FE xx] 豁免 expectedLen 过滤）；9 个命令方法（Connect/Synch/SetMta/ProgramStart/ProgramClear/Program/ProgramMax/ProgramReset/Upload）逐条对照 Boot-For-FCU xcp.c 带行号注释；锁+Monitor.Wait 线程模型对齐 BlUpgradeClient；ProtocolConstants 新增 OpenBLT XCP 常量段（命令码/错误码/超时/BL 波特率 57600，APP 侧复用 DEFAULT_BAUD_RATE）。
+审查发现并修复 2 个真 bug：①接收缓冲差一字节（129B 满帧 Upload(128) 越界，+1 分配 130B）②错误帧被 expectedLen=1 命令当迟到帧丢弃（显式错误全部误报超时）。复审另纠正 Synch 判定注释（应 !Timeout && Data.Length==2，Ok 恒 false）与帧空闲语义（改回首字节基准）。
+验证：主工程编译 0 警告 0 错误；模拟 BL 应答器自测 19 用例全过（逐命令帧字节比对/小端地址长度/错误帧/迟到帧/半帧间隙/len 越界/超时/参数防御/PROGRAM_RESET 双路径/Upload(128) 满帧 129B 回归）。
+
+**涉及位置**
+
+- FCU 氢燃料电池控/Protocol/OpenBltXcpClient.cs（新增）
+- FCU 氢燃料电池控/Protocol/ProtocolConstants.cs（新增 XCP 常量 region，+82 行，其余未动）
+
+**对应待办**
+
+- B
+
+**审查结果**
+
+第 1 轮不通过（阻塞：_rxBuf 差一字节）→ 修复 → 第 2 轮新 Reviewer 复审通过（零阻塞）。建议项全部落实：Upload 参数防御、SendData 失败注释、Synch 判定注释、帧空闲首字节基准、Upload 下界措辞。
+
+**Git Commit**
+
+feat(B): OpenBLT XCP客户端，9命令+帧重组器，修复缓冲越界与错误帧误报
 
 ### 2026年09月21日（更新1）
 
