@@ -58,6 +58,20 @@ namespace FCU_氢燃料电池控.Services
         /// </summary>
         public Func<bool>? IsAa55Idle { get; set; }
 
+        /// <summary>
+        /// 上位机自身 AA55 请求是否在途的判定回调（由 MainWindow 注入 _awaitingStackInfo）。
+        /// [审查修复 P1②] 静默+空闲两条件看不到"请求已发出、响应未回来"的窗口：
+        /// 0x07 发出后约 48ms 内 0x87 响应占线，此窗口内发 Modbus 请求会与 FCU 发送相撞
+        /// （双端同时驱动 RS485，双帧俱毁）。未注入(null)时跳过该条件。
+        /// </summary>
+        public Func<bool>? IsAa55RequestInFlight { get; set; }
+
+        /// <summary>
+        /// BMS 事务是否在途（含响应等待与 30ms 重试挂起）。
+        /// [审查修复 P1②] 供电堆信息轮询发送前反查，避免两个方向的碰撞窗口。
+        /// </summary>
+        public bool IsBusy => _state != State.Idle || _retryTimer != null;
+
         /// <summary>最新一帧解析结果</summary>
         public BmsData Data { get; } = new BmsData();
 
@@ -227,11 +241,30 @@ namespace FCU_氢燃料电池控.Services
             RequestRead();   // 立即读一次
         }
 
-        /// <summary>停止自动轮询</summary>
+        /// <summary>
+        /// 停止自动轮询。彻底复位: 响应/重试定时器与状态机一并停止,
+        /// 防断开/进升级后 300ms 内仍弹出陈旧的"BMS 响应超时"提示;
+        /// Online 与超时计数同步复位, 防跨会话残留(上个会话末次的离线态带入下个会话)。
+        /// [审查修复 P1②/P3]
+        /// </summary>
         public void StopPolling()
         {
             _pollTimer?.Stop();
             _pollTimer = null;
+            // 写在途被停时给 UI 一条明确反馈, 避免"MOS 写入结果未知"静默丢弃 (审查建议)
+            if (_state == State.WaitingWrite)
+            {
+                StopResponseTimer();
+                _pendingWriteReq = null;
+                MosWriteCompleted?.Invoke(false, "轮询已停止, MOS 写入结果未知");
+            }
+            StopResponseTimer();
+            _retryTimer?.Stop();
+            _retryTimer = null;
+            _state = State.Idle;
+            _pendingWriteReq = null;
+            _timeoutCount = 0;
+            Data.Online = false;
         }
 
         /// <summary>手动读取一次</summary>
@@ -337,6 +370,13 @@ namespace FCU_氢燃料电池控.Services
 
             // AA55 半接收状态下发 Modbus 请求，会让那一帧 AA55 吃进异物而 CRC 失败
             if (IsAa55Idle != null && !IsAa55Idle())
+            {
+                return false;
+            }
+
+            // [审查修复 P1②] 上位机自身 AA55 请求在途（0x07 已发未收）: 响应占线窗口内
+            // 发 Modbus 请求会与 FCU 的 0x87 发送相撞
+            if (IsAa55RequestInFlight != null && IsAa55RequestInFlight())
             {
                 return false;
             }

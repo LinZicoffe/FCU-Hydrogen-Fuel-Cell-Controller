@@ -205,6 +205,9 @@ namespace FCU_氢燃料电池控
             _bmsService = new BmsService(serialPortManager);
             // 总线仲裁第二条件: 与固件 fcu_modbus.c 对齐，AA55 半接收状态下不插入 Modbus 请求
             _bmsService.IsAa55Idle = () => _protocolHandler?.IsIdle ?? true;
+            // 总线仲裁第三条件 [审查修复 P1②]: 自身 0x07 在途(已发未收 0x87)期间不插入 Modbus 请求,
+            // 否则会与 FCU 的响应发送相撞——"总线静默"只看收, 看不到自己刚发出的请求
+            _bmsService.IsAa55RequestInFlight = () => _awaitingStackInfo;
             _bmsService.DataUpdated += OnBmsDataUpdated;
             _bmsService.StatusChanged += msg => Dispatcher.Invoke(() => UpdateStatus(msg));
             _bmsService.ErrorOccurred += msg => Dispatcher.Invoke(() => { HC.Growl.Warning(msg); UpdateStatus(msg); });
@@ -1116,9 +1119,20 @@ namespace FCU_氢燃料电池控
                     _stackInfoMissCount = 0;
                 }
 
+                // [审查修复 P1②] BMS 事务在途(响应等待/重试挂起)时本轮跳过:
+                // 0x07 与 Modbus 请求相撞双帧俱毁; 跳过轮不置 _awaitingStackInfo
+                // (上一轮在途未答的 miss 已在上方统计块累计)
+                if (_bmsService?.IsBusy == true)
+                    return;
+
                 byte[] frame = BuildReadFrame(deviceAddress, ProtocolConstants.FUNC_READ_STACK_INFO);
                 _awaitingStackInfo = true;
-                SendFrame(frame);
+                if (!SendFrame(frame))
+                {
+                    // 发送失败(串口瞬态写失败/拔线)时回滚在途标志,
+                    // 防两个轮询互相卡死到用户干预 (审查建议)
+                    _awaitingStackInfo = false;
+                }
             }
             catch
             {
