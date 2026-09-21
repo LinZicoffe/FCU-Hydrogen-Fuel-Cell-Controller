@@ -25,7 +25,7 @@
 | F | 压力参数默认值适配（100/35/65+ToolTip） | ViewModels/MainViewModel.cs:268-277、MainWindow.xaml:492/541/560 | 已完成 |
 | G | 锁定系数置灰（死参数透传+回读缓存） | MainWindow.xaml:1357-1362、MainWindow.xaml.cs:97-99/1658-1700/3466-3487 | 已完成 |
 | H | 时序表默认值与回读适配（0.75s/第15行清空/count动态/回读清空） | MainWindow.xaml:1304/1307/1330-1335、MainWindow.xaml.cs:1549-1611/2024-2118/3463-3510/4395-4432/4528-4566 | 已完成 |
-| I | 拉载手动命令 Growl 反馈（0x0504 专用处理器+在途互斥+超时） | MainWindow.xaml.cs:2049-2076/2447-2450、新增 HandleLoadManualResponse | 未开始 |
+| I | 拉载手动命令 Growl 反馈（0x0504 专用处理器+在途互斥+超时） | MainWindow.xaml.cs（SendLoadControlCommand/HandleLoadManualResponse/超时定时器/五处互斥/八处理器） | 已完成 |
 
 ## 已知风险
 
@@ -39,10 +39,34 @@
 3. 文案统一类小项（待办 F 审查建议）：ParsePressureField 字段名"高压最小值"改"高压启动门槛"；高压上限 ToolTip"建议初值 5000"改"固件默认 5000"措辞
 4. 死代码清理（待办 G 审查建议）：MainWindow.xaml.cs:1614-1659 五个未绑定 XAML 的孤儿按钮 handler（btn_SetLoadLockFactor_Click 等，先于本任务存在）
 5. 方案页量纲错配（待办 H 审查发现，预先存在非本次引入）：配方框显示原始值（0.1A 整数），应用时复用的 TryParseLoadSequences 按显示值×10 解析——预设配方电流>50 的行超范围报错、≤50 的行按 10 倍放大发送；需独立待办统一方案页量纲
+6. 0x04 类互斥为单向（待办 I 审查建议不采纳根治）：0x0501/02/03 自身无在途跟踪，毫秒级往返窗口内抢点 0x0504 可能误归属一次 Growl（真实结果仍会显示）；根治方案（发送时间戳间隔 ≥500ms）留待后续
 
 ---
 
 ## 更新记录
+
+### 2026年09月21日（更新9）
+
+**更新内容**
+
+待办 I（实施文档步骤 8/B5）：拉载手动命令弹窗级反馈。SendLoadControlCommand 记录 _pendingLoadManualCmd + 5s DispatcherTimer 超时（pending+超时模式）；0x82 分发路由 HandleLoadManualResponse——接收线程快照 pending（防 5s 边界空名 Growl），有暂存走专用处理器（成功 Growl.Success 含指令名/失败 Growl.Error 含错误码中文，0x03 追加"电堆需处于运行状态"对齐固件 RUNNING 门/超时 Growl.Warning），无暂存回落 HandleSetParamResponse；五个 0x04 发送点全部加在途互斥（防 0x82 无回显误路由）；八个按钮处理器按 SendLoadControlCommand 返回值条件化"已发送"提示；断开与 OnClosed 清 pending/停表。
+验证：编译 0 警告 0 错误；成功/失败/超时三路径经审查员代码走查闭合，固件 0x82/0x03/cmd 0x10-0x17/错误码表逐项对照一致。
+
+**涉及位置**
+
+- MainWindow.xaml.cs：字段（_pendingLoadManualCmd/_loadManualResponseTimeoutTimer）、定时器四件套、SendLoadControlCommand（返回 bool）、GetLoadCommandDescription、HandleLoadManualResponse、0x82 分发、五处互斥、八处理器、OnSerialConnectionChanged/OnClosed 清理
+
+**对应待办**
+
+- I
+
+**审查结果**
+
+第 1 轮不通过（配方页第五发送点漏互斥）→ 修复 + 三建议落实（OnClosed 清理、快照模式、假状态提示）→ 第 2 轮新 Reviewer 通过（零阻塞，五点互斥覆盖经 grep 全量确认）。不采纳：单向互斥毫秒级窗口的根治（发送时间戳方案，记入"其他"）。
+
+**Git Commit**
+
+feat(I): 拉载手动命令Growl反馈——0x0504专用处理器+五点在途互斥+超时提示
 
 ### 2026年09月21日（更新8）
 

@@ -97,6 +97,11 @@ namespace FCU_氢燃料电池控
         /// <summary>0x0502 lock_coefficient(单位0.001)透传缓存：固件保留字段，控件置灰，
         /// 写入时按回读值原样回传（初值 900=固件默认，回读时更新，依据 fcu_protocol.h 保留字段注释）</summary>
         private ushort _lastLockFactor0P001 = 900;
+
+        /// <summary>待确认的 0x0504 拉载手动指令名（null=无在途指令）；0x82 响应据此路由到专用处理器</summary>
+        private string? _pendingLoadManualCmd;
+        private DispatcherTimer? _loadManualResponseTimeoutTimer;
+        private const int LoadManualResponseTimeoutSeconds = 5;
         private SocParams? _pendingSocWrite;
         private byte? _pendingSocWriteDeviceAddress;
         private string? _pendingSocWritePortName;
@@ -183,6 +188,7 @@ namespace FCU_氢燃料电池控
             InitializePollingTimer();
             InitializeSocResponseTimeoutTimer();
             InitializeFanManualResponseTimeoutTimer();
+            InitializeLoadManualResponseTimeoutTimer();
 
             // BMS Modbus 主站服务初始化 [上位机优化计划 h-t4]
             _bmsService = new BmsService(serialPortManager);
@@ -632,6 +638,8 @@ namespace FCU_氢燃料电池控
                 ResetBmsDisplay();
                 _pendingFanManualEnable = null;
                 StopFanManualResponseTimeout();
+                _pendingLoadManualCmd = null;
+                StopLoadManualResponseTimeout();
                 if (!_socWriteReadbackPending)
                 {
                     bool hadUnconfirmedSocWrite = _pendingSocWrite != null;
@@ -756,6 +764,44 @@ namespace FCU_氢燃料电池控
             tbk_FanManualMode.Text = "未收到FCU确认（固件可能不支持0x0F或链路异常），当前风扇模式未知";
             tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
             UpdateStatus("风扇手动控制响应超时");
+        }
+
+        /// <summary>
+        /// 0x0504 拉载手动控制单次超时计时器；响应到达、断线或窗口关闭时立即停止。
+        /// </summary>
+        private void InitializeLoadManualResponseTimeoutTimer()
+        {
+            _loadManualResponseTimeoutTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(LoadManualResponseTimeoutSeconds)
+            };
+            _loadManualResponseTimeoutTimer.Tick += LoadManualResponseTimeoutTimer_Tick;
+        }
+
+        private void StartLoadManualResponseTimeout()
+        {
+            _loadManualResponseTimeoutTimer?.Stop();
+            _loadManualResponseTimeoutTimer?.Start();
+        }
+
+        private void StopLoadManualResponseTimeout()
+        {
+            _loadManualResponseTimeoutTimer?.Stop();
+        }
+
+        private void LoadManualResponseTimeoutTimer_Tick(object? sender, EventArgs e)
+        {
+            StopLoadManualResponseTimeout();
+
+            if (_pendingLoadManualCmd == null)
+            {
+                return;
+            }
+
+            string cmd = _pendingLoadManualCmd;
+            _pendingLoadManualCmd = null;
+            UpdateStatus($"拉载指令[{cmd}]响应超时");
+            HC.Growl.Warning($"拉载指令[{cmd}] {LoadManualResponseTimeoutSeconds} 秒内未收到FCU确认，执行结果未知（请检查链路或查看设备状态）");
         }
 
         private void SocResponseTimeoutTimer_Tick(object? sender, EventArgs e)
@@ -1559,6 +1605,13 @@ namespace FCU_氢燃料电池控
                     return;
                 }
 
+                /* 0x0504 在途期间互斥其他 0x04 类发送 (0x82 无子命令回显, 防误路由) */
+                if (_pendingLoadManualCmd != null)
+                {
+                    HC.Growl.Warning($"拉载指令[{_pendingLoadManualCmd}]仍在等待FCU响应，暂不发送时序参数");
+                    return;
+                }
+
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
 
                 TextBox[] currentBoxes = {
@@ -1670,6 +1723,13 @@ namespace FCU_氢燃料电池控
                     return;
                 }
 
+                /* 0x0504 在途期间互斥其他 0x04 类发送 (0x82 无子命令回显, 防误路由) */
+                if (_pendingLoadManualCmd != null)
+                {
+                    HC.Growl.Warning($"拉载指令[{_pendingLoadManualCmd}]仍在等待FCU响应，暂不发送{paramName}");
+                    return;
+                }
+
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
 
                 /* lock_coefficient 为固件保留字段(最大功率锁定不再乘系数, fcu_protocol.h 注释):
@@ -1749,6 +1809,13 @@ namespace FCU_氢燃料电池控
                 if (!_isSerialOpen)
                 {
                     HC.Growl.Warning("请先打开串口");
+                    return;
+                }
+
+                /* 0x0504 在途期间互斥其他 0x04 类发送 (0x82 无子命令回显, 防误路由) */
+                if (_pendingLoadManualCmd != null)
+                {
+                    HC.Growl.Warning($"拉载指令[{_pendingLoadManualCmd}]仍在等待FCU响应，暂不发送{paramName}");
                     return;
                 }
 
@@ -2110,18 +2177,27 @@ namespace FCU_氢燃料电池控
         #region 拉载手动控制
 
         /// <summary>
-        /// 发送拉载手动控制指令
+        /// 发送拉载手动控制指令。
+        /// 固件对 0x04 类请求统一回 0x82（fcu_protocol.c fcu_handle_set_load_params 响应尾），
+        /// 0x82 不回显子命令码——用"最后发送的 0x0504 指令名"关联响应；在途期间互斥其他 0x04 类发送，消除误路由。
         /// </summary>
         /// <param name="commandCode">控制指令码</param>
         /// <param name="commandParams">指令参数（可为null）</param>
-        private void SendLoadControlCommand(byte commandCode, byte[]? commandParams = null)
+        /// <returns>是否已实际发出（false=未开串口/在途互斥/构造失败，调用方不应提示"已发送"）</returns>
+        private bool SendLoadControlCommand(byte commandCode, byte[]? commandParams = null)
         {
             try
             {
                 if (!_isSerialOpen)
                 {
                     HC.Growl.Warning("请先打开串口");
-                    return;
+                    return false;
+                }
+
+                if (_pendingLoadManualCmd != null)
+                {
+                    HC.Growl.Warning($"拉载指令[{_pendingLoadManualCmd}]仍在等待FCU响应，请稍候再发下一条");
+                    return false;
                 }
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
@@ -2135,12 +2211,72 @@ namespace FCU_氢燃料电池控
                     Array.Copy(commandParams, 0, data, 3, paramLen);
 
                 byte[] frame = BuildFrame(deviceAddress, ProtocolConstants.FUNC_SET_LOAD_PARAMS, data);
+
+                _pendingLoadManualCmd = GetLoadCommandDescription(commandCode);
+                StartLoadManualResponseTimeout();
                 SendFrame(frame);
+                return true;
             }
             catch (Exception ex)
             {
+                _pendingLoadManualCmd = null;
+                StopLoadManualResponseTimeout();
                 HC.Growl.Error($"拉载控制指令发送失败: {ex.Message}");
+                return false;
             }
+        }
+
+        /// <summary>拉载手动指令码 → 中文名（Growl/超时提示用）</summary>
+        private static string GetLoadCommandDescription(byte commandCode) => commandCode switch
+        {
+            ProtocolConstants.LOAD_CMD_START => "启动拉载",
+            ProtocolConstants.LOAD_CMD_PAUSE => "暂停拉载",
+            ProtocolConstants.LOAD_CMD_RESUME => "继续拉载",
+            ProtocolConstants.LOAD_CMD_STOP => "停止拉载",
+            ProtocolConstants.LOAD_CMD_JUMP_SEQUENCE => "跳转时序",
+            ProtocolConstants.LOAD_CMD_SET_CURRENT => "设置目标电流",
+            ProtocolConstants.LOAD_CMD_STEP => "单步执行",
+            ProtocolConstants.LOAD_CMD_RESET => "重置拉载",
+            _ => $"未知指令(0x{commandCode:X2})"
+        };
+
+        /// <summary>
+        /// 处理 0x0504 拉载手动控制的 0x82 响应（pending+超时模式）。
+        /// 固件 0x0504 新语义（beforepined@51bf7e2 fcu_protocol.c:981-1030）：
+        /// 仅 RUNNING 状态接受（STARTING 拒 0x03），八条命令返回真实错误码——弹窗级反馈呈现。
+        /// 无在途 0x0504 指令时回落通用 HandleSetParamResponse（0x82 还承载 0x0501/0x0502/0x0503 的设置结果）。
+        /// </summary>
+        private void HandleLoadManualResponse(byte[] frame)
+        {
+            if (_pendingLoadManualCmd == null)
+            {
+                HandleSetParamResponse(frame);
+                return;
+            }
+
+            byte result = ResponseParser.ParseSetParamResponse(frame);
+            /* 在接收线程快照 pending（改进自风扇模式）：防 5s 边界处 Tick 先清 pending、
+             * Invoke 内读到 null 产生"拉载指令[]已执行"空名 Growl */
+            string cmd = _pendingLoadManualCmd;
+            Dispatcher.Invoke(() =>
+            {
+                StopLoadManualResponseTimeout();
+                _pendingLoadManualCmd = null;
+
+                if (result == ProtocolConstants.ERR_SUCCESS)
+                {
+                    UpdateStatus($"拉载指令[{cmd}]执行成功");
+                    HC.Growl.Success($"拉载指令[{cmd}]已执行");
+                    return;
+                }
+
+                string error = ProtocolConstants.GetErrorCodeDescription(result);
+                /* 0x03 设备忙: 固件 load_manual 状态门为仅 RUNNING, STARTING 等状态均拒 0x03 */
+                if (result == ProtocolConstants.ERR_DEVICE_BUSY)
+                    error += "（电堆需处于运行状态）";
+                UpdateStatus($"拉载指令[{cmd}]失败: {error}");
+                HC.Growl.Error($"拉载指令[{cmd}]失败：{error}");
+            });
         }
 
         /// <summary>
@@ -2148,8 +2284,8 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void btn_LoadStart_Click(object sender, RoutedEventArgs e)
         {
-            SendLoadControlCommand(ProtocolConstants.LOAD_CMD_START);
-            UpdateStatus("已发送启动拉载指令");
+            if (SendLoadControlCommand(ProtocolConstants.LOAD_CMD_START))
+                UpdateStatus("已发送启动拉载指令");
         }
 
         /// <summary>
@@ -2157,8 +2293,8 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void btn_LoadPause_Click(object sender, RoutedEventArgs e)
         {
-            SendLoadControlCommand(ProtocolConstants.LOAD_CMD_PAUSE);
-            UpdateStatus("已发送暂停拉载指令");
+            if (SendLoadControlCommand(ProtocolConstants.LOAD_CMD_PAUSE))
+                UpdateStatus("已发送暂停拉载指令");
         }
 
         /// <summary>
@@ -2166,8 +2302,8 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void btn_LoadResume_Click(object sender, RoutedEventArgs e)
         {
-            SendLoadControlCommand(ProtocolConstants.LOAD_CMD_RESUME);
-            UpdateStatus("已发送继续拉载指令");
+            if (SendLoadControlCommand(ProtocolConstants.LOAD_CMD_RESUME))
+                UpdateStatus("已发送继续拉载指令");
         }
 
         /// <summary>
@@ -2175,8 +2311,8 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void btn_LoadStop_Click(object sender, RoutedEventArgs e)
         {
-            SendLoadControlCommand(ProtocolConstants.LOAD_CMD_STOP);
-            UpdateStatus("已发送停止拉载指令");
+            if (SendLoadControlCommand(ProtocolConstants.LOAD_CMD_STOP))
+                UpdateStatus("已发送停止拉载指令");
         }
 
         /// <summary>
@@ -2187,8 +2323,8 @@ namespace FCU_氢燃料电池控
             try
             {
                 byte sequence = byte.Parse(tbx_JumpSequence.Text);
-                SendLoadControlCommand(ProtocolConstants.LOAD_CMD_JUMP_SEQUENCE, new byte[] { sequence });
-                UpdateStatus($"已发送跳转到时序{sequence}指令");
+                if (SendLoadControlCommand(ProtocolConstants.LOAD_CMD_JUMP_SEQUENCE, new byte[] { sequence }))
+                    UpdateStatus($"已发送跳转到时序{sequence}指令");
             }
             catch (Exception ex)
             {
@@ -2209,8 +2345,8 @@ namespace FCU_氢燃料电池控
                     return;
                 }
                 byte[] paramData = new byte[] { (byte)(current >> 8), (byte)(current & 0xFF) };
-                SendLoadControlCommand(ProtocolConstants.LOAD_CMD_SET_CURRENT, paramData);
-                UpdateStatus($"已发送设置目标电流{(current / 10.0):F1}A指令");
+                if (SendLoadControlCommand(ProtocolConstants.LOAD_CMD_SET_CURRENT, paramData))
+                    UpdateStatus($"已发送设置目标电流{(current / 10.0):F1}A指令");
             }
             catch (Exception ex)
             {
@@ -2223,8 +2359,8 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void btn_LoadStep_Click(object sender, RoutedEventArgs e)
         {
-            SendLoadControlCommand(ProtocolConstants.LOAD_CMD_STEP);
-            UpdateStatus("已发送单步执行指令");
+            if (SendLoadControlCommand(ProtocolConstants.LOAD_CMD_STEP))
+                UpdateStatus("已发送单步执行指令");
         }
 
         /// <summary>
@@ -2232,8 +2368,8 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void btn_LoadReset_Click(object sender, RoutedEventArgs e)
         {
-            SendLoadControlCommand(ProtocolConstants.LOAD_CMD_RESET);
-            UpdateStatus("已发送重置拉载指令");
+            if (SendLoadControlCommand(ProtocolConstants.LOAD_CMD_RESET))
+                UpdateStatus("已发送重置拉载指令");
         }
 
         #endregion
@@ -2512,8 +2648,8 @@ namespace FCU_氢燃料电池控
                         HandleSerialNumberResponse(frame);
                         break;
 
-                    case 0x82: // FCU参数设置响应
-                        HandleSetParamResponse(frame);
+                    case 0x82: // FCU参数设置响应(0x04 类统一响应码; 有在途 0x0504 指令时走专用处理器)
+                        HandleLoadManualResponse(frame);
                         break;
 
                     case 0x87: // FCU电堆信息响应
@@ -4103,6 +4239,11 @@ namespace FCU_氢燃料电池控
                 _fanManualResponseTimeoutTimer.Stop();
                 _fanManualResponseTimeoutTimer.Tick -= FanManualResponseTimeoutTimer_Tick;
             }
+            if (_loadManualResponseTimeoutTimer != null)
+            {
+                _loadManualResponseTimeoutTimer.Stop();
+                _loadManualResponseTimeoutTimer.Tick -= LoadManualResponseTimeoutTimer_Tick;
+            }
 
             if (_viewModel != null)
             {
@@ -4417,6 +4558,13 @@ namespace FCU_氢燃料电池控
                 if (!_isSerialOpen)
                 {
                     HC.Growl.Warning("请先打开串口");
+                    return;
+                }
+
+                /* 0x0504 在途期间互斥其他 0x04 类发送 (0x82 无子命令回显, 防误路由) */
+                if (_pendingLoadManualCmd != null)
+                {
+                    HC.Growl.Warning($"拉载指令[{_pendingLoadManualCmd}]仍在等待FCU响应，暂不应用配方");
                     return;
                 }
 
