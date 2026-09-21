@@ -489,7 +489,7 @@
                                             <TextBox Grid.Column="0" Margin="4"
                                                  Text="{Binding HighPressureMin, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource StandardTextBoxStyle}"
-                                                 ToolTip="高压最小值，固件默认 300 KPA"/>
+                                                 ToolTip="高压启动门槛，固件默认 100 KPA（V1.2；高压≥此值才允许启动）"/>
                                             <TextBlock Grid.Column="1" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
 
@@ -538,7 +538,7 @@
                                             <TextBox Grid.Column="0" Margin="4"
                                                  Text="{Binding LowPressureMin, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource StandardTextBoxStyle}"
-                                                 ToolTip="低压下限值，固件默认 30 KPA"/>
+                                                 ToolTip="低压下限值，固件默认 35 KPA（V1.2）"/>
                                             <TextBlock Grid.Column="1" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
 
@@ -557,7 +557,7 @@
                                             <TextBox Grid.Column="0" Margin="4"
                                                  Text="{Binding LowPressureMax, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource StandardTextBoxStyle}"
-                                                 ToolTip="低压上限值，固件默认 80 KPA，须大于下限值。低压超出 [下限, 上限] 区间时禁止启动电堆"/>
+                                                 ToolTip="低压上限值，固件默认 65 KPA（V1.2），须大于下限值。低压超出 [下限, 上限] 区间时禁止启动电堆"/>
                                             <TextBlock Grid.Column="1" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
 

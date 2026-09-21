@@ -265,14 +265,14 @@ namespace FCU_氢燃料电池控.ViewModels
 
         #region 压力参数属性
 
-        // 默认值与下位机 fcu_protocol.c 的 g_pressure_params 保持一致。
-        // 注意：固件 fcu_protocol.h 的字段注释仍是旧版附录A的值(100/35/65)，以 .c 的实际初始化为准。
-        private string _highPressureMin = "300";      // 固件 [需求1.2] 高压最小值 300 KPA (原100)
+        // 默认值与下位机 fcu_protocol.c 的 g_pressure_params 保持一致
+        // (beforepined@51bf7e2 V1.2 值: high_min=100 / low_min=35 / low_max=65, 旧出厂组合 300/30/80 由固件 Flash 迁移)。
+        private string _highPressureMin = "100";      // 固件 V1.2 高压启动门槛 100 KPA
         private string _highPressureRed = "250";
         private string _highPressureYellow = "500";
         private string _highPressureMax = "5000";
-        private string _lowPressureMin = "30";        // 固件 [需求2.3] 低压下限值 30 KPA (原35)
-        private string _lowPressureMax = "80";        // 固件 [需求2.3] 低压上限值 80 KPA (原65)
+        private string _lowPressureMin = "35";        // 固件 V1.2 低压下限 35 KPA
+        private string _lowPressureMax = "65";        // 固件 V1.2 低压上限 65 KPA
         private string _highPressureRange = "5000";
         private string _lowPressureRange = "250";
 

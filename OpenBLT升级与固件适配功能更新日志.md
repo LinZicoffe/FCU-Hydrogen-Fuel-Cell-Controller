@@ -22,7 +22,7 @@
 | C | 升级页 UI 切换与旧路径下线（横幅/过滤器/BL_BAUD/死注释清理/占位提示） | Views/FirmwareUpgradeView.xaml(.cs) | 已完成 |
 | D | XCP 升级状态机（RunUpgradeAsync 重写+接线+加载指令+断电回退+归一化） | Views/FirmwareUpgradeView.xaml.cs、Protocol/ProtocolHandler.cs（BuildLoadBootloaderCommand） | 已完成 |
 | E | SOC 参数适配（默认 60/61、start<stop 交叉校验、三处文案） | MainWindow.xaml:841-898、MainWindow.xaml.cs:91-95/422-444/2738-2752/3188-3202/3220-3227、Models/ProtocolModels.cs | 已完成 |
-| F | 压力参数默认值适配（100/35/65+ToolTip） | ViewModels/MainViewModel.cs:270-277、MainWindow.xaml:492/541/560 | 未开始 |
+| F | 压力参数默认值适配（100/35/65+ToolTip） | ViewModels/MainViewModel.cs:268-277、MainWindow.xaml:492/541/560 | 已完成 |
 | G | 锁定系数置灰（死参数透传+回读缓存） | MainWindow.xaml:1361、MainWindow.xaml.cs:1645-1697/3448-3454 | 未开始 |
 | H | 时序表默认值与回读适配（0.75s/第15行清空/count动态/回读清空） | MainWindow.xaml:1304/1307/1330-1331、MainWindow.xaml.cs:1536-1594/2007-2037/3417-3443/4331-4390 | 未开始 |
 | I | 拉载手动命令 Growl 反馈（0x0504 专用处理器+在途互斥+超时） | MainWindow.xaml.cs:2049-2076/2447-2450、新增 HandleLoadManualResponse | 未开始 |
@@ -36,10 +36,35 @@
 
 1. 范围外遗留：诊断用二补数预估日志（联调时按需实现）；版本号升级与安装包重打另行安排
 2. SrecFile 的 S5 记录数一致性校验（审查建议的增强项，不采纳实施，理由：非本待办要求，objcopy 产物截断场景已由行 checksum+占位字校验兜底）
+3. 文案统一类小项（待办 F 审查建议）：ParsePressureField 字段名"高压最小值"改"高压启动门槛"；高压上限 ToolTip"建议初值 5000"改"固件默认 5000"措辞
 
 ---
 
 ## 更新记录
+
+### 2026年09月21日（更新6）
+
+**更新内容**
+
+待办 F（实施文档步骤 5/B2）：压力参数 UI 默认值对齐固件 V1.2——_highPressureMin 300→100、_lowPressureMin 30→35、_lowPressureMax 80→65（固件 fcu_protocol.c:68/72/73）；三处 ToolTip 同步（高压改"启动门槛"语义：≥此值才允许启动，对照 fcu_control.c:439/783 用法）。回读链路（0x0101→UpdateViewModelPressureParams）未动，设备实际值仍覆盖默认展示。
+验证：编译 0 警告 0 错误；全 XAML/C# 无压力旧值残留（审查员独立核对，区分占空比 30%/超时 300ms 等无关项）。
+
+**涉及位置**
+
+- ViewModels/MainViewModel.cs:268-277（默认值+注释）
+- MainWindow.xaml:492/541/560（ToolTip）
+
+**对应待办**
+
+- F
+
+**审查结果**
+
+通过（第 1 轮，独立 Reviewer 零阻塞；数值逐条对照 fcu_protocol.c 源码核验）。建议不采纳 2 条（"高压最小值"字段名与"建议初值"措辞统一——文案统一类，记入"其他"防范围蔓延）。
+
+**Git Commit**
+
+feat(F): 压力默认值对齐固件V1.2——100/35/65+启动门槛语义ToolTip
 
 ### 2026年09月21日（更新5）
 
