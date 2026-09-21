@@ -7,20 +7,20 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using FCU_氢燃料电池控.Models;
 using FCU_氢燃料电池控.Protocol;
-using FCU_氢燃料电池控.Services;
 
 namespace FCU_氢燃料电池控.Views
 {
     /// <summary>
-    /// 固件升级页 交互逻辑
-    /// 升级流程 S0~S9 与超时/重试档位依据:
-    ///   docs/03-设计方案/FCU-RS485-Bootloader在线升级设计方案.md §4.4
-    /// 线程模型: 按钮事件(UI线程) → Task.Run 后台执行, UI 更新经 Dispatcher [设计 §4.1]
-    /// 创建日期: 2026-08-19
+    /// 固件升级页 交互逻辑 (OpenBLT XCP over RS485 @57600)
+    /// 依据: docs/实施步骤-OpenBLT升级与固件适配.md §4.3 状态机
+    ///   协议实现 Protocol/OpenBltXcpClient.cs (逐命令对照 Boot-For-FCU 源码)
+    ///   文件解析 Models/SrecFile.cs (地址窗 [0x08003000,0x0801F000) + 0x1D8 占位字强校验)
+    /// 线程模型: 按钮事件(UI线程) → Task.Run 后台执行, UI 更新经 Dispatcher
+    /// 创建日期: 2026-08-19 | 2026-09-21 重写为 OpenBLT 链路
     /// </summary>
     public partial class FirmwareUpgradeView : UserControl
     {
-        /// <summary>宿主(MainWindow)提供的升级期桥接接口 [设计 §4.2]</summary>
+        /// <summary>宿主(MainWindow)提供的升级期桥接接口</summary>
         public interface IBlHostBridge
         {
             /// <summary>串口是否已打开</summary>
@@ -33,41 +33,30 @@ namespace FCU_氢燃料电池控.Views
             bool ReopenSerial(int baudRate);
             /// <summary>发送 AA55 应用协议帧 (仅非升级模式可用, 走正常通道含日志)</summary>
             bool SendAppFrame(byte[] frame);
-            /// <summary>AA55 完整帧到达事件 (S1 前置检查 / S8 存活确认用)</summary>
+            /// <summary>AA55 完整帧到达事件 (前置检查 / 重启存活确认用)</summary>
             event Action<byte[]>? AppFrameReceived;
-            /// <summary>进入/退出升级模式 (互斥窗口: S1 末进入, S8 确认存活后退出 [设计 §4.2.2])</summary>
+            /// <summary>进入/退出升级模式 (互斥窗口: 前置检查末进入, 重启确认存活后退出)</summary>
             void SetBlMode(bool on);
             /// <summary>
-            /// 升级退出归一化 [设计 §4.4 退出规则]: APP 存活 → 走正常断开链路(0x0D en=1 归还 BMS 总线);
+            /// 升级退出归一化: APP 存活 → 走正常断开链路(0x0D en=1 归还 BMS 总线);
             /// APP 不存活(BL常驻) → 直接关串口。UI线程执行。
             /// </summary>
             void NormalizeExit(bool appAlive);
         }
 
-        private const int CHUNK_SIZE = 1024;
+        /// <summary>BL XCP 波特率 (Boot-For-FCU blt_conf.h:98 @2a3904b, 单一来源见 ProtocolConstants.XCP_BL_BAUD_RATE)</summary>
+        private const int BL_BAUD = ProtocolConstants.XCP_BL_BAUD_RATE;
 
-        /// <summary>
-        /// [beforepined 适配] 在线升级禁用开关。
-        /// 目标固件 beforepined 分支无 RS485 Bootloader（APP 链接于 0x08000000，占满 124K Flash，
-        /// 见固件 STM32G474CBTX_FLASH.ld），且功能码表仅定义到 0x10、无 0x11 进入升级命令
-        /// （见固件 App/Inc/fcu_protocol.h），S1.5 软进入与断电路径均无法连上 Bootloader。
-        /// 恢复方法：本字段置 false（并移除 XAML 顶部 tbk_UpgradeDisabledNotice 告示）。
-        /// （用 static readonly 而非 const，避免 const 常量传播触发 CS0162 不可达代码警告）
-        /// </summary>
-        private static readonly bool UpgradeDisabledForCurrentFirmware = true;
+        /// <summary>APP AA55 波特率 (固件 usart.c:42 = 9600, 复用 ProtocolConstants.DEFAULT_BAUD_RATE)</summary>
+        private const int APP_BAUD = ProtocolConstants.DEFAULT_BAUD_RATE;
 
-        /// <summary>BL 波特率: 板级 RS485 约束仅支持 9600 (BL/APP 同波特率, 固件 bl_uart.c BRR=26667)</summary>
-        private const int BL_BAUD = 9600;
-        private const int APP_BAUD = 9600;
-
-        private BlUpgradeClient _client = null!;
+        private OpenBltXcpClient _client = null!;
         private IBlHostBridge? _bridge;
-        private BlUpgFile? _pkg;
+        private SrecFile? _srecFile;
         private CancellationTokenSource? _cts;
         private volatile bool _busy;
-        private bool? _lastExitAppAlive;    /* 最近一次退出归一化的探活结果 [全量终审 P2] */
 
-        /// <summary>升级流程进行中 (含 S1~S9 与退出归一化全程), 供 MainWindow.OnClosing 关窗拦截 [全量终审 P2]</summary>
+        /// <summary>升级流程进行中 (含全流程与退出归一化全程), 供 MainWindow.OnClosing 关窗拦截</summary>
         public bool IsBusy => _busy;
         private byte[]? _appFrameWait;    /* AppFrameReceived 事件暂存 (lock 保护) */
         private readonly object _frameLock = new();
@@ -78,17 +67,15 @@ namespace FCU_氢燃料电池控.Views
         {
             InitializeComponent();
 
-            if (UpgradeDisabledForCurrentFirmware)
-            {
-                /* [beforepined 适配] 禁用升级入口，告示横幅见 XAML tbk_UpgradeDisabledNotice */
-                btn_Start.IsEnabled = false;
-            }
+            /* [步骤 3a 中间态] _cts/_busy 的赋值路径随 XCP 状态机在待办 D 恢复; 此处显式初始化消除 CS0649 */
+            _cts = null;
+            _busy = false;
         }
 
         /// <summary>由 MainWindow 在启动时注入串口管理器与宿主桥接</summary>
         public void Initialize(Managers.SerialPortManager serial, IBlHostBridge bridge)
         {
-            _client = new BlUpgradeClient(serial ?? throw new ArgumentNullException(nameof(serial)));
+            _client = new OpenBltXcpClient(serial ?? throw new ArgumentNullException(nameof(serial)));
             _bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
             _bridge.AppFrameReceived += OnAppFrame;
             _ui = new BrushesStub(this);
@@ -127,7 +114,7 @@ namespace FCU_氢燃料电池控.Views
             };
             public void StepState(int n, string state)
             {
-                /* 后台线程调用安全: 全部 UI 操作编组到 Dispatcher [批次2审查 P0] */
+                /* 后台线程调用安全: 全部 UI 操作编组到 Dispatcher */
                 _v.Dispatcher.BeginInvoke(() =>
                 {
                     var tb = Step(n);
@@ -144,8 +131,8 @@ namespace FCU_氢燃料电池控.Views
             {
                 string[] texts =
                 {
-                    "① 选择升级包并核对", "② 前置检查 (电堆关机 / BMS 总线接管)",
-                    "③ 进入 Bootloader (自动软复位; 旧固件需按提示断电重启)", "④ 擦除 / 写入 / 校验", "⑤ 重启验证"
+                    "① 选择固件文件并核对", "② 前置检查 (电堆关机 / BMS 总线接管)",
+                    "③ 进入 Bootloader (加载指令; 无应答按提示断电重启)", "④ 连机 / 擦除 / 写入 / 固化", "⑤ 重启验证"
                 };
                 var tbs = new[] { _v.tbk_Step1, _v.tbk_Step2, _v.tbk_Step3, _v.tbk_Step4, _v.tbk_Step5 };
                 for (int i = 0; i < 5; i++)
@@ -178,7 +165,7 @@ namespace FCU_氢燃料电池控.Views
             });
         }
 
-        /* ---------------- AA55 应用帧等待 (S1/S8) ---------------- */
+        /* ---------------- AA55 应用帧等待 (前置检查/存活确认) ---------------- */
 
         private void OnAppFrame(byte[] frame)
         {
@@ -231,47 +218,40 @@ namespace FCU_氢燃料电池控.Views
 
             var dlg = new Microsoft.Win32.OpenFileDialog
             {
-                Title = "选择 FCU 固件升级包",
-                Filter = "升级包 (*.upg)|*.upg|所有文件 (*.*)|*.*",
+                Title = "选择 FCU 固件 (OpenBLT S-record)",
+                Filter = "S-record 固件 (*.srec;*.s19;*.mot)|*.srec;*.s19;*.mot|所有文件 (*.*)|*.*",
             };
             if (dlg.ShowDialog() != true) return;
 
-            var pkg = BlUpgFile.TryLoad(dlg.FileName, out string error);
-            if (pkg == null)
+            var srec = SrecFile.TryLoad(dlg.FileName, out string error);
+            if (srec == null)
             {
+                tbk_FilePath.Text = "未选择";
                 tbk_PkgInfo.Text = $"包信息: 解析失败 - {error}";
-                _pkg = null;
+                _srecFile = null;
+                Log($"S-record 解析失败: {error}");
                 return;
             }
 
-            _pkg = pkg;
+            _srecFile = srec;
             tbk_FilePath.Text = dlg.FileName;
-            tbk_PkgInfo.Text = $"包信息: 版本 0x{pkg.FwVersion:X8} | 固件 {pkg.FwSize / 1024.0:F1} KB | " +
-                               (pkg.IsUidWildcard ? "UID: 不限设备(通配)" : $"UID: {BitConverter.ToString(pkg.TargetUid)}");
-            Log($"升级包加载成功: {Path.GetFileName(dlg.FileName)}, 固件 {pkg.FwSize}B, CRC32=0x{pkg.PayloadCrc32:X8}");
+            tbk_PkgInfo.Text = $"固件: {srec.Length / 1024.0:F1} KB @ 0x{srec.BaseAddress:X8}" +
+                               (srec.Warnings.Count > 0 ? $" | ⚠ {srec.Warnings.Count} 处间隙(0xFF 填充)" : string.Empty);
+            Log($"S-record 加载成功: {Path.GetFileName(dlg.FileName)}, 镜像 {srec.Length}B @ 0x{srec.BaseAddress:X8}");
+            foreach (var w in srec.Warnings) Log($"  ⚠ {w}");
         }
 
         private void BtnStart_Click(object sender, RoutedEventArgs e)
         {
-            /* [beforepined 适配] 防御性拦截：按钮已禁用，仍拦截程序化触发路径 */
-            if (UpgradeDisabledForCurrentFirmware)
-            {
-                MessageBox.Show(
-                    "在线升级已禁用：当前目标固件（beforepined 版本）无 RS485 Bootloader，也不支持 0x11 进入升级命令。\n" +
-                    "需为 FCU 烧录带 Bootloader 的固件（main/V5.2 及以上）后方可使用本功能。",
-                    "功能不可用", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
             if (_busy) return;
             if (_bridge == null)
             {
                 MessageBox.Show("页面未完成初始化", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
-            if (_pkg == null)
+            if (_srecFile == null)
             {
-                MessageBox.Show("请先选择有效的 .upg 升级包", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("请先选择有效的 S-record 固件文件 (.srec/.s19/.mot)", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
             if (!_bridge.IsSerialOpen)
@@ -282,422 +262,19 @@ namespace FCU_氢燃料电池控.Views
                 return;
             }
 
-            var confirm = MessageBox.Show(
-                $"即将开始固件升级 (版本 0x{_pkg.FwVersion:X8}, {_pkg.FwSize / 1024.0:F1} KB)。\n\n" +
-                "升级过程中: ① 电堆必须处于关机/故障状态 ② 设备当前固件支持时自动软复位进入升级（旧固件需按提示断电重新上电） ③ 请勿关闭程序或拔出串口\n\n确认开始?",
-                "固件升级", MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (confirm != MessageBoxResult.Yes) return;
-
-            _cts = new CancellationTokenSource();
-            var ct = _cts.Token;
-            _busy = true;
-            _ = Dispatcher.BeginInvoke(() =>
-            {
-                _ui.ResetSteps();
-                btn_Start.IsEnabled = false;
-                btn_Cancel.IsEnabled = true;
-                pbar_Progress.Value = 0;
-            });
-
-            Task.Run(() => RunUpgradeAsync(ct), ct);
+            /* [步骤 3a 中间态] XCP 升级状态机在下一待办 (D) 接入 */
+            MessageBox.Show("升级流程即将就绪：XCP 升级状态机正在接入中 (开发中间状态)。",
+                "固件升级", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private void BtnCancel_Click(object sender, RoutedEventArgs e)
         {
             if (!_busy) return;
-            /* 纳秒级理论竞态防御: Cancel 与 finally 的 Dispose 交叠时 ObjectDisposedException [终审2 P3] */
+            /* 纳秒级理论竞态防御: Cancel 与 finally 的 Dispose 交叠时 ObjectDisposedException */
             try { _cts?.Cancel(); }
             catch (ObjectDisposedException) { }
             Status("正在取消...");
             Log("用户请求取消");
-        }
-
-        /* ---------------- 升级主流程 S1~S9 [设计 §4.4] ---------------- */
-
-        private async Task RunUpgradeAsync(CancellationToken ct)
-        {
-            try
-            {
-                /* ---------- S1 前置检查 (9600, APP 协议) ---------- */
-                Status("S1 前置检查");
-                Log("S1: 前置检查 (电堆关机 / 连接状态)");
-                _ui.StepState(2, "active");
-
-                bool blResident = false;
-                var readInfo = BuildAppRequest(0x07);   /* 读电堆信息 */
-                byte[]? info = RequestAppFrame(readInfo, 0x87, 2000, ct);
-                if (info != null)
-                {
-                    if (info.Length < 6 || info[4] != 26)
-                    {
-                        throw new UpgradeException($"电堆状态应答长度异常 (LEN={info[4]})");
-                    }
-                    byte stackState = info[5];   /* 数据域首字节 = 工作状态 (0=OFF, 3=FAULT) */
-                    /* 与固件 0x11 接受域一致 [fcu_protocol.c fcu_handle_enter_iap]: 仅 OFF/FAULT 可升级;
-                     * FAULT 设备正是"靠升级修复"的目标场景, 固件 0x11 已为其做专门安全停机处理 */
-                    if (stackState != 0 && stackState != 3)
-                    {
-                        throw new UpgradeException($"电堆未处于可升级状态 (状态={stackState}), 仅关机(0)/故障(3)态接受升级, 请先关闭电堆");
-                    }
-                    Log($"S1: 电堆状态 = {stackState} ({(stackState == 0 ? "关机" : "故障")}) ✓");
-                }
-                else
-                {
-                    /* [全量终审 P0-1] 自救回退: 上次升级在 EraseApp 后失败时设备 BL 常驻
-                     * (仅 BL 协议应答, 0x07 永无应答), 0x07 永无应答 → 必须允许从这里直接续升,
-                     * 否则"重新执行升级即可修复"的承诺被 S1 硬门槛堵死 (485 级变砖)。 */
-                    Log($"S1: 0x07 无应答, 探测 Bootloader 常驻模式 ({BL_BAUD})...");
-                    _bridge!.SetBlMode(true);
-                    if (!_bridge.ReopenSerial(BL_BAUD))
-                    {
-                        throw new UpgradeException($"0x07 无应答且切换 {BL_BAUD} 失败, 请检查串口");
-                    }
-                    _client.Reset();
-
-                    var probe = _client.Request(BlProtocolHelper.Commands.GetUid, null, 500, expectedLen: 12);
-                    if (!(probe.Ok && probe.Data is { Length: 12 }))
-                    {
-                        await Task.Delay(300, ct);
-                        probe = _client.Request(BlProtocolHelper.Commands.GetUid, null, 500, expectedLen: 12);
-                    }
-
-                    if (probe.Ok && probe.Data is { Length: 12 })
-                    {
-                        blResident = true;
-                        Log("S1: 设备处于 Bootloader 常驻 (上次升级未完成), 跳过电堆检查直接续升");
-                    }
-                    else
-                    {
-                        _bridge.SetBlMode(false);
-                        _bridge.ReopenSerial(APP_BAUD);    /* 尽力恢复, 失败由用户手动处理 */
-                        throw new UpgradeException(
-                            $"设备无应答: 既非运行中的应用 (0x07), 也非 Bootloader ({BL_BAUD} GetUID)。\n" +
-                            "请检查供电/接线/设备地址后重试");
-                    }
-                }
-
-                /* ---------- S1.5 软复位进入 BL (0x11, 固件 V5.2 起支持; 旧固件无应答回退断电路径) ----------
-                 * APP 应答 0x91(错误码 0x00) 后约 50ms 安全停机+NVIC 复位进 BL 3s 同步窗口,
-                 * 免断电重启; BL 常驻路径 (info==null) 无 APP 可发, 跳过。 */
-                bool softEntered = false;
-                if (info != null)
-                {
-                    var iapReq = BuildAppRequest(ProtocolConstants.FUNC_ENTER_IAP, new byte[] { 0x01 });
-                    byte[]? iapResp = RequestAppFrame(iapReq, ProtocolConstants.RESP_ENTER_IAP, 1500, ct);
-                    if (iapResp != null && iapResp.Length >= 6 && iapResp[4] == 1)
-                    {
-                        byte iapErr = iapResp[5];
-                        if (iapErr == 0x00)
-                        {
-                            softEntered = true;
-                            Log("S1.5: 0x11 已确认, 设备将安全停机+软复位进 Bootloader (约 50ms) ✓");
-                        }
-                        else
-                        {
-                            throw new UpgradeException(
-                                $"设备拒绝进入升级 (0x91 错误码 0x{iapErr:X2}), 请确认电堆已关机 (OFF/FAULT 态才接受)");
-                        }
-                    }
-                    else
-                    {
-                        ct.ThrowIfCancellationRequested();   /* 区分取消与真无应答 */
-                        Log("S1.5: 0x11 无应答/发送失败 (固件可能不支持 0x11), 回退人工断电重启路径");
-                    }
-                }
-
-                if (!blResident)
-                {
-                    /* 进入升级模式互斥窗口 [设计 §4.2.2: S1 末启用] */
-                    _bridge!.SetBlMode(true);
-                    _client.Reset();
-
-                    if (!_bridge.ReopenSerial(BL_BAUD))
-                    {
-                        throw new UpgradeException($"切换串口到 {BL_BAUD} 失败");
-                    }
-                }
-                Log($"S1: 串口已切换 {BL_BAUD}, 进入升级模式");
-
-                /* ---------- S2 等待设备 (BL 常驻/0x11 软复位均免断电提示; 仅旧固件回退断电路径) ---------- */
-                _ui.StepState(2, "done");
-                _ui.StepState(3, "active");
-                if (blResident)
-                {
-                    Status("S2 连接 Bootloader 常驻设备");
-                    Log("S2: 设备已在升级模式, 直接获取 UID...");
-                }
-                else if (softEntered)
-                {
-                    Status("S2 连接 Bootloader (0x11 软复位)");
-                    Log("S2: 设备已软复位进 BL, 立即轮询 GetUID (3s 同步窗口)...");
-                }
-                else
-                {
-                    Status("S2 等待设备 (请断电重新上电)");
-                    Log("S2: 固件不支持 0x11 软进入, 请现在给 FCU 断电, 3 秒后重新上电 (30 秒内有效)");
-                }
-
-                byte[]? uid = null;
-                var s2Deadline = Environment.TickCount64 + 30_000;
-                /* 短超时(300ms)快探测 + 100ms 间隔 ≈ 400ms 周期, 保证 BL 上电 3s 同步窗口内 ≥2 次命中
-                 * [批次2审查 P1: 原 2s 超时使周期 2.2s, 窗口命中率仅 ~45%] */
-                while (Environment.TickCount64 < s2Deadline && !ct.IsCancellationRequested)
-                {
-                    var r = _client.Request(BlProtocolHelper.Commands.GetUid, null, 300, expectedLen: 12);
-                    if (r.Ok && r.Data is { Length: 12 })
-                    {
-                        uid = r.Data;
-                        break;
-                    }
-                    await Task.Delay(100, ct);
-                }
-                if (uid == null)
-                {
-                    throw ct.IsCancellationRequested
-                        ? new OperationCanceledException(ct)
-                        : new UpgradeException("30 秒内未收到 Bootloader 应答 (0x11 路径: 设备未按预期软复位进 BL; 断电路径: 请确认已按提示断电重新上电)");
-                }
-                string uidStr = BitConverter.ToString(uid);
-                _ = Dispatcher.BeginInvoke(() => tbk_DeviceUid.Text = uidStr);
-                Log($"S2: Bootloader 应答, UID = {uidStr}");
-                _ui.StepState(3, "done");
-
-                /* ---------- S3 校验 ---------- */
-                Status("S3 UID/版本校验");
-                if (!_pkg!.IsUidMatch(uid))
-                {
-                    throw new UpgradeException($"设备 UID 不匹配: 包目标 {BitConverter.ToString(_pkg.TargetUid)} / 设备 {uidStr}");
-                }
-                Log("S3: UID 匹配通过");
-
-                var ver = _client.GetVersion();
-                if (ver.Ok && ver.Data is { Length: 8 })
-                {
-                    uint fwVer = BitConverter.ToUInt32(ver.Data, 0);
-                    uint blVer = BitConverter.ToUInt32(ver.Data, 4);
-                    _ = Dispatcher.BeginInvoke(() => tbk_DeviceVer.Text = $"0x{fwVer:X8} (BL 0x{blVer:X8})");
-                    if (fwVer != 0xFFFFFFFF && fwVer > _pkg.FwVersion)
-                    {
-                        Log($"S3: 注意 - 设备当前版本 0x{fwVer:X8} 高于升级包 0x{_pkg.FwVersion:X8} (降级, 继续)");
-                    }
-                }
-                else
-                {
-                    Log("S3: 读取版本失败 (不影响升级, 继续)");
-                }
-
-                /* ---------- S4 擦除 ---------- */
-                _ui.StepState(4, "active");
-                Status("S4 擦除 APP 区");
-                Log("S4: EraseApp (0.6~1.2s)...");
-                var erase = _client.EraseApp();
-                if (!erase.Ok)
-                {
-                    throw new UpgradeException($"EraseApp 失败 (Status=0x{erase.Status:X2})");
-                }
-                Log("S4: 擦除完成");
-
-                /* ---------- S5 写入 ---------- */
-                Status("S5 写入固件");
-                var payload = _pkg.Payload;
-                int totalChunks = (payload.Length + CHUNK_SIZE - 1) / CHUNK_SIZE;
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                for (int i = 0; i < totalChunks; i++)
-                {
-                    ct.ThrowIfCancellationRequested();
-
-                    int len = Math.Min(CHUNK_SIZE, payload.Length - i * CHUNK_SIZE);
-                    var chunk = new byte[len];
-                    Array.Copy(payload, i * CHUNK_SIZE, chunk, 0, len);
-
-                    uint addr = BlProtocolHelper.APP_BASE + (uint)(i * CHUNK_SIZE);
-                    var w = _client.WriteChunk(addr, chunk);
-                    if (!w.Ok)
-                    {
-                        throw new UpgradeException(
-                            w.Status == BlProtocolHelper.Status.Fail
-                                ? $"写入块 {i + 1}/{totalChunks} 被拒绝 (Status=0x01, 目标非空), 须重新开始升级"
-                                : $"写入块 {i + 1}/{totalChunks} 超时/校验失败 (重试 3 次后放弃)");
-                    }
-
-                    long done = (long)(i + 1) * CHUNK_SIZE;
-                    Progress(Math.Min(done, payload.Length), payload.Length);
-                    if ((i & 0x0F) == 0)
-                    {
-                        double kbps = sw.ElapsedMilliseconds > 0
-                            ? Math.Min(done, payload.Length) / 1024.0 / sw.Elapsed.TotalSeconds : 0;
-                        Status($"S5 写入 {Math.Min(done, payload.Length) * 100 / payload.Length}% ({kbps:F1} KB/s)");
-                    }
-                }
-                Log($"S5: 写入完成, {payload.Length}B / {totalChunks} 块, 耗时 {sw.Elapsed.TotalSeconds:F1}s");
-
-                /* ---------- S6 校验 ---------- */
-                Status("S6 CRC32 校验");
-                Log("S6: Verify...");
-                var verify = _client.Verify((uint)payload.Length);
-                if (!verify.Ok && verify.Data == null)
-                {
-                    throw new UpgradeException("Verify 无应答/帧损坏 (超时), 请重新执行升级");
-                }
-                uint deviceCrc = (verify.Data is { Length: 4 })
-                    ? BitConverter.ToUInt32(verify.Data, 0) : 0u;
-                if (deviceCrc != _pkg.PayloadCrc32)
-                {
-                    throw new UpgradeException($"Verify CRC32 不匹配: 设备 0x{deviceCrc:X8} / 本地 0x{_pkg.PayloadCrc32:X8}, 请重新执行升级");
-                }
-                Log($"S6: CRC32 校验通过 (0x{deviceCrc:X8})");
-
-                /* ---------- S7 固化 + 复位 ---------- */
-                Status("S7 写 META 并复位");
-                var meta = _client.WriteMeta(_pkg.BuildWriteMetaData());
-                if (!meta.Ok)
-                {
-                    throw new UpgradeException($"WriteMeta 失败 (Status=0x{meta.Status:X2})");
-                }
-                Log("S7: META 固化完成, 发送 Reset");
-                _ui.StepState(4, "done");
-                _ui.StepState(5, "active");
-                _ = _client.ResetDevice();   /* 0x05 设备复位 (应答可能因复位发不全, 忽略结果) */
-                await Task.Delay(300, ct);   /* 等设备复位完成 */
-                _client.Reset();             /* 清接收状态机, 准备静默期 */
-
-                /* ---------- S8 静默 + 重启验证 ---------- */
-                Status("S8 重启验证");
-                Log("S8: 静默等待设备重启 (2s)...");
-                await Task.Delay(2000, ct);
-
-                /* 退出升级模式互斥窗口 [设计 §4.2.2: S8 末解除] */
-                _bridge!.SetBlMode(false);
-
-                if (!_bridge.ReopenSerial(APP_BAUD))
-                {
-                    throw new UpgradeException("切换串口回 9600 失败, 请手动重开串口");
-                }
-
-                bool alive = false;
-                var aliveDeadline = Environment.TickCount64 + 10_000;
-                var readSerial = BuildAppRequest(0x01);
-                while (Environment.TickCount64 < aliveDeadline && !ct.IsCancellationRequested)
-                {
-                    var resp = RequestAppFrame(readSerial, 0x81, 1500, ct);
-                    if (resp != null) { alive = true; break; }
-                    await Task.Delay(500, ct);
-                }
-
-                /* ---------- S9 完成 / 统一退出 ---------- */
-                if (alive)
-                {
-                    Log("S8: 新固件已启动 (0x81 序列号应答) ✓");
-                    _ui.StepState(5, "done");
-                    Status("升级成功");
-                    Log("S9: 升级成功 - 执行正常断开 (归还 BMS 总线)");
-                    _bridge.NormalizeExit(true);
-                    _ = Dispatcher.BeginInvoke(() => MessageBox.Show(
-                        $"固件升级成功!\n\n新版本: 0x{_pkg.FwVersion:X8} ({_pkg.FwSize / 1024.0:F1} KB)\n" +
-                        "串口已正常断开 (BMS 总线已归还 FCU), 重新打开串口即可继续使用。",
-                        "固件升级", MessageBoxButton.OK, MessageBoxImage.Information));
-                }
-                else
-                {
-                    throw new UpgradeException("设备 Reset 后 10s 内无应答 (0x81), 存活确认失败");
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                Log("升级已取消");
-                Status("已取消");
-                _ui.StepState(5, "fail");
-                await ExitNormalizationAsync();
-                if (_lastExitAppAlive == false)
-                {
-                    _ = Dispatcher.BeginInvoke(() => MessageBox.Show(
-                        "升级已取消, 设备停留在 Bootloader (无有效固件)。\n\n" +
-                        "处置: 重新执行一次完整升级即可修复 (会跳过电堆检查直接续升)。", "固件升级",
-                        MessageBoxButton.OK, MessageBoxImage.Warning));
-                }
-            }
-            catch (UpgradeException ex)
-            {
-                Log($"升级失败: {ex.Message}");
-                Status("升级失败");
-                await ExitNormalizationAsync();
-                /* 失败弹窗延迟到退出归一化之后(可附加设备真实状态), 编组 UI 线程
-                 * [全量终审 P2: 消除双重弹窗 + 修正 S8 失败但设备实际存活时的误导文案] */
-                string msg = ex.Message;
-                if (_lastExitAppAlive == false)
-                {
-                    msg += "\n\n设备当前停留在 Bootloader (无有效固件), 串口已关闭。\n" +
-                           "处置: 重新执行一次完整升级即可修复 (会跳过电堆检查直接续升); " +
-                           "若之前已到 S7 固化之后, 也可先断电重新上电尝试直接启动新固件。\n" +
-                           "注意: 若后续 FCU 不轮询 BMS, 请在 BMS 页面使用\"归还 BMS 总线\"按钮自救。";
-                }
-                _ = Dispatcher.BeginInvoke(() => MessageBox.Show(
-                    msg, "固件升级失败", MessageBoxButton.OK, MessageBoxImage.Warning));
-            }
-            catch (Exception ex)
-            {
-                Log($"升级异常: {ex}");
-                Status("异常终止");
-                await ExitNormalizationAsync();
-            }
-            finally
-            {
-                _busy = false;
-                var oldCts = _cts;
-                _cts = null;
-                oldCts?.Dispose();          /* [全量终审 P2] 连续升级的 CTS 释放 */
-                _ = Dispatcher.BeginInvoke(() =>
-                {
-                    btn_Start.IsEnabled = true;
-                    btn_Cancel.IsEnabled = false;
-                });
-            }
-        }
-
-        /// <summary>统一退出规则 [设计 §4.4]: 停发 → 静默 6s → 切 9600 → 探活 → 正常断开(归还总线)
-        /// 探活结果记录于 _lastExitAppAlive (true=APP存活已正常断开 / false=BL常驻已直接关串口 / null=未执行或重开失败),
-        /// 供 catch 块生成准确的用户提示 [全量终审 P2: 弹窗统一]</summary>
-        private async Task ExitNormalizationAsync()
-        {
-            _lastExitAppAlive = null;
-            try
-            {
-                if (_bridge == null) return;
-
-                Log("退出流程: 静默 6s (设备侧收帧超时复位)...");
-                await Task.Delay(6000);
-
-                _bridge.SetBlMode(false);
-                _client.Reset();   /* 清升级客户端接收缓冲 [批次2审查 P2] */
-
-                /* 9600 重开 (失败也继续, 让用户手动处理) */
-                if (!_bridge.ReopenSerial(APP_BAUD))
-                {
-                    Log("警告: 切回 9600 失败, 请手动重开串口");
-                    _bridge.NormalizeExit(false);
-                    return;
-                }
-
-                /* 探活: 设备可能仍处于 BL 常驻 (半写入态) */
-                var readSerial = BuildAppRequest(0x01);
-                var resp = RequestAppFrame(readSerial, 0x81, 1500, CancellationToken.None);
-                bool alive = resp != null;
-
-                if (alive)
-                {
-                    Log("设备 APP 存活 - 执行正常断开 (0x0D en=1 归还 BMS 总线)");
-                }
-                else
-                {
-                    Log("设备无 APP 应答 (可能停留在 Bootloader 常驻): 直接关闭串口; 重新执行升级可修复");
-                }
-                _lastExitAppAlive = alive;
-                _bridge.NormalizeExit(alive);
-            }
-            catch (Exception ex)
-            {
-                Log($"退出流程异常: {ex.Message}");
-            }
         }
 
         private sealed class UpgradeException : Exception

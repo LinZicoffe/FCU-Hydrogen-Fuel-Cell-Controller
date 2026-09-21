@@ -19,7 +19,7 @@
 |----|----------|--------------|------|
 | A | S-record 解析模型（S1/S2/S3 解析+地址窗/首地址/0x1D8 占位字强校验） | Models/SrecFile.cs（新建，实际 246 行） | 已完成 |
 | B | XCP 主机协议客户端（9 命令+帧重组器+线程安全+常量段） | Protocol/OpenBltXcpClient.cs（新建）、Protocol/ProtocolConstants.cs（新增 XCP region） | 已完成 |
-| C | 升级页 UI 切换与旧路径下线（横幅/过滤器/BL_BAUD/死注释清理/占位提示） | Views/FirmwareUpgradeView.xaml(.cs) | 未开始 |
+| C | 升级页 UI 切换与旧路径下线（横幅/过滤器/BL_BAUD/死注释清理/占位提示） | Views/FirmwareUpgradeView.xaml(.cs) | 已完成 |
 | D | XCP 升级状态机（RunUpgradeAsync 重写+接线+加载指令+断电回退+归一化） | Views/FirmwareUpgradeView.xaml.cs、MainWindow.xaml.cs（桥接复用） | 未开始 |
 | E | SOC 参数适配（默认 60/61、start<stop 交叉校验、三处文案） | MainWindow.xaml:852-876、MainWindow.xaml.cs:92-94/421-440/3215 | 未开始 |
 | F | 压力参数默认值适配（100/35/65+ToolTip） | ViewModels/MainViewModel.cs:270-277、MainWindow.xaml:492/541/560 | 未开始 |
@@ -40,6 +40,30 @@
 ---
 
 ## 更新记录
+
+### 2026年09月21日（更新3）
+
+**更新内容**
+
+待办 C（实施文档步骤 3a）：升级页 UI 切换与旧路径下线。横幅改为 OpenBLT 引导说明（SWD 预烧 Boot-For-FCU + 升级期间仅连接一台 FCU——XCP 无地址过滤多站同答冲突）；文件选择改 S-record（*.srec/*.s19/*.mot，SrecFile.TryLoad 校验+间隙警告展示）；删除 UpgradeDisabledForCurrentFirmware 及配套注释/构造禁用/BtnStart 防御；删除旧 S1-S9 流程（RunUpgradeAsync/ExitNormalizationAsync 整体，待办 D 重写）；BL_BAUD/APP_BAUD 改引用 ProtocolConstants 单一来源并清理旧"仅支持 9600"注释；Initialize 构造 OpenBltXcpClient、FeedSerialByte 改喂 XCP 帧重组器；本文件对 BlUpgFile/BlUpgradeClient/BlProtocolHelper 零引用（三文件保留在仓库）；五步指示文案更新；BtnStart 占位提示（待办 D 接入状态机）；解析失败回置"未选择"（审查建议落实）。
+验证：编译 0 警告 0 错误；MainWindow 接线（Initialize 193/分流 2390-2398/IsBusy 2914）接口匹配未动。
+
+**涉及位置**
+
+- FCU 氢燃料电池控/Views/FirmwareUpgradeView.xaml（横幅/按钮/步骤文案/注释）
+- FCU 氢燃料电池控/Views/FirmwareUpgradeView.xaml.cs（重写，709→约 290 行）
+
+**对应待办**
+
+- C
+
+**审查结果**
+
+通过（第 1 轮，独立 Reviewer 零阻塞，独立复现编译 0/0）。建议 2 已落实（失败回置路径）；建议 1（XAML 头部注释）与 3（tbk_UpgradeDisabledNotice 改名）留待办 D 顺手处理。
+
+**Git Commit**
+
+feat(C): 升级页切换OpenBLT/S-record链路，旧.upg路径UI下线（占位待D）
 
 ### 2026年09月21日（更新2）
 

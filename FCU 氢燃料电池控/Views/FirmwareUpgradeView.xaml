@@ -20,12 +20,12 @@
         <!-- 升级包选择 -->
         <Border Grid.Row="0" Background="{DynamicResource RegionBrush}" CornerRadius="4" Padding="10" Margin="0,0,0,8">
             <StackPanel>
-                <!-- [beforepined 适配] 在线升级禁用告示（恢复方法见 code-behind UpgradeDisabledForCurrentFirmware 注释） -->
+                <!-- [OpenBLT 适配] 本页面向 Boot-For-FCU(OpenBLT) 引导, 依据 docs/实施步骤-OpenBLT升级与固件适配.md -->
                 <TextBlock Name="tbk_UpgradeDisabledNotice"
-                           Text="⚠ 在线升级已禁用：当前目标固件（beforepined 版本）未包含 RS485 Bootloader，也不支持 0x11 进入升级命令，升级流程无法完成。需为 FCU 烧录带 Bootloader 的固件（main/V5.2 及以上）后方可恢复使用。"
-                           TextWrapping="Wrap" Foreground="#E65100" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                           Text="ℹ 本升级面向 OpenBLT 引导的固件：需先 SWD 预烧 Boot-For-FCU 引导程序（BL 占 0x08000000 起 12K），固件文件为 codex/openblt-app-upgrade 分支构建的 S-record 产物；升级期间 RS485 总线上仅连接这一台 FCU（XCP 无设备地址过滤，多站同答会冲突）。"
+                           TextWrapping="Wrap" Foreground="#1565C0" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <StackPanel Orientation="Horizontal">
-                    <Button Content="选择 .upg 升级包..." Padding="12,4" Click="BtnSelectFile_Click"/>
+                    <Button Content="选择 S-record 固件 (.srec/.s19/.mot)..." Padding="12,4" Click="BtnSelectFile_Click"/>
                     <TextBlock Name="tbk_FilePath" Text="未选择" VerticalAlignment="Center" Margin="10,0,0,0"
                                TextTrimming="CharacterEllipsis" MaxWidth="560" ToolTip="{Binding RelativeSource={RelativeSource Self}, Path=Text}"/>
                 </StackPanel>
@@ -46,10 +46,10 @@
         <!-- 步骤指示 -->
         <Border Grid.Row="2" Background="{DynamicResource RegionBrush}" CornerRadius="4" Padding="10" Margin="0,0,0,8">
             <StackPanel>
-                <TextBlock Name="tbk_Step1" Text="① 选择升级包并核对" Margin="0,2"/>
+                <TextBlock Name="tbk_Step1" Text="① 选择固件文件并核对" Margin="0,2"/>
                 <TextBlock Name="tbk_Step2" Text="② 前置检查 (电堆关机 / BMS 总线接管)" Margin="0,2"/>
-                <TextBlock Name="tbk_Step3" Text="③ 按提示断电重新上电 FCU, 等待 Bootloader 应答" Margin="0,2"/>
-                <TextBlock Name="tbk_Step4" Text="④ 擦除 / 写入 / 校验" Margin="0,2"/>
+                <TextBlock Name="tbk_Step3" Text="③ 进入 Bootloader (加载指令; 无应答按提示断电重启)" Margin="0,2"/>
+                <TextBlock Name="tbk_Step4" Text="④ 连机 / 擦除 / 写入 / 固化" Margin="0,2"/>
                 <TextBlock Name="tbk_Step5" Text="⑤ 重启验证" Margin="0,2"/>
             </StackPanel>
         </Border>
