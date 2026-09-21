@@ -88,9 +88,10 @@ namespace FCU_氢燃料电池控
         /// <summary>AA55 完整帧到达事件 (固件升级页 S1 前置检查 / S8 存活确认用) [BL设计 §4.2]</summary>
         private event Action<byte[]>? BlAppFrameReceived;
 
-        // 最近一次从 0x0701 回读到的 SOC 门控参数；默认值与固件默认配置一致。
-        private int _socStartMax = 90;
-        private int _socStopHigh = 85;
+        // 最近一次从 0x0701 回读到的 SOC 门控参数；默认值与固件默认配置一致
+        // (beforepined@51bf7e2 fcu_protocol.c:118-124: 60/61/60, SOC<60 被动自启 / >61 自动停)。
+        private int _socStartMax = 60;
+        private int _socStopHigh = 61;
         private int _socStopMin = 60;
         private SocParams? _pendingSocWrite;
         private byte? _pendingSocWriteDeviceAddress;
@@ -422,12 +423,23 @@ namespace FCU_氢燃料电池控
         {
             parameters = new SocParams();
 
-            if (!TryParseRange(tbx_OverviewSocStartMax, "开机拒启上限", 1, 100, "%", out ushort startMax) ||
+            if (!TryParseRange(tbx_OverviewSocStartMax, "被动自启阈值", 1, 100, "%", out ushort startMax) ||
                 !TryParseRange(tbx_OverviewSocStopHigh, "运行停机上限", 1, 100, "%", out ushort stopHigh) ||
-                !TryParseRange(tbx_OverviewSocStopMin, "关机充电下限", 1, 100, "%", out ushort stopMin) ||
+                !TryParseRange(tbx_OverviewSocStopMin, "关机充电下限(保留)", 1, 100, "%", out ushort stopMin) ||
                 !TryParseRange(tbx_OverviewBatteryCapacity, "电池容量", 1, ushort.MaxValue, "Ah", out ushort capacity))
             {
                 SetSocValidationError("三个SOC阈值必须是1～100的整数，电池容量必须是正整数Ah");
+                return false;
+            }
+
+            /* 固件新增交叉校验 (beforepined@51bf7e2 fcu_protocol.c:1838-1843):
+             * soc_start_max >= soc_stop_high 直接拒绝 (0x02), 主机侧前置拦截并给出原因 */
+            if (startMax >= stopHigh)
+            {
+                SetSocValidationError($"被动自启阈值({startMax}%)必须小于运行停机上限({stopHigh}%)：两者构成启动滞回（SOC<下限自动开机、>上限自动停机），相等或反置会被固件拒绝");
+                HC.Growl.Warning($"被动自启阈值({startMax}%)必须小于运行停机上限({stopHigh}%)");
+                tbx_OverviewSocStartMax.Focus();
+                tbx_OverviewSocStartMax.SelectAll();
                 return false;
             }
 
@@ -2725,7 +2737,7 @@ namespace FCU_氢燃料电池控
 
         /// <summary>
         /// 组装启动失败 0x03 的提示文案。
-        /// 下位机 0x03 覆盖三种条件（低压超区间 / 电堆温度≥风扇上限 / SOC超过开机拒启上限），
+        /// 下位机 0x03 覆盖三种条件（低压超区间 / 电堆温度≥风扇上限 / SOC超过被动自启阈值被拒启），
         /// 响应码本身无法区分，若已知 SOC 超限则直接点名，否则列出全部可能。
         /// </summary>
         private string BuildStartFail03Message()
@@ -2733,11 +2745,11 @@ namespace FCU_氢燃料电池控
             var bms = _bmsService?.Data;
             if (bms != null && bms.Online && bms.Soc > _socStartMax)
             {
-                return $"启动失败：SOC={bms.Soc}% 超过下位机门控上限 {_socStartMax}%";
+                return $"启动失败：SOC={bms.Soc}% 超过被动自启阈值(拒启) {_socStartMax}%";
             }
 
             return "启动失败：启动条件不满足（低压超出上下限 / 电堆温度≥风扇温度上限 / "
-                 + $"SOC>{_socStartMax}%），请检查「系统监控」中的压力与温度";
+                 + $"SOC>{_socStartMax}% 拒启），请检查「系统监控」中的压力与温度";
         }
 
         /// <summary>
@@ -3174,7 +3186,7 @@ namespace FCU_氢燃料电池控
                 SetSocTextBoxes(data);
                 tbk_SocValidationStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x6C, 0x00));
                 tbk_SocValidationStatus.Text =
-                    $"写入与Flash回读一致：{FormatSocParams(data)}；待重启FCU生效。当前运行提示仍按 {_socStartMax}/{_socStopHigh}/{_socStopMin}。";
+                    $"写入与Flash回读一致：{FormatSocParams(data)}；待重启FCU生效。当前运行提示仍按 自启阈值{_socStartMax}%/停机{_socStopHigh}%。";
                 UpdateStatus("BMS/SOC写入与回读一致；待重启FCU生效");
                 return true;
             }
@@ -3187,7 +3199,7 @@ namespace FCU_氢燃料电池控
                     ? "已确认存在待重启生效的写入"
                     : "此前写入结果未知，重启生效值不能确认";
                 tbk_SocValidationStatus.Text =
-                    $"已回读Flash存储值：{FormatSocParams(data)}；{activationState}。当前运行提示仍按 {_socStartMax}/{_socStopHigh}/{_socStopMin}。";
+                    $"已回读Flash存储值：{FormatSocParams(data)}；{activationState}。当前运行提示仍按 自启阈值{_socStartMax}%/停机{_socStopHigh}%。";
                 return true;
             }
 
@@ -3212,7 +3224,7 @@ namespace FCU_氢燃料电池控
             _socStopHigh = data.StopHigh;
             _socStopMin = data.StopMin;
             tbk_BmsSocThresholdHint.Text =
-                $"  (>{_socStartMax} 拒启 / >{_socStopHigh} 自动停 / <{_socStopMin} 停机前充电)";
+                $"  (SOC<{_socStartMax} 被动自启 / >{_socStartMax} 拒启 / >{_socStopHigh} 自动停)";
 
             if (_bmsService?.Data is { Online: true } bms)
             {

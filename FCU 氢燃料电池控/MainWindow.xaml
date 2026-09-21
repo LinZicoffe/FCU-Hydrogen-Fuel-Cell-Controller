@@ -838,10 +838,10 @@
                                             <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
 
-                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="开机拒启上限" Style="{StaticResource PressureHeaderStyle}"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="被动自启阈值" Style="{StaticResource PressureHeaderStyle}"/>
                                         <TextBlock Grid.Row="0" Grid.Column="1" Text="当前 SOC" Style="{StaticResource PressureHeaderStyle}" Foreground="#2196F3"/>
                                         <TextBlock Grid.Row="0" Grid.Column="2" Text="运行停机上限" Style="{StaticResource PressureHeaderStyle}"/>
-                                        <TextBlock Grid.Row="0" Grid.Column="3" Text="关机充电下限" Style="{StaticResource PressureHeaderStyle}"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="3" Text="关机充电下限(保留)" Style="{StaticResource PressureHeaderStyle}"/>
                                         <TextBlock Grid.Row="0" Grid.Column="4" Text="电池容量" Style="{StaticResource PressureHeaderStyle}"/>
 
                                         <Grid Grid.Row="1" Grid.Column="0">
@@ -849,8 +849,8 @@
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <TextBox Grid.Column="0" Name="tbx_OverviewSocStartMax" Style="{StaticResource StandardTextBoxStyle}" Text="90" Margin="4"
-                                                     ToolTip="1～100%；SOC大于该值时拒绝开机"/>
+                                            <TextBox Grid.Column="0" Name="tbx_OverviewSocStartMax" Style="{StaticResource StandardTextBoxStyle}" Text="60" Margin="4"
+                                                     ToolTip="1～100%；SOC低于该值时被动自动开机，高于该值时拒绝开机（须小于运行停机值）"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource PressureLiveBoxStyle}">
@@ -864,8 +864,8 @@
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <TextBox Grid.Column="0" Name="tbx_OverviewSocStopHigh" Style="{StaticResource StandardTextBoxStyle}" Text="85" Margin="4"
-                                                     ToolTip="1～100%；运行中SOC大于该值时自动停机"/>
+                                            <TextBox Grid.Column="0" Name="tbx_OverviewSocStopHigh" Style="{StaticResource StandardTextBoxStyle}" Text="61" Margin="4"
+                                                     ToolTip="1～100%；运行中SOC大于该值时自动停机（须大于开机值，形成启动滞回）"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Grid Grid.Row="1" Grid.Column="3">
@@ -874,7 +874,7 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBox Grid.Column="0" Name="tbx_OverviewSocStopMin" Style="{StaticResource StandardTextBoxStyle}" Text="60" Margin="4"
-                                                     ToolTip="1～100%；关机时SOC低于该值，先充电至该值"/>
+                                                     ToolTip="1～100%；当前固件版本中为保留字段（仅存储回读，不参与控制，依据 fcu_protocol.c fcu_handle_set_soc_params 注释）"/>
                                             <TextBlock Grid.Column="1" Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                         <Grid Grid.Row="1" Grid.Column="4">
@@ -895,7 +895,7 @@
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Name="tbk_SocValidationStatus"
-                                                   Text="FCU默认值：90 / 85 / 60 / 8Ah；写入固化后需重启FCU生效。"
+                                                   Text="FCU默认值：60 / 61 / 60 / 8Ah（关机充电下限为保留字段）；写入固化后需重启FCU生效。"
                                                    Foreground="#616161" VerticalAlignment="Center" TextWrapping="Wrap"/>
                                         <Button Grid.Column="1" Content="读取SOC参数" Style="{StaticResource StandardButtonStyle}"
                                                 Width="120" Margin="4,0" Click="btn_ReadSocParams_Click"
@@ -1766,7 +1766,7 @@
                                                ToolTip="门控阈值可在“系统监控”的BMS/SOC参数区读取和修改；写入固化后需重启FCU生效。"/>
                                         <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
                                             <TextBlock Name="tbk_BMS_SOC" Text="--" Style="{StaticResource TextBlockDisplayStyle}" FontWeight="SemiBold"/>
-                                            <TextBlock Name="tbk_BmsSocThresholdHint" Text="  (&gt;90 拒启 / &gt;85 自动停 / &lt;60 停机前充电)" VerticalAlignment="Center"
+                                            <TextBlock Name="tbk_BmsSocThresholdHint" Text="  (SOC&lt;60 被动自启 / &gt;60 拒启 / &gt;61 自动停)" VerticalAlignment="Center"
                                                        FontSize="11" Foreground="#757575"/>
                                         </StackPanel>
 

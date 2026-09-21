@@ -21,7 +21,7 @@
 | B | XCP 主机协议客户端（9 命令+帧重组器+线程安全+常量段） | Protocol/OpenBltXcpClient.cs（新建）、Protocol/ProtocolConstants.cs（新增 XCP region） | 已完成 |
 | C | 升级页 UI 切换与旧路径下线（横幅/过滤器/BL_BAUD/死注释清理/占位提示） | Views/FirmwareUpgradeView.xaml(.cs) | 已完成 |
 | D | XCP 升级状态机（RunUpgradeAsync 重写+接线+加载指令+断电回退+归一化） | Views/FirmwareUpgradeView.xaml.cs、Protocol/ProtocolHandler.cs（BuildLoadBootloaderCommand） | 已完成 |
-| E | SOC 参数适配（默认 60/61、start<stop 交叉校验、三处文案） | MainWindow.xaml:852-876、MainWindow.xaml.cs:92-94/421-440/3215 | 未开始 |
+| E | SOC 参数适配（默认 60/61、start<stop 交叉校验、三处文案） | MainWindow.xaml:841-898、MainWindow.xaml.cs:91-95/422-444/2738-2752/3188-3202/3220-3227、Models/ProtocolModels.cs | 已完成 |
 | F | 压力参数默认值适配（100/35/65+ToolTip） | ViewModels/MainViewModel.cs:270-277、MainWindow.xaml:492/541/560 | 未开始 |
 | G | 锁定系数置灰（死参数透传+回读缓存） | MainWindow.xaml:1361、MainWindow.xaml.cs:1645-1697/3448-3454 | 未开始 |
 | H | 时序表默认值与回读适配（0.75s/第15行清空/count动态/回读清空） | MainWindow.xaml:1304/1307/1330-1331、MainWindow.xaml.cs:1536-1594/2007-2037/3417-3443/4331-4390 | 未开始 |
@@ -40,6 +40,31 @@
 ---
 
 ## 更新记录
+
+### 2026年09月21日（更新5）
+
+**更新内容**
+
+待办 E（实施文档步骤 4/B1）：SOC 参数适配。默认值 90/85→60/61（XAML 三框+cs 缓存字段，对齐固件 fcu_protocol.c:118-124）；`TryReadSocParamsFromUi` 新增 `startMax >= stopHigh` 前置拦截（与固件 fcu_protocol.c:1838-1843 等值，含 60/60 等值拒绝），错误文案+Growl 解释滞回语义；表头/ToolTip/静态提示(xaml:1769)/动态提示(ApplyActiveSocParams)/初始默认值文案(xaml:898)/启动失败文案(BuildStartFail03Message)/TryParseRange 字段名/SocParams 模型注释 全部迁移至新语义（"被动自启阈值"+"关机充电下限(保留)"，依据 fcu_control.c 零消费点+fcu_handle_set_soc_params 注释）；回读状态文案三元组去掉无运行语义的 StopMin。
+验证：编译 0 警告 0 错误；60/61 通过、61/60 与 60/60 拒绝（代码走查+审查员对照固件逐条核验不等号方向）。
+
+**涉及位置**
+
+- MainWindow.xaml（841/844 表头、852/867/876 默认值+ToolTip、898 初始文案、1769 静态提示）
+- MainWindow.xaml.cs（91-95 缓存、422-444 交叉校验、2738-2752 启动失败文案、3189/3202 回读文案、3220-3227 动态提示）
+- Models/ProtocolModels.cs（SocParams 注释）
+
+**对应待办**
+
+- E
+
+**审查结果**
+
+第 1 轮不通过（表头/字段名旧语义与 ToolTip 矛盾）→ 修复；第 2 轮新 Reviewer 复审不通过（tbk_SocValidationStatus 初始文案 90/85 残留）→ 修复；第 3 轮新 Reviewer 通过（零阻塞，SOC 区 grep 确认无旧值残留）。遗留风险记录：固件侧 fcu_protocol.c:123 注释与 :1226 保留字段注释自相矛盾（固件侧问题，不在上位机范围）；旧设备 Flash 残留 90/85 时滞回失效，需重写 60/61。
+
+**Git Commit**
+
+feat(E): SOC参数适配——默认60/61、start<stop交叉校验、语义文案全量迁移
 
 ### 2026年09月21日（更新4）
 

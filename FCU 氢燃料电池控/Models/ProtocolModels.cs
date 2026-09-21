@@ -215,7 +215,8 @@ namespace FCU_氢燃料电池控.Models
     public class SocParams
     {
         /// <summary>
-        /// SOC 大于该值时拒绝开机 (%)。
+        /// 被动自启阈值: SOC 低于该值被动自动开机, 高于该值拒绝开机 (%)。
+        /// 须小于 StopHigh 构成启动滞回 (固件 fcu_protocol_set_soc_params 校验)。
         /// </summary>
         public byte StartMax { get; set; }
 
@@ -225,7 +226,7 @@ namespace FCU_氢燃料电池控.Models
         public byte StopHigh { get; set; }
 
         /// <summary>
-        /// 关机时 SOC 低于该值先充电至该值 (%)。
+        /// 关机充电下限——固件当前版本中为保留字段, 仅存储回读, 不参与控制 (%)。
         /// </summary>
         public byte StopMin { get; set; }
 
