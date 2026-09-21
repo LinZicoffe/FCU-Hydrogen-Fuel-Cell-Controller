@@ -460,12 +460,23 @@ namespace FCU_氢燃料电池控.Protocol
         /// <summary>XCP 常规应答超时 (主机侧默认)</summary>
         public const int XCP_RESPONSE_TIMEOUT_MS = 1000;
 
-        /// <summary>CONNECT 轮询单次应答等待；轮询实际周期 ≈ 此值 + XCP_CONNECT_POLL_INTERVAL_MS ≈ 350ms，
-        /// 小于 BL 复位后门窗口 500ms(backdoor.c:45), 窗口内至少命中一次</summary>
-        public const int XCP_CONNECT_WAIT_MS = 300;
+        /// <summary>CONNECT 轮询单次应答等待；轮询实际周期 ≈ 此值 + XCP_CONNECT_POLL_INTERVAL_MS ≈ 150ms，
+        /// 对 BL 复位后一次性门窗口 500ms(backdoor.c:45) 保持 3 倍裕度——周期一旦被 Windows 调度/
+        /// USB 串口驱动抖动拉过 500ms 即错过窗口, 只能再次断电重试 [审查修复 P2]</summary>
+        public const int XCP_CONNECT_WAIT_MS = 120;
 
-        /// <summary>CONNECT 轮询发送周期</summary>
-        public const int XCP_CONNECT_POLL_INTERVAL_MS = 50;
+        /// <summary>CONNECT 轮询发送间隔</summary>
+        public const int XCP_CONNECT_POLL_INTERVAL_MS = 30;
+
+        /// <summary>幂等命令 (PROGRAM_START/SET_MTA/PROGRAM_CLEAR/PROGRAM(0)) 失败重试次数。
+        /// [审查修复 P2] BL 侧重发安全性: START 无状态副作用 (xcp.c:1300-1352)、SET_MTA 幂等
+        /// (748-758)、CLEAR 重擦已擦扇区无害 (flash.c:336-372)。注意 PROGRAM(0) 重发仅覆盖
+        /// 命令未达场景: 若 BL 已执行 NvmDone 而应答丢失, 重发会因 G4 FlashWriteBlock 无先擦
+        /// 回 ERR_GENERIC——不损坏数据 (写入+校验字已完整), 报错后人工断电重启即恢复。</summary>
+        public const int XCP_IDEMPOTENT_CMD_RETRIES = 2;
+
+        /// <summary>幂等命令重试间隔</summary>
+        public const int XCP_IDEMPOTENT_RETRY_DELAY_MS = 100;
 
         /// <summary>PROGRAM_CLEAR 整区擦除超时 (BL 逐扇区擦+喂狗, 实测后可调)</summary>
         public const int XCP_PROGRAM_CLEAR_TIMEOUT_MS = 10000;

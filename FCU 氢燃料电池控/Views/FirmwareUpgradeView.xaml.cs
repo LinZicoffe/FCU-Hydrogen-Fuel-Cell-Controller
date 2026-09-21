@@ -373,7 +373,7 @@ namespace FCU_氢燃料电池控.Views
                 _client.Reset();
                 Log($"串口已切换 {BL_BAUD}, XCP 轮询中...");
 
-                /* ---------- XCP CONNECT 轮询: 单次等待 300ms + 间隔 50ms (实际周期 ≈350ms, <500ms 后门窗口) / 30s 总超时 ---------- */
+                /* ---------- XCP CONNECT 轮询: 单次等待 120ms + 间隔 30ms (周期 ≈150ms, 对 500ms 后门窗口 3 倍裕度) / 30s 总超时 ---------- */
                 var connDeadline = Environment.TickCount64 + 30_000;
                 OpenBltXcpClient.XcpResult? conn = null;
                 while (Environment.TickCount64 < connDeadline && !ct.IsCancellationRequested)
@@ -400,14 +400,30 @@ namespace FCU_氢燃料电池控.Views
                 _ui.StepState(4, "active");
                 activeStep = 4;
                 Status("进入编程会话");
-                var ps = _client.ProgramStart();
+
+                /* [审查修复 P2] 幂等命令重试: USB 串口瞬时写失败原先直接中止整次升级
+                 * (设备停留"已擦除无固件"态), 四命令 BL 侧均验证可安全重发, 与写入块重试对齐 */
+                async Task<OpenBltXcpClient.XcpResult> SendIdempotentAsync(
+                    string name, Func<OpenBltXcpClient.XcpResult> send, CancellationToken token)
+                {
+                    var result = send();
+                    for (int retry = 1; !result.Ok && retry <= ProtocolConstants.XCP_IDEMPOTENT_CMD_RETRIES; retry++)
+                    {
+                        Log($"{name} 失败 ({DescribeXcp(result)}), 重试 {retry}/{ProtocolConstants.XCP_IDEMPOTENT_CMD_RETRIES}...");
+                        await Task.Delay(ProtocolConstants.XCP_IDEMPOTENT_RETRY_DELAY_MS, token);
+                        result = send();
+                    }
+                    return result;
+                }
+
+                var ps = await SendIdempotentAsync("PROGRAM_START", () => _client.ProgramStart(), ct);
                 if (!ps.Ok) throw new UpgradeException($"PROGRAM_START 失败: {DescribeXcp(ps)}");
 
-                Status("擦除 APP 区 (按扇区整擦, 最长约 10s)");
+                Status("擦除 APP 区 (按扇区整擦, 单次最长约 10s, 含重试最长约 30s)");
                 Log($"SET_MTA 0x{baseAddr:X8} + PROGRAM_CLEAR {total}B...");
-                var mta = _client.SetMta(baseAddr);
+                var mta = await SendIdempotentAsync("SET_MTA", () => _client.SetMta(baseAddr), ct);
                 if (!mta.Ok) throw new UpgradeException($"SET_MTA 失败: {DescribeXcp(mta)}");
-                var clear = _client.ProgramClear((uint)total);
+                var clear = await SendIdempotentAsync("PROGRAM_CLEAR", () => _client.ProgramClear((uint)total), ct);
                 if (!clear.Ok) throw new UpgradeException($"PROGRAM_CLEAR 失败: {DescribeXcp(clear)}");
                 Log("擦除完成");
 
@@ -449,7 +465,7 @@ namespace FCU_氢燃料电池控.Views
 
                 /* 固化: PROGRAM(0) → BL 触发 NvmDone 并计算写校验字 (flash.c FlashWriteChecksum) */
                 Status("固化 (向量表校验字)");
-                var fin = _client.Program(Array.Empty<byte>());
+                var fin = await SendIdempotentAsync("PROGRAM(0)", () => _client.Program(Array.Empty<byte>()), ct);
                 if (!fin.Ok) throw new UpgradeException($"PROGRAM(0) 结束指令失败: {DescribeXcp(fin)}");
                 Log("PROGRAM(0) 已确认, BL 已写入校验字 ✓");
 
