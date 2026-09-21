@@ -2371,9 +2371,9 @@ namespace FCU_氢燃料电池控
 
             byte result = ResponseParser.ParseSetParamResponse(frame);
             /* 在接收线程快照 pending（改进自风扇模式）：防 5s 边界处 Tick 先清 pending、
-             * Invoke 内读到 null 产生"拉载指令[]已执行"空名 Growl */
+             * 编组回调内读到 null 产生"拉载指令[]已执行"空名 Growl */
             string cmd = _pendingLoadManualCmd;
-            Dispatcher.Invoke(() =>
+            MarshalRxToUi(() =>
             {
                 StopLoadManualResponseTimeout();
                 _pendingLoadManualCmd = null;
@@ -2697,6 +2697,28 @@ namespace FCU_氢燃料电池控
         #region 串口数据接收处理
 
         /// <summary>
+        /// RX 线程 → UI 线程编组（异步 BeginInvoke，不阻塞串口事件循环线程）。
+        /// [审查修复 P1] 同步 Dispatcher.Invoke 在 SerialPort.Close/Dispose 的 join 序列期间
+        /// 与在途帧互等会死锁整机（.NET 8 SerialStream.Dispose 会 join 事件循环线程），
+        /// 因此 RX 链上的 UI 更新一律走本方法；try-catch 保持原先 Invoke 异常就地收容的语义
+        /// （原先沿 OnFrameReceived 的 catch 上报，现改为状态栏提示，功能等价）。
+        /// </summary>
+        private void MarshalRxToUi(Action action)
+        {
+            Dispatcher.BeginInvoke(() =>
+            {
+                try
+                {
+                    action();
+                }
+                catch (Exception ex)
+                {
+                    UpdateStatus($"界面更新异常: {ex.Message}");
+                }
+            }, DispatcherPriority.Normal);
+        }
+
+        /// <summary>
         /// 串口数据接收事件
         /// </summary>
         private void SerialPort_DataReceived(object? sender, SerialDataReceivedEventArgs e)
@@ -2844,7 +2866,7 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void OnFrameValidationFailed()
         {
-            Dispatcher.Invoke(() =>
+            MarshalRxToUi(() =>
             {
                 UpdateStatus("接收数据异常");
             });
@@ -2860,7 +2882,7 @@ namespace FCU_氢燃料电池控
         private void HandleSerialNumberResponse(byte[] frame)
         {
             string serialNumber = ResponseParser.ParseSerialNumber(frame);
-            Dispatcher.Invoke(() =>
+            MarshalRxToUi(() =>
             {
                 if (_viewModel != null)
                 {
@@ -2882,7 +2904,7 @@ namespace FCU_氢燃料电池控
             // 更新功率曲线图数据（DCDC电压/电流）
             UpdateStackInfo(data);
             bool isDiagProbe = frame.Length > 2 && frame[2] == 0x00;
-            Dispatcher.Invoke(() =>
+            MarshalRxToUi(() =>
             {
                 if (_viewModel != null)
                 {
@@ -2901,7 +2923,7 @@ namespace FCU_氢燃料电池控
         private void HandleSetParamResponse(byte[] frame)
         {
             byte result = ResponseParser.ParseSetParamResponse(frame);
-            Dispatcher.Invoke(() =>
+            MarshalRxToUi(() =>
             {
                 if (result == 0x00)
                 {
@@ -2922,14 +2944,16 @@ namespace FCU_氢燃料电池控
             if (_pendingSocWriteDeviceAddress.HasValue &&
                 (frame.Length <= 2 || frame[2] != _pendingSocWriteDeviceAddress.Value))
             {
+                /* 在接收线程快照期望地址（编组回调内字段可能已被超时 Tick/断线清理置 null） */
+                byte expectedAddress = _pendingSocWriteDeviceAddress.Value;
                 byte actualAddress = frame.Length > 2 ? frame[2] : (byte)0;
-                Dispatcher.Invoke(() => UpdateStatus(
-                    $"忽略地址不匹配的SOC写入响应：期望{_pendingSocWriteDeviceAddress.Value}，收到{actualAddress}"));
+                MarshalRxToUi(() => UpdateStatus(
+                    $"忽略地址不匹配的SOC写入响应：期望{expectedAddress}，收到{actualAddress}"));
                 return;
             }
 
             byte result = ResponseParser.ParseSocParamsSetResponse(frame);
-            Dispatcher.Invoke(() =>
+            MarshalRxToUi(() =>
             {
                 if (_pendingSocWriteDeviceAddress.HasValue)
                 {
@@ -2996,7 +3020,7 @@ namespace FCU_氢燃料电池控
         {
             byte result = ResponseParser.ParseFanManualResponse(frame);
 
-            Dispatcher.Invoke(() =>
+            MarshalRxToUi(() =>
             {
                 // 与 SOC 超时处理器同款：计时器停止与 pending 清理统一编组到 UI 线程
                 StopFanManualResponseTimeout();
@@ -3041,7 +3065,7 @@ namespace FCU_氢燃料电池控
         private void HandleStartResponse(byte[] frame)
         {
             byte result = ResponseParser.ParseControlResponse(frame);
-            Dispatcher.Invoke(() =>
+            MarshalRxToUi(() =>
             {
                 string message = result switch
                 {
@@ -3080,7 +3104,7 @@ namespace FCU_氢燃料电池控
         private void HandleStopResponse(byte[] frame)
         {
             byte result = ResponseParser.ParseControlResponse(frame);
-            Dispatcher.Invoke(() =>
+            MarshalRxToUi(() =>
             {
                 if (result == 0x00)
                 {
@@ -3099,7 +3123,7 @@ namespace FCU_氢燃料电池控
         private void HandleSetDeviceAddressResponse(byte[] frame)
         {
             byte result = ResponseParser.ParseControlResponse(frame);
-            Dispatcher.Invoke(() =>
+            MarshalRxToUi(() =>
             {
                 if (result == 0x00)
                 {
@@ -3127,7 +3151,7 @@ namespace FCU_氢燃料电池控
         {
             byte result = ResponseParser.ParseSetParamResponse(frame);
 
-            Dispatcher.Invoke(() =>
+            MarshalRxToUi(() =>
             {
                 _bmsPollAckReceived = true;
                 if (result == ProtocolConstants.ERR_SUCCESS)
@@ -3325,7 +3349,7 @@ namespace FCU_氢燃料电池控
         {
             ushort paramTypeID = ResponseParser.GetParameterTypeID(frame);
 
-            Dispatcher.Invoke(() =>
+            MarshalRxToUi(() =>
             {
                 if (paramTypeID == ProtocolConstants.PARAM_TYPE_SOC)
                 {
@@ -3435,7 +3459,7 @@ namespace FCU_氢燃料电池控
         private void HandleAlarmReport(byte[] frame)
         {
             AlarmData alarm = ResponseParser.ParseAlarmInfo(frame);
-            Dispatcher.Invoke(() =>
+            MarshalRxToUi(() =>
             {
                 ShowAlarmMessage(alarm);
             });
@@ -3447,7 +3471,7 @@ namespace FCU_氢燃料电池控
         private void HandleStateChangeReport(byte[] frame)
         {
             StateChangeData stateChange = ResponseParser.ParseStateChange(frame);
-            Dispatcher.Invoke(() =>
+            MarshalRxToUi(() =>
             {
                 ShowStateChange(stateChange);
             });
@@ -3874,7 +3898,7 @@ namespace FCU_氢燃料电池控
         private void HandleLoadStatusReport(byte[] frame)
         {
             LoadStatusData data = ResponseParser.ParseLoadStatusReport(frame);
-            Dispatcher.Invoke(() =>
+            MarshalRxToUi(() =>
             {
                 UpdateLoadStatusDisplay(data);
                 UpdateStatus("收到拉载状态上报");
