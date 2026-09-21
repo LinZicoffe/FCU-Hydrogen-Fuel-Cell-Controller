@@ -63,6 +63,18 @@ namespace FCU_氢燃料电池控
 
         // BMS 总线仲裁 (0x0D set_bms_poll) [SOC计划 §1.3]
         private volatile bool _bmsPollAckReceived;
+        /// <summary>[审查修复 P2] 0x8D 确认成败分离: 收到即置 AckReceived(等待环退出),
+        /// 仅结果码=成功才置 AckSuccess(固件对 en 非 0/1 或 Flash 写失败回非 0 结果码)。</summary>
+        private volatile bool _bmsPollAckSuccess;
+        /// <summary>[审查修复 P2] 接管是否已获 FCU 确认: BMS 轮询启动门控
+        /// (未确认=FCU 可能仍自轮询 BMS, 双主站互毁)。断开时复位。</summary>
+        private bool _bmsTakeoverConfirmed;
+        /// <summary>[审查修复 P2] 总线交换在途互斥: 防泵送期间"断开→重连"嵌套重入接管
+        /// 导致重复 0x0D 多写 Flash。归还路径不持此标志 (断开时归还必须放行)。</summary>
+        private bool _bmsBusExchangeInProgress;
+        /// <summary>[审查修复 P2] 归还在途: 接管泵送期间用户断开/关窗时中止接管,
+        /// 保证 en=1 是总线上最后的 0x0D (防 en=0 反转 en=1 残留 Flash)。</summary>
+        private volatile bool _bmsReturnInFlight;
 
         // 电堆信息轮询健康监测 [轮询修复]: 固件对 0x07 恒回 0x87 (fcu_protocol.c fcu_handle_read_stack_info),
         // 一个轮询周期内未收到响应即记一次未命中; 连续多次未命中时自动发广播探针鉴别
@@ -658,6 +670,9 @@ namespace FCU_氢燃料电池控
                 _diagProbePending = false;
                 _diagDoneForConnection = false;
                 StopStackInfoLinkDiagnosis();
+
+                // [审查修复 P2] 接管状态随连接失效, 下次连接重新确认
+                _bmsTakeoverConfirmed = false;
                 
                 // 停止BMS Modbus轮询并清显示
                 _bmsService?.StopPolling();
@@ -3172,11 +3187,14 @@ namespace FCU_氢燃料电池控
         private void HandleBmsPollResponse(byte[] frame)
         {
             byte result = ResponseParser.ParseSetParamResponse(frame);
+            bool success = result == ProtocolConstants.ERR_SUCCESS;
 
             MarshalRxToUi(() =>
             {
+                // 成败分离 [审查修复 P2]: 收到即算 ack (等待环退出), 仅成功才置 AckSuccess
                 _bmsPollAckReceived = true;
-                if (result == ProtocolConstants.ERR_SUCCESS)
+                _bmsPollAckSuccess = success;
+                if (success)
                 {
                     UpdateStatus("BMS 轮询使能设置成功");
                 }
@@ -3197,54 +3215,81 @@ namespace FCU_氢燃料电池控
         /// 注意: 固件每次写Flash整页擦写(fcu_protocol.c set_bms_poll),
         ///       仅允许会话级调用(连接/断开各一次), 禁止逐次握手 [上位机优化计划 D1]
         /// </summary>
-        private void SendBmsPollEnable(byte en)
+        private bool SendBmsPollEnable(byte en)
         {
             if (!_isSerialOpen)
-                return;
+                return false;
 
-            SendFrame(BuildFrame(byte.Parse(GetDeviceAddress()), ProtocolConstants.FUNC_SET_BMS_POLL, new[] { en }));
+            // 地址框非法时安全跳过, 不再让 FormatException 沿 Open 事件链
+            // 冒泡成"打开串口失败" (物理上串口已开) [审查修复 P3]
+            if (!SerialPortHelper.TryParseDeviceAddress(GetDeviceAddress(), out byte deviceAddress, showError: false))
+            {
+                UpdateStatus("设备地址非法, 未发送 BMS 轮询使能指令");
+                return false;
+            }
+
+            return SendFrame(BuildFrame(deviceAddress, ProtocolConstants.FUNC_SET_BMS_POLL, new[] { en }));
         }
 
         /// <summary>
-        /// [轮询修复] 连接时接管 BMS 总线 (0x0D en=0) 并等 0x8D 确认, 最多 3 次。
+        /// [审查修复 P2] 连接时接管 BMS 总线 (0x0D en=0) 并等 0x8D 成功确认, 最多 3 次;
+        /// 结果记入 _bmsTakeoverConfirmed 供 BMS 轮询启动门控。
         /// 固件依据: 固件自轮询 BMS 的等待窗口 (fcu_modbus.c g_modbus_rx_active,
         /// 无 BMS 应答时每 2s 有约 200ms) 会把窗口内到达的 AA55 字节喂进 Modbus 缓冲
         /// (fcu_protocol.c:486-488), 单发 en=0 有概率被吞且整个会话无法恢复。
-        /// 无 0x8D = 指令未被解析 = 未写 Flash (fcu_handle_set_bms_poll 成功才写),
-        /// 重试无副作用; 300ms 间隔大于单个吞帧窗口(200ms), 3 次内必有落点。
+        /// 无成功 0x8D = 指令未被接受 = 通常未写 Flash (fcu_handle_set_bms_poll 成功才写;
+        /// 仅应答帧丢失的例外会多一次整页擦写, 会话级有界), 重试磨损可忽略;
+        /// 300ms 间隔大于单个吞帧窗口(200ms), 3 次内必有落点。
         /// </summary>
         private void TakeOverBmsBusWithConfirm()
         {
-            for (int attempt = 1; attempt <= 3; attempt++)
+            // 泵送重入互斥: "断开→重连"嵌套连接事件时外层交换仍在进行, 静默跳过
+            if (_bmsBusExchangeInProgress)
+                return;
+
+            _bmsBusExchangeInProgress = true;
+            try
             {
-                // 泵送期间用户可能已点断开: 静默退出, 防止对已断开链路弹出陈旧指引
-                if (!_isSerialOpen)
-                    return;
-
-                _bmsPollAckReceived = false;
-                SendBmsPollEnable(0);
-
-                // DoEvents 泵送使 0x8D 确认帧可被接收线程处理 (与断开路径同款等待模式)。
-                // 断开路径归还 en=1 的 0x8D 会点亮共用确认标志, 必须同时查连接状态防误报
-                int start = Environment.TickCount;
-                while (!_bmsPollAckReceived && Environment.TickCount - start < 300)
+                for (int attempt = 1; attempt <= 3; attempt++)
                 {
-                    if (!_isSerialOpen)
+                    // 泵送期间用户可能已点断开/关窗: 静默退出 (归还流程随后会发 en=1)
+                    if (!_isSerialOpen || _bmsReturnInFlight)
                         return;
-                    DoEvents();
-                    Thread.Sleep(10);
+
+                    _bmsPollAckReceived = false;
+                    _bmsPollAckSuccess = false;
+                    if (!SendBmsPollEnable(0))
+                        continue;   // 发送失败(串口已关/地址非法): 不空等 300ms, 直接下一轮判定
+
+                    // DoEvents 泵送使 0x8D 确认帧可被接收线程处理 (与断开路径同款等待模式)。
+                    // 断开路径归还 en=1 的 0x8D 也会点亮 AckReceived, 必须同时查
+                    // AckSuccess 与连接状态防误报 [审查修复 P2]
+                    int start = Environment.TickCount;
+                    while (!_bmsPollAckReceived && Environment.TickCount - start < 300)
+                    {
+                        if (!_isSerialOpen || _bmsReturnInFlight)
+                            return;
+                        DoEvents();
+                        Thread.Sleep(10);
+                    }
+
+                    if (_bmsPollAckReceived && _bmsPollAckSuccess && _isSerialOpen)
+                    {
+                        _bmsTakeoverConfirmed = true;
+                        UpdateStatus($"BMS 总线接管成功 (第{attempt}次尝试获 FCU 确认)");
+                        return;
+                    }
                 }
 
-                if (_bmsPollAckReceived && _isSerialOpen)
-                {
-                    UpdateStatus($"BMS 总线接管成功 (第{attempt}次尝试获 FCU 确认)");
-                    return;
-                }
+                _bmsTakeoverConfirmed = false;
+                HC.Growl.Warning("BMS 总线接管未获 FCU 确认 (3 次无成功 0x8D 应答): FCU 可能仍在自行轮询 BMS, " +
+                                 "其等待窗口会间歇吞掉电堆信息请求; 也可能是设备地址与 FCU 不匹配。建议核对设备地址后断开重新连接");
+                UpdateStatus("BMS 总线接管未确认, FCU 可能仍占用总线或地址不匹配");
             }
-
-            HC.Growl.Warning("BMS 总线接管未获 FCU 确认 (3 次无 0x8D 应答): FCU 可能仍在自行轮询 BMS, " +
-                             "其等待窗口会间歇吞掉电堆信息请求; 也可能是设备地址与 FCU 不匹配。建议核对设备地址后断开重新连接");
-            UpdateStatus("BMS 总线接管未确认, FCU 可能仍占用总线或地址不匹配");
+            finally
+            {
+                _bmsBusExchangeInProgress = false;
+            }
         }
 
         /// <summary>
@@ -3276,52 +3321,83 @@ namespace FCU_氢燃料电池控
             // 停止上位机自身轮询，避免归还后双主站同时抢总线
             _bmsService?.StopPolling();
 
-            _bmsPollAckReceived = false;
-            SendBmsPollEnable(1);
+            _bmsReturnInFlight = true;
+            try
+            {
+                _bmsPollAckReceived = false;
+                _bmsPollAckSuccess = false;
+                SendBmsPollEnable(1);
 
-            int start = Environment.TickCount;
-            while (!_bmsPollAckReceived && Environment.TickCount - start < 300)
-            {
-                DoEvents();
-                Thread.Sleep(10);
-            }
+                int start = Environment.TickCount;
+                while (!_bmsPollAckReceived && Environment.TickCount - start < 300)
+                {
+                    DoEvents();
+                    Thread.Sleep(10);
+                }
 
-            if (_bmsPollAckReceived)
-            {
-                UpdateStatus("已归还 BMS 总线，FCU 侧轮询已启用");
-                HC.Growl.Success("FCU 已确认启用 BMS 轮询");
+                if (_bmsPollAckReceived && _bmsPollAckSuccess)
+                {
+                    _bmsTakeoverConfirmed = false;   // 总线已归还, 本会话接管状态失效
+                    UpdateStatus("已归还 BMS 总线，FCU 侧轮询已启用");
+                    HC.Growl.Success("FCU 已确认启用 BMS 轮询");
+                }
+                else
+                {
+                    UpdateStatus("归还 BMS 总线：未收到 FCU 成功确认");
+                    HC.Growl.Warning("未收到 FCU 的成功 0x8D 确认，请检查连接后重试");
+                }
             }
-            else
+            finally
             {
-                UpdateStatus("归还 BMS 总线：未收到 FCU 确认");
-                HC.Growl.Warning("未收到 FCU 的 0x8D 确认，请检查连接后重试");
+                _bmsReturnInFlight = false;
             }
         }
 
         /// <summary>
-        /// 关闭串口前: 归还 BMS 总线 (发 en=1 并等 0x8D 确认, 最多300ms)
-        /// [R6] 未确认则警告, 防"以为恢复了其实没有"
+        /// 关闭串口前: 归还 BMS 总线 (发 en=1 并等 0x8D 成功确认, 最多 2 次尝试)。
+        /// [审查修复 P2] en 位持久化在 FCU Flash——归还未确认时 FCU 重新上电也不会恢复轮询
+        /// (en=0 残留), 故重试 1 次; 指令丢失时固件不会写 Flash, 重试无额外磨损。
         /// </summary>
         private void OnBeforeSerialClose()
         {
             if (!_isSerialOpen)
                 return;
 
-            _bmsPollAckReceived = false;
-            SendBmsPollEnable(1);
-
-            // 9600bps 收发各8B约20ms, 300ms裕量充足; DoEvents泵送使确认帧可被处理
-            int start = Environment.TickCount;
-            while (!_bmsPollAckReceived && Environment.TickCount - start < 300)
+            _bmsReturnInFlight = true;   // 通知在途接管泵送中止, 保证 en=1 是最后的 0x0D
+            try
             {
-                DoEvents();
-                Thread.Sleep(10);
+                for (int attempt = 1; attempt <= 2; attempt++)
+                {
+                    if (!_isSerialOpen)
+                        break;
+
+                    _bmsPollAckReceived = false;
+                    _bmsPollAckSuccess = false;
+                    if (SendBmsPollEnable(1))
+                    {
+                        // 9600bps 收发各8B约20ms, 300ms裕量充足; DoEvents泵送使确认帧可被处理
+                        int start = Environment.TickCount;
+                        while (!_bmsPollAckReceived && Environment.TickCount - start < 300)
+                        {
+                            if (!_isSerialOpen)
+                                break;
+                            DoEvents();
+                            Thread.Sleep(10);
+                        }
+                    }
+
+                    if (_bmsPollAckReceived && _bmsPollAckSuccess)
+                        return;
+                }
+
+                // 文案不含"重新上电": en 位在 Flash, 重启无法清除残留 [审查修复 P2]
+                HC.Growl.Warning("BMS 总线归还未获 FCU 成功确认: en=0 可能残留在 FCU Flash, FCU 重启也不会自动恢复轮询。\n" +
+                                 "请重新连接后正常断开一次, 或在 BMS 页使用「归还 BMS 总线」按钮");
+                UpdateStatus("BMS 总线归还未确认, en=0 可能残留 Flash");
             }
-
-            if (!_bmsPollAckReceived)
+            finally
             {
-                HC.Growl.Warning("BMS 轮询恢复未确认, FCU 可能保持关闭");
-                UpdateStatus("BMS 轮询恢复未确认, FCU 可能保持关闭, 请重新连接并正常断开, 或将 FCU 重新上电");
+                _bmsReturnInFlight = false;
             }
         }
 
@@ -4117,6 +4193,29 @@ namespace FCU_氢燃料电池控
             {
                 HC.Growl.Warning("请先打开串口");
                 return;
+            }
+
+            // [审查修复 P2] 未确认接管的 FCU 仍在自行轮询 BMS (en=0 未生效),
+            // 直接开轮询会形成双主站互毁: 先补一次接管确认, 仍失败则需用户二次确认
+            if (!_bmsTakeoverConfirmed)
+            {
+                TakeOverBmsBusWithConfirm();
+                // 模态/泵送期间迟到的 0x8D 可能已真实置位, 弹框前复查一次
+                if (!_bmsTakeoverConfirmed && _bmsPollAckReceived && _bmsPollAckSuccess)
+                    _bmsTakeoverConfirmed = true;
+
+                if (!_bmsTakeoverConfirmed)
+                {
+                    var risk = MessageBox.Show(
+                        "BMS 总线接管未获 FCU 确认, FCU 可能仍在自行轮询 BMS。\n\n" +
+                        "此时开启上位机 BMS 轮询会形成双主站互撞 (双方都可能超时离线)。\n\n仍要继续开启？",
+                        "双主站风险", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                    if (risk != MessageBoxResult.Yes)
+                    {
+                        UpdateStatus("已取消开启 BMS 自动刷新 (总线接管未确认)");
+                        return;
+                    }
+                }
             }
 
             double intervalSec = 2.0;
