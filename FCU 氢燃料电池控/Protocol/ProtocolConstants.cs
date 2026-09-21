@@ -75,6 +75,12 @@ namespace FCU_氢燃料电池控.Protocol
         public const byte FUNC_READ_STACK_INFO = 0x07;
 
         /// <summary>
+        /// 0x87 电堆信息响应数据域固定 26 字节 (固件 fcu_protocol.c fcu_handle_read_stack_info: response[4]=0x1A)。
+        /// [审查修复 P3] 上位机多处硬编码 26 的单一来源
+        /// </summary>
+        public const byte STACK_INFO_DATA_LENGTH = 26;
+
+        /// <summary>
         /// 功能码：启动电堆
         /// </summary>
         public const byte FUNC_START_STACK = 0x08;

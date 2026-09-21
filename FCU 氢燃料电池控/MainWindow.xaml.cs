@@ -629,10 +629,13 @@ namespace FCU_氢燃料电池控
                 {
                     _suppressNextAutoBmsPoll = false;
                 }
-                else
+                else if (!_blUpgradeMode)
                 {
-                    // [轮询修复] 单发 0x0D 有概率落入固件 BMS 轮询等待窗口被吞,
-                    // 改为 0x8D 确认 + 有界重试 (见 TakeOverBmsBusWithConfirm)
+                    /* [审查修复 P2] 升级入口 SetBlMode(true) 的 57600 重开同样触发连接事件:
+                     * 对端是 Bootloader/波特率切换中的设备, 0x0D 无意义且 SendFrame 被
+                     * _blUpgradeMode 拦截, 接管确认必然 3 次落空 + 误报告警, 直接跳过。
+                     * 正常连接仍走接管: 单发 0x0D 有概率落入固件 BMS 轮询等待窗口被吞,
+                     * 因此用 0x8D 确认 + 有界重试 (见 TakeOverBmsBusWithConfirm) */
                     TakeOverBmsBusWithConfirm();
                 }
             }
@@ -1155,6 +1158,11 @@ namespace FCU_氢燃料电池控
 
                 if (_pollingTimer == null)
                     return;
+
+                // 新轮询会话复位健康监测状态 (含升级路径停表未复位的兜底) [审查修复 B审查建议]
+                _awaitingStackInfo = false;
+                _stackInfoMissCount = 0;
+                _diagDoneForConnection = false;
 
                 // 获取选择的轮询间隔
                 var selectedItem = cbx_PollingInterval.SelectedItem as ComboBoxItem;
@@ -5020,9 +5028,15 @@ namespace FCU_氢燃料电池控
 
                     if (on)
                     {
-                        /* 显式挂起电堆轮询与 BMS 轮询 (不依赖 Close/Open 副作用链) */
+                        /* 显式挂起电堆轮询与 BMS 轮询 (不依赖 Close/Open 副作用链)。
+                         * 同时复位轮询在途标志 [审查修复 P2/B审查建议]: 防升级前最后一帧
+                         * 0x07 未获响应把 BMS 仲裁条件卡在 true (纵深防御, 正常退出路径
+                         * 经 ReopenSerial→Close→断开分支已有复位兜底) */
                         _owner._pollingTimer?.Stop();
                         _owner._bmsService?.StopPolling();
+                        _owner._awaitingStackInfo = false;
+                        _owner._stackInfoMissCount = 0;
+                        _owner._diagProbePending = false;
                         _owner._protocolHandler?.Reset();
                         SetMainTabsEnabled(false);
                     }
@@ -5032,9 +5046,21 @@ namespace FCU_氢燃料电池控
                         SetMainTabsEnabled(true);
                         /* [BL升级 终审P1] 随后的 9600 重开不自动下发 en=0 (由正常断开链路统一归还) */
                         _owner._suppressNextAutoBmsPoll = true;
-                        /* 轮询不自动恢复: 按钮状态与实际一致地保持停止, 由用户重新启动 */
-                        try { _owner.btn_StartPolling.IsEnabled = true; } catch { }
-                        try { _owner.btn_StartBMSPolling.IsEnabled = true; } catch { }
+                        /* 轮询不自动恢复; 但按钮状态按实际运行态派生恢复:
+                         * 升级入口可能停在"电堆轮询运行中"(前置检查失败路径轮询从未停),
+                         * 一律恢复停止态会让用户无法直接停表 [审查修复 C审查建议] */
+                        bool stackPollingAlive = _owner._pollingTimer?.IsEnabled == true;
+                        bool bmsPollingAlive = _owner._bmsService?.IsPolling == true;
+                        try
+                        {
+                            _owner.btn_StartPolling.IsEnabled = !stackPollingAlive;
+                            _owner.btn_StopPolling.IsEnabled = stackPollingAlive;
+                            _owner.cbx_PollingInterval.IsEnabled = !stackPollingAlive;
+                            _owner.btn_StartBMSPolling.IsEnabled = !bmsPollingAlive;
+                            _owner.btn_StopBMSPolling.IsEnabled = bmsPollingAlive;
+                            _owner.cbx_BMSPollingInterval.IsEnabled = !bmsPollingAlive;
+                        }
+                        catch { }
                     }
                 });
             }

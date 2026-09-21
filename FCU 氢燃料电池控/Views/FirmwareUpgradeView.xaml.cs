@@ -324,7 +324,7 @@ namespace FCU_氢燃料电池控.Views
                 bool appOnline = info != null;
                 if (info != null)
                 {
-                    if (info.Length < 6 || info[4] != 26)
+                    if (info.Length < 6 || info[4] != ProtocolConstants.STACK_INFO_DATA_LENGTH)
                         throw new UpgradeException($"电堆状态应答长度异常 (LEN={info[4]})");
                     byte stackState = info[5];   /* 数据域首字节 = 工作状态 (0=OFF, 3=FAULT) */
                     if (stackState != 0 && stackState != 3)
@@ -366,9 +366,11 @@ namespace FCU_氢燃料电池控.Views
                 /* ---------- 切换升级通道: SetBlMode(true) 后 SendAppFrame 直接被拒, AA55 通道到此为止 ---------- */
                 _bridge!.SetBlMode(true);
                 blModeEntered = true;
-                _client.Reset();
                 if (!_bridge.ReopenSerial(BL_BAUD))
                     throw new UpgradeException($"切换串口到 {BL_BAUD} 失败");
+                /* Reset 必须在 ReopenSerial 成功之后 [审查修复 P3]: SetBlMode(true) 到 Close 之间
+                 * APP 在途上报字节会喂入重组器留残态, 重开后再清才能保证 CONNECT 首包不被残帧吞掉 */
+                _client.Reset();
                 Log($"串口已切换 {BL_BAUD}, XCP 轮询中...");
 
                 /* ---------- XCP CONNECT 轮询: 单次等待 300ms + 间隔 50ms (实际周期 ≈350ms, <500ms 后门窗口) / 30s 总超时 ---------- */

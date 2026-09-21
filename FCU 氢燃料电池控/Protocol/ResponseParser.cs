@@ -155,7 +155,7 @@ namespace FCU_氢燃料电池控.Protocol
             try
             {
                 byte dataLen = frame[4];
-                if (dataLen != 26)
+                if (dataLen != ProtocolConstants.STACK_INFO_DATA_LENGTH)
                     return data;
 
                 int offset = 5; // 数据域起始位置
