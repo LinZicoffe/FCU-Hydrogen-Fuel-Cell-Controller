@@ -164,6 +164,18 @@ dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release
 
 ## 更新日志
 
+### 2026-09-21（通讯专项审查修复批次，feature/openblt-upgrade-adapt）
+
+**四 agent 通讯专审（AA55 协议/线程模型/BMS Modbus 仲裁/OpenBLT XCP 四维度）后按 feature-dev-workflow 完成修复**，6 个待办各经独立审查通过，编译全程 0 警告 0 错误。详见《通讯专项审查修复功能更新日志.md》：
+
+- **P1① 断开瞬间整机死锁（e345460）**：RX 链 16 处同步 `Dispatcher.Invoke` 改 `MarshalRxToUi` 异步编组——.NET 8 `SerialPort.Close` 会 join 串口事件循环线程，断开/关窗瞬间在途帧与 Close 互等即永久挂死
+- **P1② 双主站仲裁盲区（09f314c）**：BmsService 注入"自身 0x07 在途"第三仲裁条件 + 电堆轮询发送前反查 BMS 占线，堵住两个 2s 定时器锁相碰撞的窗口；StopPolling 彻底化（定时器/状态/Online 复位）
+- **升级集成组（b46706b）**：升级入口 57600 重开不再误触发 BMS 接管确认；SetBlMode(false) 按实际轮询运行态恢复按钮；XCP Reset 挪到串口重开成功后；0x87 数据域 26 字节常量化
+- **接管/归还状态机组（764b373）**：0x8D 确认成败分离（固件拒绝不再误报成功）；接管结果记入门控（未确认开 BMS 轮询先补接管+二次确认）；断开归还 2 次尝试+文案修正（删"重新上电"错误指引——en 位在 Flash 重启不清除）；重入互斥防嵌套 0x0D；地址解析防护
+- **XCP 健壮性（2d01373）**：PROGRAM_START/SET_MTA/PROGRAM_CLEAR/PROGRAM(0) 幂等命令加 2 次重试；CONNECT 断电路径轮询加密至 ≈150ms 周期（对 500ms 后门窗口 3 倍裕度）
+- **P3 杂项（0bd36c2）**：报警上报模态弹窗改 Growl 非模态；探针标志写序镜像修复；miss 计数防交错；AA55 帧头再同步（AA AA 55，对齐固件）；SendData 局部快照
+- 涉固件事项仅登记未动：加载指令与 BL 500ms 窗口时序（待固件适配时同步改）、IWDG 周期确认、BL 窗口是否 3s
+
 ### 2026-09-21（电堆信息轮询无响应修复，feature/openblt-upgrade-adapt）
 
 **真机测试反馈"自动轮询数据不上来，串口工具可见设备流量"**。逐环核验上位机接收链路（串口事件→AA55 状态机→分发→绑定）与固件 0x07/0x87 实现均正确后，定位到三个真实薄弱点并修复（固件依据均已标注在代码注释）：
