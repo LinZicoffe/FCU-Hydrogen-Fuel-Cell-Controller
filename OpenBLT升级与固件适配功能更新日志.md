@@ -20,7 +20,7 @@
 | A | S-record 解析模型（S1/S2/S3 解析+地址窗/首地址/0x1D8 占位字强校验） | Models/SrecFile.cs（新建，实际 246 行） | 已完成 |
 | B | XCP 主机协议客户端（9 命令+帧重组器+线程安全+常量段） | Protocol/OpenBltXcpClient.cs（新建）、Protocol/ProtocolConstants.cs（新增 XCP region） | 已完成 |
 | C | 升级页 UI 切换与旧路径下线（横幅/过滤器/BL_BAUD/死注释清理/占位提示） | Views/FirmwareUpgradeView.xaml(.cs) | 已完成 |
-| D | XCP 升级状态机（RunUpgradeAsync 重写+接线+加载指令+断电回退+归一化） | Views/FirmwareUpgradeView.xaml.cs、MainWindow.xaml.cs（桥接复用） | 未开始 |
+| D | XCP 升级状态机（RunUpgradeAsync 重写+接线+加载指令+断电回退+归一化） | Views/FirmwareUpgradeView.xaml.cs、Protocol/ProtocolHandler.cs（BuildLoadBootloaderCommand） | 已完成 |
 | E | SOC 参数适配（默认 60/61、start<stop 交叉校验、三处文案） | MainWindow.xaml:852-876、MainWindow.xaml.cs:92-94/421-440/3215 | 未开始 |
 | F | 压力参数默认值适配（100/35/65+ToolTip） | ViewModels/MainViewModel.cs:270-277、MainWindow.xaml:492/541/560 | 未开始 |
 | G | 锁定系数置灰（死参数透传+回读缓存） | MainWindow.xaml:1361、MainWindow.xaml.cs:1645-1697/3448-3454 | 未开始 |
@@ -40,6 +40,32 @@
 ---
 
 ## 更新记录
+
+### 2026年09月21日（更新4）
+
+**更新内容**
+
+待办 D（实施文档步骤 3b）：XCP 升级状态机完整重写。RunUpgradeAsync 按 §4.3 状态机实现：前置检查（0x07 探活，非 OFF/FAULT 拒绝；无应答视为可能 BL 常驻直接进 XCP 轮询）→ 加载指令（ProtocolHandler.BuildLoadBootloaderCommand 单点封装，裸序列 ADDR 99 88 77 + CRC16-CCITT 大端，待确认①；无应答 1s 转断电重启提示）→ SetBlMode(true)+ReopenSerial(57600)+CONNECT 轮询（50ms/300ms/30s，校验 res=0x10+maxCto=129）→ PROGRAM_START→SET_MTA(0x08003000)→PROGRAM_CLEAR→PROGRAM_MAX 整块/PROGRAM 尾块循环（失败重试 3 次+重设 MTA+进度速率）→PROGRAM(0) 固化→[VERIFY_BY_UPLOAD 开关读回校验，跳过 0x1D8-0x1DB]→PROGRAM_RESET→静默 2s→9600→0x81 探活 10s→成功 NormalizeExit(true)；失败/取消走 ExitNormalizationAsync（blModeEntered 参数：未进 BL 模式跳过 6s 静默）。
+审查建议落实：存活循环复查取消标志（区分取消/超时）、catch(Exception) 补用户弹窗、Task.Run 去掉第二 ct 实参（防 _busy 卡 true）、加载指令调用点标注固件对齐义务。XAML 头注释更新、tbk_UpgradeDisabledNotice 改名 tbk_UpgradeNotice。
+验证：编译 0 警告 0 错误；无设备冒烟路径经审查员代码走查闭合（选文件→探活无应答→30s 轮询超时→归一化恢复，约 50s 无卡死）；真机联调待固件侧前提（见已知风险 1）。
+
+**涉及位置**
+
+- FCU 氢燃料电池控/Views/FirmwareUpgradeView.xaml.cs（RunUpgradeAsync/VerifyByUploadAsync/ExitNormalizationAsync/DescribeXcp/BtnStart_Click）
+- FCU 氢燃料电池控/Views/FirmwareUpgradeView.xaml（头注释、tbk_UpgradeNotice）
+- FCU 氢燃料电池控/Protocol/ProtocolHandler.cs（新增 BuildLoadBootloaderCommand）
+
+**对应待办**
+
+- D
+
+**审查结果**
+
+通过（第 1 轮，独立 Reviewer 零阻塞，独立复现编译 0/0；逐项对照 Boot-For-FCU xcp.c/flash.c 源码核验命令序列与时序）。建议 1-5 已落实，建议 6 小项（失败步标⑤/RequestAppFrame 不校验地址）不采纳（与旧代码行为一致、单台 FCU 约定已由横幅与风险记录覆盖）。
+
+**Git Commit**
+
+feat(D): XCP升级状态机——加载指令/断电回退/连机/擦写固化/重启验证/归一化
 
 ### 2026年09月21日（更新3）
 

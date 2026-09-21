@@ -6,7 +6,7 @@
              mc:Ignorable="d"
              d:DesignHeight="620" d:DesignWidth="900">
 
-    <!-- 固件升级页 [BL设计 §4.3]: 选包 → 前置检查 → 断电握手 → 擦/写/校验 → 重启验证 -->
+    <!-- 固件升级页 (OpenBLT XCP): 选 S-record → 前置检查 → 加载指令/断电进入 BL → 连机/擦除/写入/固化 → 重启验证 -->
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -21,7 +21,7 @@
         <Border Grid.Row="0" Background="{DynamicResource RegionBrush}" CornerRadius="4" Padding="10" Margin="0,0,0,8">
             <StackPanel>
                 <!-- [OpenBLT 适配] 本页面向 Boot-For-FCU(OpenBLT) 引导, 依据 docs/实施步骤-OpenBLT升级与固件适配.md -->
-                <TextBlock Name="tbk_UpgradeDisabledNotice"
+                <TextBlock Name="tbk_UpgradeNotice"
                            Text="ℹ 本升级面向 OpenBLT 引导的固件：需先 SWD 预烧 Boot-For-FCU 引导程序（BL 占 0x08000000 起 12K），固件文件为 codex/openblt-app-upgrade 分支构建的 S-record 产物；升级期间 RS485 总线上仅连接这一台 FCU（XCP 无设备地址过滤，多站同答会冲突）。"
                            TextWrapping="Wrap" Foreground="#1565C0" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <StackPanel Orientation="Horizontal">

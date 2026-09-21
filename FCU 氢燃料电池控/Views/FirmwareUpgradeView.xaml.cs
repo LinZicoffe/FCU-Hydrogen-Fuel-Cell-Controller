@@ -55,6 +55,11 @@ namespace FCU_氢燃料电池控.Views
         private SrecFile? _srecFile;
         private CancellationTokenSource? _cts;
         private volatile bool _busy;
+        private bool? _lastExitAppAlive;    /* 最近一次退出归一化的探活结果 */
+
+        /// <summary>读回校验开关 (实施文档 §7 联调第 2 项"UPLOAD 全镜像比对"入口, 联调时置 true, 平时关闭省时)。
+        /// 用 static readonly 而非 const, 避免 const 常量传播触发 CS0162 不可达代码警告。</summary>
+        private static readonly bool VERIFY_BY_UPLOAD = false;
 
         /// <summary>升级流程进行中 (含全流程与退出归一化全程), 供 MainWindow.OnClosing 关窗拦截</summary>
         public bool IsBusy => _busy;
@@ -66,10 +71,6 @@ namespace FCU_氢燃料电池控.Views
         public FirmwareUpgradeView()
         {
             InitializeComponent();
-
-            /* [步骤 3a 中间态] _cts/_busy 的赋值路径随 XCP 状态机在待办 D 恢复; 此处显式初始化消除 CS0649 */
-            _cts = null;
-            _busy = false;
         }
 
         /// <summary>由 MainWindow 在启动时注入串口管理器与宿主桥接</summary>
@@ -262,9 +263,26 @@ namespace FCU_氢燃料电池控.Views
                 return;
             }
 
-            /* [步骤 3a 中间态] XCP 升级状态机在下一待办 (D) 接入 */
-            MessageBox.Show("升级流程即将就绪：XCP 升级状态机正在接入中 (开发中间状态)。",
-                "固件升级", MessageBoxButton.OK, MessageBoxImage.Information);
+            var confirm = MessageBox.Show(
+                $"即将开始固件升级 (OpenBLT XCP @ {BL_BAUD}, 镜像 {_srecFile.Length / 1024.0:F1} KB @ 0x{_srecFile.BaseAddress:X8})。\n\n" +
+                "升级过程中: ① 电堆必须处于关机/故障状态 ② 设备将进入 Bootloader (自动加载指令; 不支持时需按提示断电重新上电) ③ 请勿关闭程序或拔出串口 ④ 总线上仅这一台 FCU\n\n确认开始?",
+                "固件升级", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (confirm != MessageBoxResult.Yes) return;
+
+            _cts = new CancellationTokenSource();
+            var ct = _cts.Token;
+            _busy = true;
+            _ = Dispatcher.BeginInvoke(() =>
+            {
+                _ui.ResetSteps();
+                btn_Start.IsEnabled = false;
+                btn_Cancel.IsEnabled = true;
+                pbar_Progress.Value = 0;
+            });
+
+            /* 不传第二个 ct: 若开跑前已取消, Task.Run 会直接转 Canceled 跳过方法体,
+             * finally 不执行导致 _busy 卡 true (审查建议) */
+            Task.Run(() => RunUpgradeAsync(ct));
         }
 
         private void BtnCancel_Click(object sender, RoutedEventArgs e)
@@ -275,6 +293,336 @@ namespace FCU_氢燃料电池控.Views
             catch (ObjectDisposedException) { }
             Status("正在取消...");
             Log("用户请求取消");
+        }
+
+        /* ---------------- 升级主流程 (OpenBLT XCP, 实施文档 §4.3 状态机) ---------------- */
+
+        /// <summary>XCP 失败结果的统一文案</summary>
+        private static string DescribeXcp(OpenBltXcpClient.XcpResult r)
+            => r.Timeout ? "超时/串口发送失败"
+             : r.Data.Length > 0 && r.Data[0] == ProtocolConstants.XCP_PID_ERR
+                 ? $"XCP 错误 {ProtocolConstants.GetXcpErrorDescription(r.ErrorCode)} (0x{r.ErrorCode:X2})"
+                 : "应答格式异常";
+
+        private async Task RunUpgradeAsync(CancellationToken ct)
+        {
+            bool blModeEntered = false;   /* 是否已 SetBlMode(true): 决定退出归一化是否需要 6s 静默 */
+            try
+            {
+                var img = _srecFile!.Image;
+                uint baseAddr = _srecFile.BaseAddress;
+                int total = img.Length;
+
+                /* ---------- 步骤② 前置检查 (9600, AA55 模式; SetBlMode(true) 前完成一切 AA55 收发) ---------- */
+                _ui.StepState(2, "active");
+                Status("前置检查");
+                Log("前置检查: 读电堆状态 (0x07)...");
+                var readInfo = BuildAppRequest(0x07);
+                byte[]? info = RequestAppFrame(readInfo, 0x87, 2000, ct);
+                bool appOnline = info != null;
+                if (info != null)
+                {
+                    if (info.Length < 6 || info[4] != 26)
+                        throw new UpgradeException($"电堆状态应答长度异常 (LEN={info[4]})");
+                    byte stackState = info[5];   /* 数据域首字节 = 工作状态 (0=OFF, 3=FAULT) */
+                    if (stackState != 0 && stackState != 3)
+                        throw new UpgradeException($"电堆未处于可升级状态 (状态={stackState}), 仅关机(0)/故障(3)态接受升级, 请先关闭电堆");
+                    Log($"前置检查: 电堆状态 = {stackState} ({(stackState == 0 ? "关机" : "故障")}) ✓");
+                }
+                else
+                {
+                    Log("前置检查: 0x07 无应答 (设备可能 BL 常驻/未上电), 直接进入 XCP 轮询");
+                }
+                _ui.StepState(2, "done");
+
+                /* ---------- 步骤③ 进入 Bootloader ---------- */
+                _ui.StepState(3, "active");
+                if (appOnline)
+                {
+                    /* 方案一: 加载指令 (帧布局待固件对齐 [待确认①], 无应答 1s 转断电路径)。
+                     * 注意: 当前无应答约定, 固件适配落地后应改为等待确认帧再分支 (参照旧 0x11/0x91 先例),
+                     *       避免加载已成功却仍提示断电、用户照做导致升级中途中断 */
+                    var loadCmd = ProtocolHandler.BuildLoadBootloaderCommand(_bridge!.DeviceAddress);
+                    Log($"发送加载指令: {BitConverter.ToString(loadCmd)}");
+                    _ = _bridge.SendAppFrame(loadCmd);
+                    await Task.Delay(1000, ct);
+                    ct.ThrowIfCancellationRequested();
+                    Log("加载指令无应答 (固件适配中), 转断电重启路径");
+
+                    /* 方案二: 人工断电重启 (BL 复位后开放 500ms 后门窗口) */
+                    Status("请断电重新上电 FCU (30 秒内)");
+                    _ = Dispatcher.BeginInvoke(() => MessageBox.Show(
+                        "请现在给 FCU 断电, 3 秒后重新上电。\n\n上电后引导程序短暂开放连接窗口, 上位机会自动连上 (30 秒内完成)。",
+                        "进入 Bootloader", MessageBoxButton.OK, MessageBoxImage.Information));
+                }
+                else
+                {
+                    Status("探测 Bootloader (常驻/断电重启均适用)");
+                }
+
+                /* ---------- 切换升级通道: SetBlMode(true) 后 SendAppFrame 直接被拒, AA55 通道到此为止 ---------- */
+                _bridge!.SetBlMode(true);
+                blModeEntered = true;
+                _client.Reset();
+                if (!_bridge.ReopenSerial(BL_BAUD))
+                    throw new UpgradeException($"切换串口到 {BL_BAUD} 失败");
+                Log($"串口已切换 {BL_BAUD}, XCP 轮询中...");
+
+                /* ---------- XCP CONNECT 轮询: 50ms 发送周期 / 单次等待 300ms / 30s 总超时 ---------- */
+                var connDeadline = Environment.TickCount64 + 30_000;
+                OpenBltXcpClient.XcpResult? conn = null;
+                while (Environment.TickCount64 < connDeadline && !ct.IsCancellationRequested)
+                {
+                    var r = _client.Connect(ProtocolConstants.XCP_CONNECT_WAIT_MS);
+                    if (r.Ok && r.Data is { Length: 8 }) { conn = r; break; }
+                    await Task.Delay(ProtocolConstants.XCP_CONNECT_POLL_INTERVAL_MS, ct);
+                }
+                if (conn == null)
+                    throw ct.IsCancellationRequested
+                        ? new OperationCanceledException(ct)
+                        : new UpgradeException("30 秒内未连接到 OpenBLT 引导。请确认: ① 已按提示断电重新上电 ② 设备已 SWD 预烧 Boot-For-FCU 引导 ③ 总线上仅这一台 FCU");
+                if (conn.Data[1] != 0x10 || conn.Data[3] != ProtocolConstants.XCP_MAX_CTO)
+                    throw new UpgradeException($"CONNECT 应答异常: res=0x{conn.Data[1]:X2}, maxCto={conn.Data[3]} (期望 0x10/{ProtocolConstants.XCP_MAX_CTO})");
+                Log($"XCP 已连接 (res=0x{conn.Data[1]:X2}, maxCto={conn.Data[3]}) ✓");
+                _ = Dispatcher.BeginInvoke(() =>
+                {
+                    tbk_DeviceUid.Text = $"OpenBLT XCP @ {BL_BAUD}";
+                    tbk_DeviceVer.Text = $"目标镜像 {total / 1024.0:F1} KB";
+                });
+                _ui.StepState(3, "done");
+
+                /* ---------- 步骤④ 编程会话: START → SET_MTA → CLEAR → 块写入 → PROGRAM(0) ---------- */
+                _ui.StepState(4, "active");
+                Status("进入编程会话");
+                var ps = _client.ProgramStart();
+                if (!ps.Ok) throw new UpgradeException($"PROGRAM_START 失败: {DescribeXcp(ps)}");
+
+                Status("擦除 APP 区 (按扇区整擦, 最长约 10s)");
+                Log($"SET_MTA 0x{baseAddr:X8} + PROGRAM_CLEAR {total}B...");
+                var mta = _client.SetMta(baseAddr);
+                if (!mta.Ok) throw new UpgradeException($"SET_MTA 失败: {DescribeXcp(mta)}");
+                var clear = _client.ProgramClear((uint)total);
+                if (!clear.Ok) throw new UpgradeException($"PROGRAM_CLEAR 失败: {DescribeXcp(clear)}");
+                Log("擦除完成");
+
+                /* 写入: 整块 PROGRAM_MAX(128B 定长, MTA 自动后增), 尾块 PROGRAM(N); 单块失败重试 3 次(重试前 SET_MTA 重新同步) */
+                Status("写入固件");
+                int offset = 0;
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                while (offset < total)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    int len = Math.Min(ProtocolConstants.XCP_PROGRAM_MAX_DATA, total - offset);
+                    var chunk = new byte[len];
+                    Array.Copy(img, offset, chunk, 0, len);
+                    uint addr = baseAddr + (uint)offset;
+
+                    var w = len == ProtocolConstants.XCP_PROGRAM_MAX_DATA
+                        ? _client.ProgramMax(chunk) : _client.Program(chunk);
+                    for (int retry = 1; !w.Ok && retry <= 3; retry++)
+                    {
+                        Log($"写入块 @0x{addr:X8} 失败 ({DescribeXcp(w)}), 重试 {retry}/3 (重新 SET_MTA)...");
+                        await Task.Delay(100, ct);
+                        var m = _client.SetMta(addr);   /* MTA 状态未知, 重新定位 */
+                        w = !m.Ok ? m
+                          : len == ProtocolConstants.XCP_PROGRAM_MAX_DATA
+                              ? _client.ProgramMax(chunk) : _client.Program(chunk);
+                    }
+                    if (!w.Ok)
+                        throw new UpgradeException($"写入块 @0x{addr:X8} 失败 (重试 3 次): {DescribeXcp(w)}");
+
+                    offset += len;
+                    Progress(offset, total);
+                    if ((offset & 0x7FF) == 0 || offset >= total)
+                    {
+                        double kbps = sw.Elapsed.TotalSeconds > 0 ? offset / 1024.0 / sw.Elapsed.TotalSeconds : 0;
+                        Status($"写入 {offset * 100 / total}% ({kbps:F1} KB/s)");
+                    }
+                }
+                Log($"写入完成: {total}B / {(total + ProtocolConstants.XCP_PROGRAM_MAX_DATA - 1) / ProtocolConstants.XCP_PROGRAM_MAX_DATA} 块, 耗时 {sw.Elapsed.TotalSeconds:F1}s");
+
+                /* 固化: PROGRAM(0) → BL 触发 NvmDone 并计算写校验字 (flash.c FlashWriteChecksum) */
+                Status("固化 (向量表校验字)");
+                var fin = _client.Program(Array.Empty<byte>());
+                if (!fin.Ok) throw new UpgradeException($"PROGRAM(0) 结束指令失败: {DescribeXcp(fin)}");
+                Log("PROGRAM(0) 已确认, BL 已写入校验字 ✓");
+
+                /* 读回校验 (联调开关, 默认关; 必须在 PROGRAM(0) 后——此前数据可能仍缓冲在 BL RAM bootblock) */
+                if (VERIFY_BY_UPLOAD)
+                    await VerifyByUploadAsync(img, baseAddr, ct);
+
+                _ui.StepState(4, "done");
+
+                /* ---------- 步骤⑤ 重启验证: PROGRAM_RESET 后 BL 直接启动新 APP (可能不回帧) ---------- */
+                _ui.StepState(5, "active");
+                Status("重启验证");
+                _ = _client.ProgramReset();
+                Log("PROGRAM_RESET 已发送 (引导直接启动新固件)");
+                _client.Reset();
+                await Task.Delay(2000, ct);
+
+                _bridge.SetBlMode(false);
+                if (!_bridge.ReopenSerial(APP_BAUD))
+                    throw new UpgradeException("切换串口回 9600 失败, 请手动重开串口");
+
+                bool alive = false;
+                var aliveDeadline = Environment.TickCount64 + 10_000;
+                var readSerial = BuildAppRequest(0x01);
+                while (Environment.TickCount64 < aliveDeadline && !ct.IsCancellationRequested)
+                {
+                    var resp = RequestAppFrame(readSerial, 0x81, 1500, ct);
+                    if (resp != null) { alive = true; break; }
+                    await Task.Delay(500, ct);
+                }
+                if (!alive)
+                    throw ct.IsCancellationRequested
+                        ? new OperationCanceledException(ct)   /* 与 CONNECT 轮询一致: 区分取消与真超时 (审查建议) */
+                        : new UpgradeException("设备重启后 10s 内无应答 (0x81), 存活确认失败");
+
+                Log("新固件已启动 (0x81 序列号应答) ✓");
+                _ui.StepState(5, "done");
+                Status("升级成功");
+                _bridge.NormalizeExit(true);
+                _ = Dispatcher.BeginInvoke(() => MessageBox.Show(
+                    $"固件升级成功!\n\n镜像: {total / 1024.0:F1} KB @ 0x{baseAddr:X8}\n" +
+                    "串口已正常断开 (BMS 总线已归还 FCU), 重新打开串口即可继续使用。",
+                    "固件升级", MessageBoxButton.OK, MessageBoxImage.Information));
+            }
+            catch (OperationCanceledException)
+            {
+                Log("升级已取消");
+                Status("已取消");
+                _ui.StepState(5, "fail");
+                await ExitNormalizationAsync(blModeEntered);
+                if (_lastExitAppAlive == false)
+                {
+                    _ = Dispatcher.BeginInvoke(() => MessageBox.Show(
+                        "升级已取消, 设备可能停留在 Bootloader (无有效固件)。\n\n" +
+                        "处置: 重新执行一次完整升级即可修复 (BL 常驻时自动探测续升); 引导区与参数页不受影响。",
+                        "固件升级", MessageBoxButton.OK, MessageBoxImage.Warning));
+                }
+            }
+            catch (UpgradeException ex)
+            {
+                Log($"升级失败: {ex.Message}");
+                Status("升级失败");
+                await ExitNormalizationAsync(blModeEntered);
+                string msg = ex.Message;
+                if (_lastExitAppAlive == false)
+                {
+                    msg += "\n\n设备当前停留在 Bootloader (无有效固件), 串口已关闭。\n" +
+                           "处置: 重新执行一次完整升级即可修复 (BL 常驻时自动探测续升)。\n" +
+                           "注意: OpenBLT 引导区与参数页 (0x0801F000) 永不会被升级擦除; " +
+                           "若后续 FCU 不轮询 BMS, 请在 BMS 页面使用\"归还 BMS 总线\"按钮自救。";
+                }
+                _ = Dispatcher.BeginInvoke(() => MessageBox.Show(
+                    msg, "固件升级失败", MessageBoxButton.OK, MessageBoxImage.Warning));
+            }
+            catch (Exception ex)
+            {
+                Log($"升级异常: {ex}");
+                Status("异常终止");
+                await ExitNormalizationAsync(blModeEntered);
+                _ = Dispatcher.BeginInvoke(() => MessageBox.Show(
+                    $"升级过程发生未预期异常:\n\n{ex.Message}\n\n串口已按退出规则归一化, 请查看日志了解详情。",
+                    "固件升级异常", MessageBoxButton.OK, MessageBoxImage.Warning));
+            }
+            finally
+            {
+                _busy = false;
+                var oldCts = _cts;
+                _cts = null;
+                oldCts?.Dispose();
+                _ = Dispatcher.BeginInvoke(() =>
+                {
+                    btn_Start.IsEnabled = true;
+                    btn_Cancel.IsEnabled = false;
+                });
+            }
+        }
+
+        /// <summary>UPLOAD 全镜像分段读回比对 (实施文档 §7 联调第 2 项入口, VERIFY_BY_UPLOAD 开关启用)。
+        /// 必须在 PROGRAM(0) 之后调用 (此前尾块数据可能仍在 BL 的 RAM bootblock 未落盘);
+        /// 比对跳过镜像偏移 0x1D8-0x1DB (校验字已被 BL 覆写, 与文件占位值不同属预期)。</summary>
+        private async Task VerifyByUploadAsync(byte[] img, uint baseAddr, CancellationToken ct)
+        {
+            Status("读回校验 (UPLOAD)");
+            Log("读回校验: SET_MTA + UPLOAD 分段比对...");
+            var m = _client.SetMta(baseAddr);
+            if (!m.Ok) throw new UpgradeException($"读回 SET_MTA 失败: {DescribeXcp(m)}");
+
+            for (int off = 0; off < img.Length; off += ProtocolConstants.XCP_PROGRAM_MAX_DATA)
+            {
+                ct.ThrowIfCancellationRequested();
+                int len = Math.Min(ProtocolConstants.XCP_PROGRAM_MAX_DATA, img.Length - off);
+                var r = _client.Upload((byte)len);
+                if (!r.Ok || r.Data.Length != len + 1)
+                    throw new UpgradeException($"读回失败 @0x{baseAddr + (uint)off:X8}: {DescribeXcp(r)}");
+                for (int i = 0; i < len; i++)
+                {
+                    if (off + i >= SrecFile.CHECKSUM_OFFSET && off + i < SrecFile.CHECKSUM_OFFSET + 4)
+                        continue;   /* 校验字位置: BL 已写入二补码校验和, 与占位字不同属预期 */
+                    if (r.Data[1 + i] != img[off + i])
+                        throw new UpgradeException(
+                            $"读回比对不一致 @0x{baseAddr + (uint)(off + i):X8}: 设备 0x{r.Data[1 + i]:X2} / 文件 0x{img[off + i]:X2}");
+                }
+                Progress(off + len, img.Length);
+                await Task.Delay(1, ct);
+            }
+            Log("读回校验通过 ✓");
+        }
+
+        /// <summary>统一退出归一化: 停发 → (已进 BL 模式时)静默 6s → 切 9600 → 探活 → 正常断开(归还总线)。
+        /// 未进入 BL 模式(前置检查即失败)时跳过静默等待, 避免白等并少打扰在跑的轮询 (审查建议)。
+        /// 探活结果记录于 _lastExitAppAlive (true=APP存活已正常断开 / false=BL常驻已直接关串口 / null=未执行或重开失败),
+        /// 供 catch 块生成准确的用户提示。</summary>
+        private async Task ExitNormalizationAsync(bool blModeEntered)
+        {
+            _lastExitAppAlive = null;
+            try
+            {
+                if (_bridge == null) return;
+
+                if (blModeEntered)
+                {
+                    Log("退出流程: 静默 6s (让出总线)...");
+                    await Task.Delay(6000);
+                }
+                else
+                {
+                    Log("退出流程: 未进入升级模式, 直接归一化");
+                }
+
+                _bridge.SetBlMode(false);
+                _client.Reset();   /* 清 XCP 帧重组缓冲 */
+
+                if (!_bridge.ReopenSerial(APP_BAUD))
+                {
+                    Log("警告: 切回 9600 失败, 请手动重开串口");
+                    _bridge.NormalizeExit(false);
+                    return;
+                }
+
+                /* 探活: 设备可能仍处于 BL 常驻 (半写入态) */
+                var readSerial = BuildAppRequest(0x01);
+                var resp = RequestAppFrame(readSerial, 0x81, 1500, CancellationToken.None);
+                bool alive = resp != null;
+
+                if (alive)
+                {
+                    Log("设备 APP 存活 - 执行正常断开 (0x0D en=1 归还 BMS 总线)");
+                }
+                else
+                {
+                    Log("设备无 APP 应答 (可能停留在 Bootloader 常驻): 直接关闭串口; 重新执行升级可修复");
+                }
+                _lastExitAppAlive = alive;
+                _bridge.NormalizeExit(alive);
+            }
+            catch (Exception ex)
+            {
+                Log($"退出流程异常: {ex.Message}");
+            }
         }
 
         private sealed class UpgradeException : Exception
