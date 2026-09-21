@@ -26,11 +26,14 @@
 | G | 锁定系数置灰（死参数透传+回读缓存） | MainWindow.xaml:1357-1362、MainWindow.xaml.cs:97-99/1658-1700/3466-3487 | 已完成 |
 | H | 时序表默认值与回读适配（0.75s/第15行清空/count动态/回读清空） | MainWindow.xaml:1304/1307/1330-1335、MainWindow.xaml.cs:1549-1611/2024-2118/3463-3510/4395-4432/4528-4566 | 已完成 |
 | I | 拉载手动命令 Growl 反馈（0x0504 专用处理器+在途互斥+超时） | MainWindow.xaml.cs（SendLoadControlCommand/HandleLoadManualResponse/超时定时器/五处互斥/八处理器） | 已完成 |
+| R1 | 终审建议返工（SendFrame 失败回滚/CONNECT 轮询注释口径/取消 fail 标真实步骤） | MainWindow.xaml.cs:2215-2225、ProtocolConstants.cs:456-458、FirmwareUpgradeView.xaml.cs:310-500 | 已完成 |
 
 ## 已知风险
 
-1. 真机联调被固件侧阻塞：codex/openblt-app-upgrade 分支尖端 abc0115 链接基址合并回退（实施文档 §3.3），联调须用 c5fcd2e 产物或等固件修复——不影响本分支全部开发步骤
-2. 加载指令帧格式待固件适配后对齐（实施文档待确认①）；固件未落地前 D 步骤恒走断电回退路径
+1. 真机联调被固件侧阻塞：codex/openblt-app-upgrade 分支尖端 abc0115 链接基址合并回退（实施文档 §3.3），联调须用 c5fcd2e 产物或等固件修复——不影响本分支全部开发步骤。**当前交付口径：升级功能代码完备、硬件未验证**
+2. 加载指令帧格式待固件适配后对齐（实施文档待确认①）；固件未落地前 D 步骤恒走断电回退路径。**上线前回归项：固件加载指令落地后，须回到 FirmwareUpgradeView.xaml.cs 加载指令分支改为"等待确认帧再分支"（当前无条件 1s 转断电提示），并回归实施文档 §7 联调第 4 项**
+3. **联调第 2 项（UPLOAD 全镜像读回比对）启用方式：将 FirmwareUpgradeView.xaml.cs 的 VERIFY_BY_UPLOAD 置 true 后重编译（编译期开关默认 false）**
+4. 旧固件兼容性提示（随版本发布说明同步）：旧固件 SOC 存量 90/85 组合会被新交叉校验拦截（需改 60/61）；未回读直接写 0x0502 时锁定系数按 900 透传；旧固件若按 63B 定长校验 0x0501 则 14 条默认写入会被拒（用户可手填第 15 行）；升级后轮询不自动恢复需手动重启
 
 ## 其他
 
@@ -40,10 +43,54 @@
 4. 死代码清理（待办 G 审查建议）：MainWindow.xaml.cs:1614-1659 五个未绑定 XAML 的孤儿按钮 handler（btn_SetLoadLockFactor_Click 等，先于本任务存在）
 5. 方案页量纲错配（待办 H 审查发现，预先存在非本次引入）：配方框显示原始值（0.1A 整数），应用时复用的 TryParseLoadSequences 按显示值×10 解析——预设配方电流>50 的行超范围报错、≤50 的行按 10 倍放大发送；需独立待办统一方案页量纲
 6. 0x04 类互斥为单向（待办 I 审查建议不采纳根治）：0x0501/02/03 自身无在途跟踪，毫秒级往返窗口内抢点 0x0504 可能误归属一次 Growl（真实结果仍会显示）；根治方案（发送时间戳间隔 ≥500ms）留待后续
+7. 终审未采纳实施的建议（记录备查）：①XCP Request 发送前清接收缓冲消除"迟到帧串答"（遗留模式风险，触发条件=响应延迟>1s，VERIFY_BY_UPLOAD 可对冲，联调前可加固）②VERIFY_BY_UPLOAD 改运行时复选框（联调便利项）③ExitNormalizationAsync catch 末尾兜底强关串口 ④SrecFile 13 用例与 XCP 19 用例固化为仓库内测试工程（测试资产沉淀）⑤文档勘误两处（BuildLoadBootloaderCommand 实际落位 ProtocolHandler.cs 而非 §4.4 所写 ProtocolConstants；SrecFile API 实为 TryLoad 而非文档示意 TryParse——均已在本日志登记）
 
 ---
 
 ## 更新记录
+
+### 2026年09月21日（更新11）
+
+**更新内容**
+
+OpenBLT升级与固件适配功能开发完成。
+
+**完成情况**
+
+- 所有开发待办（A~I + R1）已完成
+- 本地验证已通过：全量编译 0 警告 0 错误（Debug/Release 双配置，终审 Reviewer 独立复现）；SrecFile 13 边界用例 + XCP 模拟 BL 应答器 19 用例全过；每步独立审查（待办 E 3 轮、B/I 2 轮、其余 1 轮，全部通过）
+- 最终项目级审查已通过：3 个全新 Reviewer（需求完整性/代码与架构/风险与测试）并行审查，全部零阻塞通过；终审建议中 3 处已作为 R1 返工落实（SendFrame 失败回滚、CONNECT 轮询注释口径、取消 fail 标真实步骤），其余记录于"其他"
+- 真机联调为外部阻塞依赖（固件侧 codex 分支链接基址回退，见已知风险 1），联调清单见实施文档 §7
+- 最终 Git 提交随本条目一并执行
+
+**最终状态**
+
+开发完成（停在 feature/openblt-upgrade-adapt 分支，未合并 master、未推送、未打包）
+
+### 2026年09月21日（更新10）
+
+**更新内容**
+
+终审返工待办 R1（终审 Reviewer B 三条建议）：①SendLoadControlCommand 检查 SendFrame 返回值——串口写失败（含 BL 升级模式拦截）立即回滚 pending/停定时器/Growl 提示/返回 false，消除"假已发送+互斥空挂 5s"；②CONNECT 轮询注释口径修正（实际周期 ≈350ms=300ms 等待+50ms 间隔 < 500ms 后门窗口，两处注释同步）；③升级取消时 fail 标色标在真实进行步骤（activeStep 变量随四步推进，原固定标第⑤步）。附：returns 注释枚举补全（R1 审查建议）。
+验证：编译 0 警告 0 错误（审查员独立复现）。
+
+**涉及位置**
+
+- MainWindow.xaml.cs（SendLoadControlCommand 失败回滚+returns 注释）
+- Protocol/ProtocolConstants.cs（XCP_CONNECT_WAIT_MS 注释）
+- Views/FirmwareUpgradeView.xaml.cs（activeStep 追踪+注释）
+
+**对应待办**
+
+- R1
+
+**审查结果**
+
+通过（第 1 轮，独立 Reviewer 零阻塞）。
+
+**Git Commit**
+
+fix(R1): 终审返工——发送失败回滚/轮询注释口径/取消fail标真实步骤
 
 ### 2026年09月21日（更新9）
 

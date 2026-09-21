@@ -2183,7 +2183,7 @@ namespace FCU_氢燃料电池控
         /// </summary>
         /// <param name="commandCode">控制指令码</param>
         /// <param name="commandParams">指令参数（可为null）</param>
-        /// <returns>是否已实际发出（false=未开串口/在途互斥/构造失败，调用方不应提示"已发送"）</returns>
+        /// <returns>是否已实际发出（false=未开串口/在途互斥/串口写失败(含 BL 升级模式拦截)/构造失败，调用方不应提示"已发送"）</returns>
         private bool SendLoadControlCommand(byte commandCode, byte[]? commandParams = null)
         {
             try
@@ -2214,7 +2214,14 @@ namespace FCU_氢燃料电池控
 
                 _pendingLoadManualCmd = GetLoadCommandDescription(commandCode);
                 StartLoadManualResponseTimeout();
-                SendFrame(frame);
+                if (!SendFrame(frame))
+                {
+                    /* 串口写失败: 立即回滚 pending, 不让互斥窗口空挂 5s (终审 R1) */
+                    _pendingLoadManualCmd = null;
+                    StopLoadManualResponseTimeout();
+                    HC.Growl.Warning("拉载控制指令串口发送失败");
+                    return false;
+                }
                 return true;
             }
             catch (Exception ex)

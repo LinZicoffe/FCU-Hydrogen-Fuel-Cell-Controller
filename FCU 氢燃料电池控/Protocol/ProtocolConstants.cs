@@ -454,7 +454,8 @@ namespace FCU_氢燃料电池控.Protocol
         /// <summary>XCP 常规应答超时 (主机侧默认)</summary>
         public const int XCP_RESPONSE_TIMEOUT_MS = 1000;
 
-        /// <summary>CONNECT 轮询单次应答等待 (实施文档 §4.3: 50ms 发送周期 + 单次等待 300ms)</summary>
+        /// <summary>CONNECT 轮询单次应答等待；轮询实际周期 ≈ 此值 + XCP_CONNECT_POLL_INTERVAL_MS ≈ 350ms，
+        /// 小于 BL 复位后门窗口 500ms(backdoor.c:45), 窗口内至少命中一次</summary>
         public const int XCP_CONNECT_WAIT_MS = 300;
 
         /// <summary>CONNECT 轮询发送周期</summary>

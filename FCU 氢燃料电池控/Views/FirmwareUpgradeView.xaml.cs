@@ -307,6 +307,7 @@ namespace FCU_氢燃料电池控.Views
         private async Task RunUpgradeAsync(CancellationToken ct)
         {
             bool blModeEntered = false;   /* 是否已 SetBlMode(true): 决定退出归一化是否需要 6s 静默 */
+            int activeStep = 5;           /* 当前进行中的步骤序号: 取消/失败时把 fail 标在真实步骤上 (终审 R1) */
             try
             {
                 var img = _srecFile!.Image;
@@ -315,6 +316,7 @@ namespace FCU_氢燃料电池控.Views
 
                 /* ---------- 步骤② 前置检查 (9600, AA55 模式; SetBlMode(true) 前完成一切 AA55 收发) ---------- */
                 _ui.StepState(2, "active");
+                activeStep = 2;
                 Status("前置检查");
                 Log("前置检查: 读电堆状态 (0x07)...");
                 var readInfo = BuildAppRequest(0x07);
@@ -337,6 +339,7 @@ namespace FCU_氢燃料电池控.Views
 
                 /* ---------- 步骤③ 进入 Bootloader ---------- */
                 _ui.StepState(3, "active");
+                activeStep = 3;
                 if (appOnline)
                 {
                     /* 方案一: 加载指令 (帧布局待固件对齐 [待确认①], 无应答 1s 转断电路径)。
@@ -368,7 +371,7 @@ namespace FCU_氢燃料电池控.Views
                     throw new UpgradeException($"切换串口到 {BL_BAUD} 失败");
                 Log($"串口已切换 {BL_BAUD}, XCP 轮询中...");
 
-                /* ---------- XCP CONNECT 轮询: 50ms 发送周期 / 单次等待 300ms / 30s 总超时 ---------- */
+                /* ---------- XCP CONNECT 轮询: 单次等待 300ms + 间隔 50ms (实际周期 ≈350ms, <500ms 后门窗口) / 30s 总超时 ---------- */
                 var connDeadline = Environment.TickCount64 + 30_000;
                 OpenBltXcpClient.XcpResult? conn = null;
                 while (Environment.TickCount64 < connDeadline && !ct.IsCancellationRequested)
@@ -393,6 +396,7 @@ namespace FCU_氢燃料电池控.Views
 
                 /* ---------- 步骤④ 编程会话: START → SET_MTA → CLEAR → 块写入 → PROGRAM(0) ---------- */
                 _ui.StepState(4, "active");
+                activeStep = 4;
                 Status("进入编程会话");
                 var ps = _client.ProgramStart();
                 if (!ps.Ok) throw new UpgradeException($"PROGRAM_START 失败: {DescribeXcp(ps)}");
@@ -455,6 +459,7 @@ namespace FCU_氢燃料电池控.Views
 
                 /* ---------- 步骤⑤ 重启验证: PROGRAM_RESET 后 BL 直接启动新 APP (可能不回帧) ---------- */
                 _ui.StepState(5, "active");
+                activeStep = 5;
                 Status("重启验证");
                 _ = _client.ProgramReset();
                 Log("PROGRAM_RESET 已发送 (引导直接启动新固件)");
@@ -492,7 +497,7 @@ namespace FCU_氢燃料电池控.Views
             {
                 Log("升级已取消");
                 Status("已取消");
-                _ui.StepState(5, "fail");
+                _ui.StepState(activeStep, "fail");
                 await ExitNormalizationAsync(blModeEntered);
                 if (_lastExitAppAlive == false)
                 {
