@@ -164,6 +164,13 @@ dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release
 
 ## 更新日志
 
+### 2026-09-22（V1.9.0 打包，OpenBLT 升级 + 通讯修复批次）
+
+- **配置变更：项目版本升级至 V1.9.0**（csproj Version/FileVersion/AssemblyVersion 同步），同版本出**两个安装包**（AppId 相同，同机交叉安装按升级覆盖）：
+  - `Output\FCU氢燃料电池控制器_v1.9.0.exe`（正式版，瑞达新能源（广州）有限公司，`setup.iss` + `publish_v1.9.0`，54,127,120B，MD5 92abfaa2afdadfebe7ef788b0751e975）
+  - `Output\FCU氢燃料电池控制器_v1.9.0_众赢普惠.exe`（OEM 定制版，深圳市众赢普惠科技有限公司，`setup_众赢普惠.iss` + `publish_v1.9.0_zyph`，54,133,103B，MD5 dd26a8b96ba3778d5972f55490a5b89e；构建方式同 V1.6.0：临时将 MainWindow.xaml.cs `CustomerCompanyName` 常量与 MainWindow.xaml 两处公司名默认文案改为众赢普惠后发布，发布目录已按 UTF-16 字节级验证仅含众赢普惠、不含瑞达（各 506 个 exe/dll 扫描），源码发布后即刻还原，产物不入版本库）
+- V1.9.0 功能内容 = **feature/openblt-upgrade-adapt 分支全量**（自 master@8f50a69 含阀门页读写功能）：① OpenBLT XCP 固件升级功能（S-record 解析/XCP 客户端/升级页重写，硬件联调待固件 codex 分支修复链接回归）+ 5 项 beforepined 协议适配（SOC 60/61、压力 100/35/65、锁定系数置灰、时序 14 条、拉载手动反馈）；② 电堆信息轮询修复（BMS 总线接管 0x8D 确认重试、轮询健康监测+广播探针自动诊断）；③ 通讯专项审查修复批次（RX 链死锁消除、双主站仲裁闭环、接管状态机、XCP 幂等重试等，详见《通讯专项审查修复功能更新日志.md》）。**注意：升级功能未经真机联调，升级页使用前先过日志中的真机验证清单**
+
 ### 2026-09-21（通讯专项审查修复批次，feature/openblt-upgrade-adapt）
 
 **四 agent 通讯专审（AA55 协议/线程模型/BMS Modbus 仲裁/OpenBLT XCP 四维度）后按 feature-dev-workflow 完成修复**，6 个待办各经独立审查通过，编译全程 0 警告 0 错误。详见《通讯专项审查修复功能更新日志.md》：
