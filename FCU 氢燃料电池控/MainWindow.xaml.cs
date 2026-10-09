@@ -3600,6 +3600,20 @@ namespace FCU_氢燃料电池控
         }
 
         /// <summary>
+        /// 低压泄压保护状态转中文（0xF1 状态码 0x0105，取值 0/1）。
+        /// 对应下位机 fcu_protocol.h 的 FCU_STATUS_LOW_PRESSURE_RELIEF 定义。
+        /// </summary>
+        private static string GetLowPressureReliefStateName(byte state)
+        {
+            return state switch
+            {
+                0 => "未触发",
+                1 => "泄压中",
+                _ => $"未知({state})"
+            };
+        }
+
+        /// <summary>
         /// 更新ViewModel中的电堆信息（MVVM模式）
         /// </summary>
         private void UpdateViewModelStackInfo(StackInfoData data)
@@ -4084,6 +4098,23 @@ namespace FCU_氢燃料电池控
                 }
 
                 UpdateStatus($"状态变更：{stateChange.GetStateTypeName()}: {oldName} → {newName}");
+                return;
+            }
+
+            // 0x4842 RS485 通讯心跳(每5s一帧, 下位机 main.c)：链路保活信号，静默忽略防止刷屏；
+            // 链路存活判断仍走 0x87 轮询命中机制
+            if (stateChange.StateType == 0x4842)
+            {
+                return;
+            }
+
+            // 0x0105 低压泄压保护：仅显示状态转换（压力恢复上报 1→0），
+            // 0x000C 泄压警示 Growl 不因此清除（下位机后台告警须人工消除）
+            if (stateChange.StateType == 0x0105)
+            {
+                string reliefOld = GetLowPressureReliefStateName(stateChange.OldState);
+                string reliefNew = GetLowPressureReliefStateName(stateChange.NewState);
+                UpdateStatus($"状态变更：{stateChange.GetStateTypeName()}: {reliefOld} → {reliefNew}");
                 return;
             }
 

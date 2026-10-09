@@ -389,7 +389,7 @@ namespace FCU_氢燃料电池控.Models
     public class StateChangeData
     {
         /// <summary>
-        /// 状态类型代码 (0x0101:电堆工作状态, 0x0102:风扇运行状态, 0x0103:DCDC工作状态, 0x0104:阀门状态)
+        /// 状态类型代码 (0x0101:电堆工作状态, 0x0102:风扇运行状态, 0x0103:DCDC工作状态, 0x0104:阀门状态, 0x0105:低压泄压保护)
         /// </summary>
         public ushort StateType { get; set; }
 
@@ -414,6 +414,7 @@ namespace FCU_氢燃料电池控.Models
                 0x0102 => "风扇运行状态",
                 0x0103 => "DCDC工作状态",
                 0x0104 => "阀门状态",
+                0x0105 => "低压泄压保护",
                 _ => "未知状态"
             };
         }
