@@ -321,6 +321,7 @@ namespace FCU_氢燃料电池控.Models
                 0x0009 => "FCU控制器过热",
                 0x000A => "高压压力高",
                 0x000B => "充电异常",
+                0x000C => "低压超限泄压警示",
                 _ => "未知报警"
             };
         }
@@ -334,6 +335,7 @@ namespace FCU_氢燃料电池控.Models
         ///   0x0008        BMS故障  → reg139 故障位图     (fcu_control.c:136)
         ///   0x0004        风扇异常 → 当前转速 RPM        (fcu_fan.c 堵转/缺相检测, 协议V5.1)
         ///   0x000B        充电异常 → SOC % (1%单位)      (fcu_control.c 充电停滞告警)
+        ///   0x000C        泄压警示 → KPA 原值            (fcu_control.c low_pressure_task, >80KPA开阀WARNING, 协议名「低压超限泄压警示」)
         /// 0x0005(电压异常)/0x0009(FCU过热) 固件当前无触发点，按同类语义预置换算。
         /// 注：固件行号随提交漂移，以 FCU_ALARM_* 枚举 grep 定位为准。
         /// </summary>
@@ -341,8 +343,8 @@ namespace FCU_氢燃料电池控.Models
         {
             return AlarmType switch
             {
-                // 压力类：固件直接送 KPA 原值，不缩放（0x000A 高压过压同为 KPA 原值）
-                0x0001 or 0x0003 or 0x000A => $"{AlarmValue} KPA",
+                // 压力类：固件直接送 KPA 原值，不缩放（0x000A 高压过压、0x000C 泄压警示同为 KPA 原值）
+                0x0001 or 0x0003 or 0x000A or 0x000C => $"{AlarmValue} KPA",
 
                 // 温度类：固件送 温度×10，按有符号还原（下位机允许负温）
                 0x0002 or 0x0009 => $"{(short)AlarmValue / 10.0:F1} ℃",
