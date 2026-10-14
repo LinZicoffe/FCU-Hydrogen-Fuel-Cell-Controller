@@ -921,7 +921,7 @@
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0"
-                                                   Text="读取FCU参数后回填固件实际值；写入按钮仅下发固件支持的字段，时序图中固件固定段落只作预览。"
+                                                   Text="读取FCU参数后回填固件实际值；扩展时序(0x0202)仅电堆关机状态可写入，写入按钮按参数组分别下发。"
                                                    Foreground="#EF6C00" VerticalAlignment="Center" TextWrapping="Wrap"/>
                                         <Button Grid.Column="1" Content="校验并刷新预览" Style="{StaticResource StandardButtonStyle}"
                                                 Width="130" Margin="4,0" Click="btn_ValidateValveTiming_Click"/>
@@ -939,12 +939,26 @@
                                     <!-- 开机阶段 -->
                                     <Border BorderBrush="#90CAF9" BorderThickness="1" CornerRadius="6" Margin="4" Padding="10">
                                         <StackPanel>
-                                            <TextBlock Text="开机时序（t=0：收到有效 RS485 开机指令）"
+                                            <TextBlock Text="开机时序（t=0：12V 上电，两轨并行计时）"
                                                        FontSize="15" FontWeight="SemiBold" Foreground="#1565C0"/>
-                                            <TextBlock Text="t=0 排水阀立即打开；排水阀第一次打开计时与氢阀第一次打开延时并行开始。"
+                                            <TextBlock Text="t=0 为 12V 上电时刻；排水阀/氢阀分别经各自领启延时后启动序列，两轨独立并行推进（氢阀领启必须晚于排水领启）。"
                                                        FontSize="11" Foreground="#616161" Margin="0,2,0,6" TextWrapping="Wrap"/>
                                             <controls:ValveTimingPreview x:Name="startupValveTimingPreview" Height="170" Margin="0,2,0,4"/>
                                             <TextBlock x:Name="tbk_StartupTimingStatus" Foreground="#2E7D32" Margin="4,0,4,6" TextWrapping="Wrap"/>
+                                            <!-- 领启延时（0x0202）：两轨自 12V 上电的启动延时 -->
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                <TextBlock Text="领启延时（自12V上电）：" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#455A64"/>
+                                                <TextBlock Text="排水" VerticalAlignment="Center" Margin="10,0,4,0"
+                                                           ToolTip="0x0202 startup_drain_delay：12V 上电至排水序列启动的延时"/>
+                                                <TextBox Name="tbx_StartupDrainLeadDelay" Style="{StaticResource TimingTextBoxStyle}" Text="0.50" TextChanged="ValveTimingInput_TextChanged"
+                                                         ToolTip="0x0202 startup_drain_delay（默认 0.5s）：12V 上电至排水阀序列启动的延时，必须小于氢阀领启"/>
+                                                <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                <TextBlock Text="氢阀" VerticalAlignment="Center" Margin="12,0,4,0"
+                                                           ToolTip="0x0202 startup_h2_delay：12V 上电至氢阀序列启动的延时"/>
+                                                <TextBox Name="tbx_StartupH2LeadDelay" Style="{StaticResource TimingTextBoxStyle}" Text="1.50" TextChanged="ValveTimingInput_TextChanged"
+                                                         ToolTip="0x0202 startup_h2_delay（默认 1.5s）：12V 上电至氢阀序列启动的延时，固件要求严格大于排水领启"/>
+                                                <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                            </StackPanel>
                                             <!-- 客户要求：氢阀参数与排水/吹扫参数分别成行，不再交叉排列。 -->
                                             <Grid Margin="0,2,0,0">
                                                 <Grid.ColumnDefinitions>
@@ -962,11 +976,11 @@
                                                 </Border>
                                                 <UniformGrid Grid.Row="0" Grid.Column="1" Columns="3" Margin="0,0,0,4">
                                                     <StackPanel>
-                                                        <TextBlock Text="氢阀等待" FontWeight="SemiBold" HorizontalAlignment="Center"
-                                                                   ToolTip="t=0 起，氢阀保持关闭至第一次打开"/>
+                                                        <TextBlock Text="氢阀初始关闭" FontWeight="SemiBold" HorizontalAlignment="Center"
+                                                                   ToolTip="领启后氢阀先保持关闭的时长"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_StartupH2FirstDelay" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged" IsEnabled="False"
-                                                                     ToolTip="固件固定：FCU_VALVE_T_H2_PULSE_C1=3（0.3s），无协议字段，仅预览"/>
+                                                            <TextBox Name="tbx_StartupH2FirstDelay" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"
+                                                                     ToolTip="0x0202 h2_start_close1（默认 0.3s）：领启后氢阀初始关闭时长，随「写入扩展时序(0x03+0x0202)」下发"/>
                                                             <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                         </StackPanel>
                                                     </StackPanel>
@@ -974,17 +988,17 @@
                                                         <TextBlock Text="氢阀打开①" FontWeight="SemiBold" HorizontalAlignment="Center"
                                                                    ToolTip="氢阀第一次打开保持时长"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_StartupH2FirstOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged" IsEnabled="False"
-                                                                     ToolTip="固件固定：FCU_VALVE_T_H2_PULSE_O1=10（1.0s），无协议字段，仅预览"/>
+                                                            <TextBox Name="tbx_StartupH2FirstOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"
+                                                                     ToolTip="0x0202 h2_start_open（默认 1.0s）：氢阀开启时长，随「写入扩展时序(0x03+0x0202)」下发"/>
                                                             <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                         </StackPanel>
                                                     </StackPanel>
                                                     <StackPanel>
-                                                        <TextBlock Text="氢阀关闭 / 再开延时" FontWeight="SemiBold" HorizontalAlignment="Center"
-                                                                   ToolTip="从电堆吹扫②开始，到氢阀再次打开的延时"/>
+                                                        <TextBlock Text="氢阀再开前关闭" FontWeight="SemiBold" HorizontalAlignment="Center"
+                                                                   ToolTip="氢阀第一次打开结束后、再次常开前的关闭时长"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_StartupH2ReopenDelay" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged" IsEnabled="False"
-                                                                     ToolTip="固件固定：FCU_VALVE_T_H2_PULSE_C2=3（0.3s），无协议字段，仅预览"/>
+                                                            <TextBox Name="tbx_StartupH2ReopenDelay" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"
+                                                                     ToolTip="0x0202 h2_start_close2（默认 0.3s）：再开前关闭时长，此后氢阀常开至停机，随「写入扩展时序(0x03+0x0202)」下发"/>
                                                             <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                         </StackPanel>
                                                     </StackPanel>
@@ -1005,8 +1019,8 @@
                                                     <StackPanel>
                                                         <TextBlock Text="吹扫停止①" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_StartupDrainFirstClose" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged" IsEnabled="False"
-                                                                     ToolTip="固件固定：FCU_VALVE_T_START_PAUSE1=3（0.3s），无协议字段，仅预览"/>
+                                                            <TextBox Name="tbx_StartupDrainFirstClose" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"
+                                                                     ToolTip="0x0202 start_pause1（默认 0.3s）：排水第一次关闭时长，随「写入扩展时序(0x03+0x0202)」下发"/>
                                                             <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                         </StackPanel>
                                                     </StackPanel>
@@ -1020,22 +1034,22 @@
                                                     <StackPanel>
                                                         <TextBlock Text="吹扫停止②" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_StartupDrainThirdInterval" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged" IsEnabled="False"
-                                                                     ToolTip="固件固定：FCU_VALVE_T_START_PAUSE2=3（0.3s），无协议字段，仅预览"/>
+                                                            <TextBox Name="tbx_StartupDrainThirdInterval" Style="{StaticResource TimingTextBoxStyle}" Text="0.30" TextChanged="ValveTimingInput_TextChanged"
+                                                                     ToolTip="0x0202 start_pause2（默认 0.3s）：排水第二次关闭时长，随「写入扩展时序(0x03+0x0202)」下发"/>
                                                             <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                         </StackPanel>
                                                     </StackPanel>
                                                     <StackPanel>
                                                         <TextBlock Text="电堆吹扫③" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_StartupDrainThirdOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged" IsEnabled="False"
-                                                                     ToolTip="固件固定：FCU_VALVE_T_START_THIRD=10（1.0s），无协议字段，仅预览"/>
+                                                            <TextBox Name="tbx_StartupDrainThirdOpen" Style="{StaticResource TimingTextBoxStyle}" Text="1.00" TextChanged="ValveTimingInput_TextChanged"
+                                                                     ToolTip="0x0202 start_third_duration（默认 1.0s）：排水第三次开启时长，结束后进入正常运行排水，随「写入扩展时序(0x03+0x0202)」下发"/>
                                                             <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                         </StackPanel>
                                                     </StackPanel>
                                                 </UniformGrid>
                                             </Grid>
-                                            <TextBlock Text="置灰字段为固件固定时序（氢阀脉冲三段、吹扫停止①②、吹扫③，固件 FCU_VALVE_T_* 常量，无协议字段），仅参与预览绘制，不随写入下发；可编辑的吹扫①/②随「写入排水时序(0x03)」写入。"
+                                            <TextBlock Text="领启延时、氢阀三段、吹扫停止①②、吹扫③均为 0x0202 扩展时序（固件 codex/configurable-valve-timing 分支，仅电堆关机状态可写入），随「写入扩展时序(0x03+0x0202)」下发；可编辑的吹扫①/②随「写入排水时序(0x03)」写入。固件要求：九项均大于 0 且排水领启 &lt; 氢阀领启。"
                                                        FontSize="11" Foreground="#757575" Margin="4,6,4,0" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </Border>
@@ -1139,7 +1153,7 @@
                                                                ToolTip="排水阀从收到关机指令起持续打开的总时长"/>
                                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                                         <TextBox Name="tbx_ShutdownTotal" Style="{StaticResource TimingTextBoxStyle}" Text="8.00" TextChanged="ValveTimingInput_TextChanged" IsEnabled="False"
-                                                                 ToolTip="自动计算：关机排水保持 + 固定排空5.0s（FCU_VALVE_T_SHUTDOWN_EMPTY=50），读取FCU参数后回填，仅预览"/>
+                                                                 ToolTip="自动计算：关机排水保持(0x0E) + 关机排空保持(0x0202 shutdown_empty)，随输入实时重算，仅预览"/>
                                                         <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                     </StackPanel>
                                                 </StackPanel>
@@ -1150,7 +1164,14 @@
                                                 <StackPanel Orientation="Horizontal">
                                                     <Label Content="关机排水保持" Style="{StaticResource LabelStyle}" Width="105"
                                                            ToolTip="0x0E purge_drain_hold：关机时排水阀保持打开时长"/>
-                                                    <TextBox Name="tbx_PurgeDrainHoldSec" Style="{StaticResource TimingTextBoxStyle}" Text="3.00"/>
+                                                    <TextBox Name="tbx_PurgeDrainHoldSec" Style="{StaticResource TimingTextBoxStyle}" Text="3.00" TextChanged="ValveTimingInput_TextChanged"/>
+                                                    <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Label Content="关机排空保持" Style="{StaticResource LabelStyle}" Width="105"
+                                                           ToolTip="0x0202 shutdown_empty：关机排空的额外保持时长，排水连续开启总时长=关机排水保持+本值"/>
+                                                    <TextBox Name="tbx_ShutdownEmptySec" Style="{StaticResource TimingTextBoxStyle}" Text="5.00" TextChanged="ValveTimingInput_TextChanged"
+                                                             ToolTip="0x0202 shutdown_empty（默认 5.0s）：关机排空的额外保持时长；排水连续开启总时长 = 关机排水保持(0x0E) + 本值，随「写入扩展时序(0x03+0x0202)」下发"/>
                                                     <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal">
@@ -1160,7 +1181,7 @@
                                                     <TextBlock Text="%" Style="{StaticResource PressureUnitStyle}"/>
                                                 </StackPanel>
                                             </WrapPanel>
-                                            <TextBlock Text="置灰字段说明：氢阀关闭①为固件固定的运行态延续（关机 purge 序列直接进入补气①，无协议字段）；排氢关机时长 = 关机排水保持 + 固定排空 5.0s（FCU_VALVE_T_SHUTDOWN_EMPTY），读取FCU参数后自动回填。可编辑的补气①/关闭②/补气②随「写入关机流程(0x0E)」写入。"
+                                            <TextBlock Text="排氢关机时长 = 关机排水保持(0x0E) + 关机排空保持(0x0202 shutdown_empty)，随输入实时重算、读取FCU参数后回填；关机氢阀序列为 补气①→关闭②→补气②→终关（固件 purge 终关无参数框）。补气①/关闭②/补气②随「写入关机流程(0x0E)」写入，排空保持随「写入扩展时序(0x03+0x0202)」写入。"
                                                        FontSize="11" Foreground="#757575" Margin="4,5,4,0" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </Border>
@@ -1190,7 +1211,7 @@
                                     </Border>
 
                                     <!-- stop_duration(0x03 关机排水时长)：固件死参数（可读写但关机控制逻辑未使用，
-                                         实际排水保持由 0x0E purge_drain_hold + 固定排空5s 决定）。
+                                         实际排水保持由 0x0E purge_drain_hold + 0x0202 shutdown_empty 决定）。
                                          保留隐藏框仅为 0x03 整帧写入时原样回传，避免误改设备存储值。 -->
                                     <Grid Visibility="Collapsed">
                                         <TextBox Name="tbx_ValveShutdownOpen" Text="5"/>

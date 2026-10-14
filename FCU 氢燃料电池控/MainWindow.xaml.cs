@@ -398,7 +398,7 @@ namespace FCU_氢燃料电池控
         }
 
         private static bool TryReadTimingValue(TextBox box, string fieldName, out double value,
-            out string error)
+            out string error, double maxSeconds = 9.99)
         {
             string text = box.Text?.Trim() ?? string.Empty;
             bool parsed = double.TryParse(text, NumberStyles.Number, CultureInfo.CurrentCulture, out value)
@@ -420,9 +420,9 @@ namespace FCU_氢燃料电池控
                 return false;
             }
 
-            if (value < 0 || value > 9.99)
+            if (value < 0 || value > maxSeconds)
             {
-                error = $"{fieldName}超出范围，允许 0.00～9.99s";
+                error = $"{fieldName}超出范围，允许 0.00～{maxSeconds:0.##}s";
                 return false;
             }
 
