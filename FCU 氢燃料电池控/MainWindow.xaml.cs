@@ -288,6 +288,12 @@ namespace FCU_氢燃料电池控
             }
         }
 
+        /// <summary>
+        /// 开机时序预览（固件实测语义：t=0 为 12V 上电，排水/氢阀两轨各自经领启延时启动、并行推进）。
+        /// 排水轨 开①(0x0201)→关①(0x0202)→开②(0x0201)→关②(0x0202)→开③(0x0202)；
+        /// 氢阀轨 领启后初始关闭(h2c1)→开(h2o)→关(h2c2)→常开（HOLD_OPEN）。
+        /// 预算：固件不校验总长，开机序列 20s 未完成撞 DCDC 门控 FAULT（4.0s 起检查）。
+        /// </summary>
         private bool UpdateStartupTimingPreview()
         {
             if (startupValveTimingPreview == null || tbk_StartupTimingStatus == null)
@@ -295,67 +301,82 @@ namespace FCU_氢燃料电池控
                 return false;
             }
 
+            const double maxInput = 60.0;
             var fields = new (TextBox Box, string Name)[]
             {
-                (tbx_StartupH2FirstDelay, "氢阀等待"),
-                (tbx_StartupH2FirstOpen, "氢阀打开①"),
+                (tbx_StartupDrainLeadDelay, "排水领启延时"),
                 (tbx_StartupDrainFirstOpen, "电堆吹扫①"),
                 (tbx_StartupDrainFirstClose, "吹扫停止①"),
-                (tbx_StartupH2ReopenDelay, "氢阀关闭/再开延时"),
                 (tbx_StartupDrainSecondOpen, "电堆吹扫②"),
                 (tbx_StartupDrainThirdInterval, "吹扫停止②"),
-                (tbx_StartupDrainThirdOpen, "电堆吹扫③")
+                (tbx_StartupDrainThirdOpen, "电堆吹扫③"),
+                (tbx_StartupH2LeadDelay, "氢阀领启延时"),
+                (tbx_StartupH2FirstDelay, "氢阀初始关闭"),
+                (tbx_StartupH2FirstOpen, "氢阀打开①"),
+                (tbx_StartupH2ReopenDelay, "氢阀再开前关闭")
             };
 
             double[] values = new double[fields.Length];
             for (int i = 0; i < fields.Length; i++)
             {
-                if (!TryReadTimingValue(fields[i].Box, fields[i].Name, out values[i], out string error))
+                if (!TryReadTimingValue(fields[i].Box, fields[i].Name, out values[i], out string error, maxInput))
                 {
                     SetTimingError(startupValveTimingPreview, tbk_StartupTimingStatus, error);
                     return false;
                 }
             }
 
-            double h2FirstDelay = values[0];
-            double h2FirstClose = h2FirstDelay + values[1];
-            double drainFirstClose = values[2];
-            double drainSecondOpen = drainFirstClose + values[3];
-            double h2Reopen = drainSecondOpen + values[4];
-            double drainSecondClose = drainSecondOpen + values[5];
-            double drainThirdOpen = drainSecondClose + values[6];
-            double drainThirdClose = drainThirdOpen + values[7];
+            // values: [0]排水领启 [1]吹扫①(0x0201) [2]停止① [3]吹扫②(0x0201) [4]停止② [5]吹扫③ [6]氢阀领启 [7]初始关闭 [8]打开① [9]再开前关闭
+            double drainLead = values[0];
+            double drainClose1 = drainLead + values[1];
+            double drainOpen2 = drainClose1 + values[2];
+            double drainClose2 = drainOpen2 + values[3];
+            double drainOpen3 = drainClose2 + values[4];
+            double drainEnd = drainOpen3 + values[5];
 
-            if (h2Reopen < h2FirstClose)
+            double h2Lead = values[6];
+            double h2Open = h2Lead + values[7];
+            double h2Close = h2Open + values[8];
+            double h2End = h2Close + values[9];
+
+            if (drainLead >= h2Lead)
             {
                 SetTimingError(startupValveTimingPreview, tbk_StartupTimingStatus,
-                    "氢阀再次打开早于首次打开结束，请调整首次打开或再次延时");
+                    $"排水领启延时({drainLead:0.00}s)必须严格小于氢阀领启延时({h2Lead:0.00}s)，固件会拒绝写入");
                 return false;
             }
 
-            if (values[4] > values[5])
+            double total = Math.Max(Math.Max(drainEnd, h2End), 0.01);
+            if (total > 20.0)
             {
                 SetTimingError(startupValveTimingPreview, tbk_StartupTimingStatus,
-                    "氢阀再次打开延时不能大于排水阀第二次打开时长");
+                    $"开机序列总长 {total:0.00}s 超出 DCDC 门控 20s 预算：固件不校验总长，超限将触发 0x0006 故障停机，请压缩时序");
                 return false;
             }
 
-            double total = Math.Max(Math.Max(h2Reopen, drainThirdClose), 0.01);
             startupValveTimingPreview.SetTimeline(total,
                 new ValveTrack(false,
-                    new[] { h2FirstDelay, h2FirstClose, h2Reopen },
-                    new[] { "开①", "关①", "再开" }),
-                new ValveTrack(true, new[]
+                    new[] { h2Open, h2Close, h2End },
+                    new[] { "开①", "关①", "常开" }),
+                new ValveTrack(false, new[]
                 {
-                    drainFirstClose, drainSecondOpen, drainSecondClose, drainThirdOpen, drainThirdClose
-                }, new[] { "关①", "开②", "关②", "开③", "关③" }));
+                    drainLead, drainClose1, drainOpen2, drainClose2, drainOpen3, drainEnd
+                }, new[] { "开①", "关①", "开②", "关②", "开③", "关③" }));
 
             tbk_StartupTimingStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
             tbk_StartupTimingStatus.Text =
-                $"有效预览：t=0 两路并行计时；{h2Reopen:0.00}s 氢阀再次打开并允许进入拉载条件判断；{drainThirdClose:0.00}s 后进入正常排水计时。";
+                $"有效预览：t=0 为 12V 上电；排水轨 {drainLead:0.00}s 领启、{drainEnd:0.00}s 完成后进入正常排水；" +
+                $"氢阀轨 {h2Lead:0.00}s 领启、{h2End:0.00}s 起常开；总长 {total:0.00}s 在 DCDC 门控 20s 预算内（固件按 100ms 调度，各段有 0~0.1s 量化余量）。";
             return true;
         }
 
+        /// <summary>
+        /// 关机时序预览（固件实测语义：t=0 氢阀 purge 与排水连续保持同拍并行启动）。
+        /// 氢阀轨 开①(0x0E purge_h2_open1)→关(purge_h2_close)→开②(purge_h2_open2)→终关（固件 DONE 关阀）；
+        /// 排水轨连续开启 总长 = 关机排水保持(0x0E) + 关机排空保持(0x0202)，直接由两输入框求和，
+        /// 不经 tbx_ShutdownTotal（单项合法仅预算超限时不得被 60s 上限误报）。
+        /// 预算：固件不校验总长，关机 30s 强制下电截断。
+        /// </summary>
         private bool UpdateShutdownTimingPreview()
         {
             if (shutdownValveTimingPreview == null || tbk_ShutdownTimingStatus == null)
@@ -363,47 +384,50 @@ namespace FCU_氢燃料电池控
                 return false;
             }
 
+            const double maxInput = 60.0;
             var fields = new (TextBox Box, string Name)[]
             {
-                (tbx_ShutdownH2Close1, "氢阀关闭①"),
                 (tbx_ShutdownH2Open1, "氢阀补气①"),
                 (tbx_ShutdownH2Close2, "氢阀关闭②"),
                 (tbx_ShutdownH2Open2, "氢阀补气②"),
-                (tbx_ShutdownTotal, "排氢关机时长")
+                (tbx_PurgeDrainHoldSec, "关机排水保持"),
+                (tbx_ShutdownEmptySec, "关机排空保持")
             };
 
             double[] values = new double[fields.Length];
             for (int i = 0; i < fields.Length; i++)
             {
-                if (!TryReadTimingValue(fields[i].Box, fields[i].Name, out values[i], out string error))
+                if (!TryReadTimingValue(fields[i].Box, fields[i].Name, out values[i], out string error, maxInput))
                 {
                     SetTimingError(shutdownValveTimingPreview, tbk_ShutdownTimingStatus, error);
                     return false;
                 }
             }
 
-            double close1End = values[0];
-            double open1End = close1End + values[1];
-            double close2End = open1End + values[2];
-            double open2End = close2End + values[3];
-            double total = values[4];
-            if (total < open2End)
+            // values: [0]补气① [1]关闭② [2]补气② [3]排水保持 [4]排空保持
+            double h2Close1 = values[0];
+            double h2Open2 = h2Close1 + values[1];
+            double h2End = h2Open2 + values[2];
+            double drainTotal = values[3] + values[4];
+
+            double total = Math.Max(Math.Max(drainTotal, h2End), 0.01);
+            if (drainTotal > 30.0 || h2End > 30.0)
             {
                 SetTimingError(shutdownValveTimingPreview, tbk_ShutdownTimingStatus,
-                    $"排氢关机时长不能小于氢阀四段时间之和 {open2End:0.00}s");
+                    $"关机时序超出 30s 强制下电预算：排水 {drainTotal:0.00}s / 氢阀 {h2End:0.00}s——固件不校验总长，超限将被强制下电截断");
                 return false;
             }
 
-            shutdownValveTimingPreview.SetTimeline(Math.Max(total, 0.01),
-                new ValveTrack(false,
-                    new[] { close1End, open1End, close2End, open2End },
-                    new[] { "开①", "关②", "开②", "最终关" }),
-                new ValveTrack(true, new[] { total }, new[] { "关" }));
+            shutdownValveTimingPreview.SetTimeline(total,
+                new ValveTrack(true,
+                    new[] { h2Close1, h2Open2, h2End },
+                    new[] { "关②", "开②", "终关" }),
+                new ValveTrack(true, new[] { drainTotal }, new[] { "关" }));
 
-            double remainingDrainTime = total - open2End;
             tbk_ShutdownTimingStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
             tbk_ShutdownTimingStatus.Text =
-                $"有效预览：t=0 同时关氢阀、开排水阀；氢阀序列 {open2End:0.00}s，最终关氢后继续排氢 {remainingDrainTime:0.00}s。";
+                $"有效预览：t=0 同时开氢阀（purge）与排水阀；排水连续 {drainTotal:0.00}s（保持+排空），" +
+                $"氢阀 purge {h2End:0.00}s 终关；双路完成后断 12V（固件关机 30s 强制下电，各段有 0~0.1s 量化余量）。";
             return true;
         }
 

@@ -1099,11 +1099,11 @@
                                         <StackPanel>
                                             <TextBlock Text="关机时序（t=0：收到有效 RS485 关机指令）"
                                                        FontSize="15" FontWeight="SemiBold" Foreground="#EF6C00"/>
-                                            <TextBlock Text="t=0 同时关闭氢阀并打开排水阀；排水阀持续打开至排氢关机时长结束。"
+                                            <TextBlock Text="t=0 同时打开氢阀（purge 补气）与排水阀；氢阀 补气①→关闭②→补气②→终关，排水阀连续保持至排氢关机时长（排水保持+排空）结束，双路完成后断 12V。"
                                                        FontSize="11" Foreground="#616161" Margin="0,2,0,6" TextWrapping="Wrap"/>
                                             <controls:ValveTimingPreview x:Name="shutdownValveTimingPreview" Height="170" Margin="0,2,0,4"/>
                                             <TextBlock x:Name="tbk_ShutdownTimingStatus" Foreground="#2E7D32" Margin="4,0,4,6" TextWrapping="Wrap"/>
-                                            <!-- 关机阶段同样按阀门分组：氢阀四段在一行，排水阀总时长独立一行。 -->
+                                            <!-- 关机阶段同样按阀门分组：氢阀三框（补气①/关闭②/补气②，对应固件 开1→关→开2 四段，终关无参数框）在一行，排水阀总时长独立一行。 -->
                                             <Grid Margin="0,2,0,0">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="72"/>
@@ -1117,15 +1117,7 @@
                                                     <TextBlock Text="氢阀" Foreground="#EF6C00" FontWeight="SemiBold"
                                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                 </Border>
-                                                <UniformGrid Grid.Row="0" Grid.Column="1" Columns="4" Margin="0,0,0,4">
-                                                    <StackPanel>
-                                                        <TextBlock Text="氢阀关闭①" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <TextBox Name="tbx_ShutdownH2Close1" Style="{StaticResource TimingTextBoxStyle}" Text="0.50" TextChanged="ValveTimingInput_TextChanged" IsEnabled="False"
-                                                                     ToolTip="固件无此参数：关机 purge 序列直接从运行态开阀进入补气①（fcu_valve.c h2_purge_phase），仅预览"/>
-                                                            <TextBlock Text="s" Style="{StaticResource PressureUnitStyle}"/>
-                                                        </StackPanel>
-                                                    </StackPanel>
+                                                <UniformGrid Grid.Row="0" Grid.Column="1" Columns="3" Margin="0,0,0,4">
                                                     <StackPanel>
                                                         <TextBlock Text="氢阀补气①" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
