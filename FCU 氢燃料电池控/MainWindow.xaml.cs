@@ -138,15 +138,12 @@ namespace FCU_氢燃料电池控
         private readonly LicenseService? _licenseService;
 #endif
 
-        // 图表相关字段
+        // 图表相关字段（输出功率曲线已取消：输出侧只保留电压/电流数值显示，走 ViewModel）
         private readonly ObservableCollection<double> _inputPowerValues = new ObservableCollection<double>();
-        private readonly ObservableCollection<double> _outputPowerValues = new ObservableCollection<double>();
         private readonly ObservableCollection<DateTime> _timeValues = new ObservableCollection<DateTime>();
         private const int MaxDataPoints = 600;  // 最大数据点数（60秒窗口 × 10点/秒）
         private double _currentInputVoltage = 0;
         private double _currentInputCurrent = 0;
-        private double _currentOutputVoltage = 0;
-        private double _currentOutputCurrent = 0;
 
         // 历史配方页已隐藏且不再初始化；仅保留字段供旧代码可编译回退。
         private RecipeService? _recipeService = null;
@@ -157,7 +154,6 @@ namespace FCU_氢燃料电池控
         private readonly Random _random = new Random();
         private DispatcherTimer? _testDataUpdateTimer;
         private double _testInputPower = 0;
-        private double _testOutputPower = 0;
         private DateTime _lastTestDataUpdate = DateTime.Now;
 #endif
 
@@ -911,18 +907,7 @@ namespace FCU_氢燃料电池控
                 LineSmoothness = 0.5  // 平滑曲线
             };
 
-            // 配置输出功率曲线（橙红色）
-            var outputPowerSeries = new LineSeries<double>
-            {
-                Values = _outputPowerValues,
-                Name = "Output Power",  // 图例在XAML中自定义显示，这里使用简单名称
-                Stroke = new SolidColorPaint(SKColors.OrangeRed) { StrokeThickness = 2 },
-                Fill = null,
-                GeometrySize = 0,  // 不显示数据点
-                LineSmoothness = 0.5  // 平滑曲线
-            };
-
-            PowerSeries = new ISeries[] { inputPowerSeries, outputPowerSeries };
+            PowerSeries = new ISeries[] { inputPowerSeries };
 
             // 配置X轴（时间轴）
             XAxes = new Axis[]
@@ -951,6 +936,8 @@ namespace FCU_氢燃料电池控
             };
 
             // 配置Y轴（功率轴）
+            // 不设 MaxLimit：实际电堆输入功率可达数千瓦，固定 1200W 上限会把曲线画出可视区（真机测试曲线消失的根因）；
+            // 也不强制 MinStep/ForceStepToMin，让刻度随量程自适应。MinLimit=0 锚定零功率基线。
             YAxes = new Axis[]
             {
                 new Axis
@@ -960,9 +947,6 @@ namespace FCU_氢燃料电池控
                     LabelsPaint = new SolidColorPaint(SKColors.Gray),
                     TextSize = 12,
                     MinLimit = 0,
-                    MaxLimit = 1200,
-                    MinStep = 200,                    // 强制最小刻度间隔为200W，确保显示完整范围
-                    ForceStepToMin = true,           // 强制使用MinStep，不允许自动调整
                     SeparatorsPaint = new SolidColorPaint(SKColors.LightGray) { StrokeThickness = 1 },
                     ShowSeparatorLines = true
                 }
@@ -996,30 +980,25 @@ namespace FCU_氢燃料电池控
                 {
                     // 生成新的随机功率值（0-1200W范围）
                     _testInputPower = _random.NextDouble() * 1200;
-                    _testOutputPower = _random.NextDouble() * 1200;
                     _lastTestDataUpdate = DateTime.Now;
                 }
 
                 // 使用测试数据
                 double inputPower = _testInputPower;
-                double outputPower = _testOutputPower;
 #else
                 // ========== 正常模式：使用实际电堆数据 ==========
-                // 计算输入功率和输出功率
+                // 计算输入功率
                 double inputPower = _currentInputVoltage * _currentInputCurrent;
-                double outputPower = _currentOutputVoltage * _currentOutputCurrent;
 #endif
 
                 // 添加新数据点
                 _inputPowerValues.Add(inputPower);
-                _outputPowerValues.Add(outputPower);
                 _timeValues.Add(DateTime.Now);
 
                 // 保持数据点数量不超过最大值
                 if (_inputPowerValues.Count > MaxDataPoints)
                 {
                     _inputPowerValues.RemoveAt(0);
-                    _outputPowerValues.RemoveAt(0);
                     _timeValues.RemoveAt(0);
                 }
             }
@@ -3813,12 +3792,10 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void UpdateStackInfo(StackInfoData data)
         {
-            // 保存DCDC电压电流用于图表显示
+            // 保存DCDC输入电压/电流用于功率曲线（输出侧曲线已取消，输出电压/电流数值走ViewModel）
             _currentInputVoltage = data.DCDCInputVoltage / 10.0;
             _currentInputCurrent = data.DCDCInputCurrent / 10.0;
-            _currentOutputVoltage = data.DCDCOutputVoltage / 10.0;
-            _currentOutputCurrent = data.DCDCOutputCurrent / 10.0;
-            
+
             // UI更新已通过UpdateViewModelStackInfo在HandleStackInfoResponse中完成
         }
 

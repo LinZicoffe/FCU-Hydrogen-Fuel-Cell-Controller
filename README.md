@@ -164,6 +164,16 @@ dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release
 
 ## 更新日志
 
+### 2026-10-14（功率曲线修复批次，feature/power-chart-fix）
+
+**真机测试反馈「输入/输出功率曲线没有显示」**，定位与处置：
+
+- **根因：Y 轴量程硬编码 0~1200W**（`MaxLimit=1200` + `MinStep=200`/`ForceStepToMin` 强制刻度）——实际电堆输入功率为数千瓦级，曲线被绘制在可视区外，两条功率线均「不可见」（仅测试模式 0~1200W 随机数恰好在量程内）；数据链路本身正常（0x87→`UpdateStackInfo`→采集定时器→ObservableCollection）
+- **修复：Y 轴改为自适应量程**——去掉 1200W 上限与强制 200W 步距，保留 `MinLimit=0` 锚定零功率基线，刻度随实际功率自适应
+- **按需求取消输出功率曲线**：橙色系列/自定义图例/`_outputPowerValues` 采集与裁剪/`_currentOutputVoltage`·`_currentOutputCurrent` 字段全链路移除（含 `ENABLE_POWER_CHART_TEST` 测试模式输出侧）；输出侧只保留电堆信息面板的输出电压/电流数值显示（走 ViewModel，不受影响）
+- **输入功率曲线保留并修复显示**（蓝色系列、图例不变）
+- 验证：Debug 全解决方案编译 0 警告 0 错误；真机复测待下一轮联调（观察项：带载工况输入功率数值与曲线量程、空闲时 0W 基线显示）
+
 ### 2026-10-09（V1.9.1 打包，低压分级泄压保护适配批次）
 
 - **配置变更：项目版本升级至 V1.9.1**（csproj Version/FileVersion/AssemblyVersion 同步），同版本出**两个安装包**（AppId 相同，同机交叉安装按升级覆盖）：
