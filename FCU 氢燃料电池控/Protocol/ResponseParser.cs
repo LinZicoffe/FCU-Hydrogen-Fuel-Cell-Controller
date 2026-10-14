@@ -51,6 +51,7 @@ namespace FCU_氢燃料电池控.Protocol
             {
                 ProtocolConstants.PARAM_TYPE_PRESSURE => 16,
                 ProtocolConstants.PARAM_TYPE_VALVE => 10,
+                ProtocolConstants.PARAM_TYPE_VALVE_TIMING => 18,   // 9×u16（ID 2B+子索引 1B 之外的参数体长度，响应 LEN=21）
                 ProtocolConstants.PARAM_TYPE_DCDC => 4,
                 ProtocolConstants.PARAM_TYPE_FAN_TEMP => 11,
                 ProtocolConstants.PARAM_TYPE_LOAD_SEQUENCE => -1,   // 变长: 时序数 × 4
@@ -281,6 +282,40 @@ namespace FCU_氢燃料电池控.Protocol
                 data.NormalInterval = (ushort)((frame[offset + 4] << 8) | frame[offset + 5]);
                 data.NormalOpenTime = (ushort)((frame[offset + 6] << 8) | frame[offset + 7]);
                 data.ShutdownOpenTime = (ushort)((frame[offset + 8] << 8) | frame[offset + 9]);
+            }
+            catch
+            {
+                // 解析异常时返回默认值
+            }
+
+            return data;
+        }
+
+        /// <summary>
+        /// 解析 0x8A+0x0202 阀门扩展时序响应（固件 codex/configurable-valve-timing 分支）。
+        /// 数据域 = ID(2B)+子索引(1B)+9×u16 大端，参数体 18B（不含 ID 与子索引）；固件忽略子索引恒返全量。
+        /// </summary>
+        /// <param name="frame">完整帧数据</param>
+        /// <returns>阀门扩展时序参数</returns>
+        public static ValveTimingParams ParseValveTimingParams(byte[] frame)
+        {
+            var data = new ValveTimingParams();
+
+            try
+            {
+                if (!TryGetReadConfigParameterData(frame, ProtocolConstants.PARAM_TYPE_VALVE_TIMING,
+                    out int offset, out int parameterDataLength) || parameterDataLength != 18)
+                    return data;
+
+                data.StartPause1 = (ushort)((frame[offset] << 8) | frame[offset + 1]);
+                data.StartPause2 = (ushort)((frame[offset + 2] << 8) | frame[offset + 3]);
+                data.StartThirdDuration = (ushort)((frame[offset + 4] << 8) | frame[offset + 5]);
+                data.H2StartClose1 = (ushort)((frame[offset + 6] << 8) | frame[offset + 7]);
+                data.H2StartOpen = (ushort)((frame[offset + 8] << 8) | frame[offset + 9]);
+                data.H2StartClose2 = (ushort)((frame[offset + 10] << 8) | frame[offset + 11]);
+                data.ShutdownEmpty = (ushort)((frame[offset + 12] << 8) | frame[offset + 13]);
+                data.StartupDrainDelay = (ushort)((frame[offset + 14] << 8) | frame[offset + 15]);
+                data.StartupH2Delay = (ushort)((frame[offset + 16] << 8) | frame[offset + 17]);
             }
             catch
             {

@@ -195,6 +195,12 @@ namespace FCU_氢燃料电池控.Protocol
         public const ushort PARAM_TYPE_VALVE = 0x0201;
 
         /// <summary>
+        /// 参数类型：阀门扩展时序（固件 codex/configurable-valve-timing 分支，9×u16 大端 0.1s；
+        /// 0x03 写入仅 OFF 态接受，0x0A 回读数据域=ID(2B)+子索引(1B)+9×u16）
+        /// </summary>
+        public const ushort PARAM_TYPE_VALVE_TIMING = 0x0202;
+
+        /// <summary>
         /// 参数类型：DCDC参数
         /// </summary>
         public const ushort PARAM_TYPE_DCDC = 0x0301;

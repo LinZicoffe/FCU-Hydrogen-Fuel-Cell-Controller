@@ -158,6 +158,58 @@ namespace FCU_氢燃料电池控.Models
     }
 
     /// <summary>
+    /// 阀门扩展时序结构（0x0202，固件 codex/configurable-valve-timing 分支）。
+    /// 属性序 = 线序（大端 u16，单位 0.1s），九项固件均要求非 0 且 startup_drain_delay &lt; startup_h2_delay。
+    /// </summary>
+    public class ValveTimingParams
+    {
+        /// <summary>
+        /// 开机排水第一次关闭时长 start_pause1 (0.1s)
+        /// </summary>
+        public ushort StartPause1 { get; set; }
+
+        /// <summary>
+        /// 开机排水第二次关闭时长 start_pause2 (0.1s)
+        /// </summary>
+        public ushort StartPause2 { get; set; }
+
+        /// <summary>
+        /// 开机排水第三次开启时长 start_third_duration (0.1s)
+        /// </summary>
+        public ushort StartThirdDuration { get; set; }
+
+        /// <summary>
+        /// 开机氢阀初始关闭时长 h2_start_close1 (0.1s)
+        /// </summary>
+        public ushort H2StartClose1 { get; set; }
+
+        /// <summary>
+        /// 开机氢阀开启时长 h2_start_open (0.1s)
+        /// </summary>
+        public ushort H2StartOpen { get; set; }
+
+        /// <summary>
+        /// 开机氢阀再开前关闭时长 h2_start_close2 (0.1s)
+        /// </summary>
+        public ushort H2StartClose2 { get; set; }
+
+        /// <summary>
+        /// 关机排空保持 shutdown_empty (0.1s)，关机排水连续时长 = purge_drain_hold + 本值
+        /// </summary>
+        public ushort ShutdownEmpty { get; set; }
+
+        /// <summary>
+        /// 排水领启延时 startup_drain_delay (0.1s)，自 12V 上电起算
+        /// </summary>
+        public ushort StartupDrainDelay { get; set; }
+
+        /// <summary>
+        /// 氢阀领启延时 startup_h2_delay (0.1s)，自 12V 上电起算，须大于排水领启
+        /// </summary>
+        public ushort StartupH2Delay { get; set; }
+    }
+
+    /// <summary>
     /// DCDC参数结构
     /// </summary>
     public class DCDCParams
