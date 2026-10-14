@@ -909,7 +909,7 @@
                                 </StackPanel>
                             </GroupBox>
 
-                            <!-- 新阀门时序仅做本地校验与预览；等待更新后的固件协议后再接入读写 -->
+                            <!-- 阀门时序含 0x0202 扩展时序读写（固件 codex/configurable-valve-timing 分支）；0x0201/0x020E 按原协议 -->
                             <GroupBox Header="氢阀 / 排水阀开关逻辑" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <StackPanel>
                                     <Grid Margin="4,0,4,10">

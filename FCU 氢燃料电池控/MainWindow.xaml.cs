@@ -715,6 +715,8 @@ namespace FCU_氢燃料电池控
                 StopFanManualResponseTimeout();
                 _pendingLoadManualCmd = null;
                 StopLoadManualResponseTimeout();
+                _pendingValveTimingSet = null;
+                StopValveTimingResponseTimeout();
                 if (!_socWriteReadbackPending)
                 {
                     bool hadUnconfirmedSocWrite = _pendingSocWrite != null;
@@ -1389,8 +1391,8 @@ namespace FCU_氢燃料电池控
         /// 读取阀门参数
         /// </summary>
         /// <summary>
-        /// 读取阀门页全部FCU参数（0x0A+0x0201 阀门排水时序、0x0A+0x0601 工作流程），回填到本页输入框。
-        /// 两帧间隔100ms，避免RS485半双工总线与固件应答冲突（同 btn_ReadLoadParams_Click 既有模式）。
+        /// 读取阀门页全部FCU参数（0x0A+0x0201 阀门排水时序、0x0A+0x0202 扩展时序、0x0A+0x0601 工作流程），回填到本页输入框。
+        /// 相邻帧间隔100ms，避免RS485半双工总线与固件应答冲突（同 btn_ReadLoadParams_Click 既有模式）。
         /// </summary>
         private void btn_ReadValvePageParams_Click(object sender, RoutedEventArgs e)
         {
@@ -1760,7 +1762,7 @@ namespace FCU_氢燃料电池控
 
         /// <summary>
         /// 组包 0x03+0x0202（数据域 20B：参数ID 2B + 9×u16 大端 0.1s，整帧 27B）。
-        /// 硬校验对齐固件 fcu_set_valve_timing：九项非 0（ParseSecondsTo0P1 保证 ≥1）、
+        /// 硬校验对齐固件 fcu_set_valve_timing：九项非 0（ParseValveTimingField 保证 ≥1）、
         /// 上位机上限 60.0s（600）、startup_drain_delay &lt; startup_h2_delay（违反固件回 0x02）。
         /// </summary>
         private byte[] BuildValveTimingDataFromUi()
@@ -2684,7 +2686,9 @@ namespace FCU_氢燃料电池控
             {
                 /* 0x0202 扩展时序的 0x82 归属（pending+2s 新鲜度，RX 线程快照/编组内清除，仿拉载模式）。
                  * 仅此回落分支消费；0x8E 直连 HandleSetParamResponse，不触碰本 pending。
-                 * 2s 内其他 0x82 写的响应先到会冒用 pending（已披露残余风险），超龄则忽略清除走泛化文案。 */
+                 * 2s 内其他 0x82 写的响应先到会冒用 pending（已披露残余风险）；超龄（计时器 Tick 未及触发的
+                 * 竞态窗口）则清除 pending 并静默忽略本迟到响应——超时 Growl 已由计时器兜底。
+                 * 结构注：0x82 泛化处理与 0x0202 pending 消费都以本回落分支为唯一入口。 */
                 DateTime? valveTimingPending = _pendingValveTimingSet;
                 if (valveTimingPending.HasValue)
                 {
