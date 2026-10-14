@@ -919,6 +919,7 @@
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0"
                                                    Text="读取FCU参数后回填固件实际值；扩展时序(0x0202)仅电堆关机状态可写入，写入按钮按参数组分别下发。"
@@ -927,7 +928,10 @@
                                                 Width="130" Margin="4,0" Click="btn_ValidateValveTiming_Click"/>
                                         <Button Grid.Column="2" Content="读取FCU参数" Style="{StaticResource StandardButtonStyle}"
                                                 Width="120" Margin="4,0" Click="btn_ReadValvePageParams_Click"
-                                                ToolTip="读取阀门排水时序(0x0A+0x0201)与工作流程参数(0x0A+0x0601)，回填到本页输入框"/>
+                                                ToolTip="读取阀门排水时序(0x0A+0x0201)、扩展时序(0x0A+0x0202)与工作流程参数(0x0A+0x0601)，回填到本页输入框"/>
+                                        <Button Grid.Column="5" Content="写入扩展时序(0x0202)" Style="{StaticResource SuccessButtonStyle}"
+                                                Width="150" Margin="4,0" Click="btn_SetValveTimingParams_Click"
+                                                ToolTip="写入领启延时、氢阀三段、吹扫停止①②/③、关机排空保持（0x03+0x0202 整帧，仅电堆关机状态接受）；排水领启必须小于氢阀领启"/>
                                         <Button Grid.Column="3" Content="写入排水时序(0x03)" Style="{StaticResource SuccessButtonStyle}"
                                                 Width="140" Margin="4,0" Click="btn_SetValveParams_Click"
                                                 ToolTip="写入电堆吹扫①/②、排水间隔/打开时长（0x03 整帧）；关机排水时长为固件死参数，按当前保留值原样回传"/>

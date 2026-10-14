@@ -134,6 +134,14 @@ namespace FCU_氢燃料电池控
         private bool _socWriteResultUnknown;
         private DispatcherTimer? _socResponseTimeoutTimer;
         private const int SocResponseTimeoutSeconds = 5;
+
+        // 0x0202 扩展时序写入的 0x82 归属（pending+超时，仿 SOC 模式）。
+        // 0x82 响应数据域仅 1 字节错误码、无参数 ID，多帧连发无法归属——pending 仅由
+        // btn_SetValveTimingParams_Click 登记，消费点在 HandleLoadManualResponse 的
+        // 0x82 回落分支（0x8E 直连 HandleSetParamResponse，不触碰本 pending）。
+        private DateTime? _pendingValveTimingSet;
+        private DispatcherTimer? _valveTimingResponseTimeoutTimer;
+        private const int ValveTimingResponseTimeoutSeconds = 2;
 #if ENABLE_LICENSE_FEATURE
         private readonly LicenseService? _licenseService;
 #endif
@@ -210,6 +218,7 @@ namespace FCU_氢燃料电池控
             // 轮询定时器初始化（保留）
             InitializePollingTimer();
             InitializeSocResponseTimeoutTimer();
+            InitializeValveTimingResponseTimeoutTimer();
             InitializeFanManualResponseTimeoutTimer();
             InitializeLoadManualResponseTimeoutTimer();
 
@@ -262,6 +271,7 @@ namespace FCU_氢燃料电池控
 
             UpdateStartupTimingPreview();
             UpdateShutdownTimingPreview();
+            UpdateShutdownTotal();
         }
 
         private void btn_ValidateValveTiming_Click(object sender, RoutedEventArgs e)
@@ -767,6 +777,40 @@ namespace FCU_氢燃料电池控
         private void StopSocResponseTimeout()
         {
             _socResponseTimeoutTimer?.Stop();
+        }
+
+        /// <summary>
+        /// 0x0202 扩展时序写入响应超时计时器：响应到达（0x82 回落分支消费）即停表；
+        /// 超时说明固件未回包（旧固件对 27B 的 0x03 帧静默丢弃）或线路异常。
+        /// </summary>
+        private void InitializeValveTimingResponseTimeoutTimer()
+        {
+            _valveTimingResponseTimeoutTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(ValveTimingResponseTimeoutSeconds)
+            };
+            _valveTimingResponseTimeoutTimer.Tick += (s, e) =>
+            {
+                _valveTimingResponseTimeoutTimer?.Stop();
+                if (_pendingValveTimingSet == null)
+                {
+                    return;
+                }
+                _pendingValveTimingSet = null;
+                UpdateStatus("扩展时序(0x0202)写入超时");
+                HC.Growl.Warning("2s 未收到设置响应——固件可能不支持 0x0202（需 codex/configurable-valve-timing 分支固件）或线路异常");
+            };
+        }
+
+        private void RestartValveTimingResponseTimeout()
+        {
+            _valveTimingResponseTimeoutTimer?.Stop();
+            _valveTimingResponseTimeoutTimer?.Start();
+        }
+
+        private void StopValveTimingResponseTimeout()
+        {
+            _valveTimingResponseTimeoutTimer?.Stop();
         }
 
         /// <summary>
@@ -1339,9 +1383,12 @@ namespace FCU_氢燃料电池控
                 SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_VALVE >> 8), (byte)(ProtocolConstants.PARAM_TYPE_VALVE & 0xFF));
                 System.Threading.Thread.Sleep(100);
 
+                SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_VALVE_TIMING >> 8), (byte)(ProtocolConstants.PARAM_TYPE_VALVE_TIMING & 0xFF));
+                System.Threading.Thread.Sleep(100);
+
                 SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_FLOW >> 8), (byte)(ProtocolConstants.PARAM_TYPE_FLOW & 0xFF));
 
-                UpdateStatus("已发送读取阀门/工作流程参数命令");
+                UpdateStatus("已发送读取阀门/扩展时序/工作流程参数命令");
             }
             catch (Exception ex)
             {
@@ -1603,6 +1650,214 @@ namespace FCU_氢燃料电池控
         private void SetValveParamHelper(string paramName)
         {
             SetParameter(paramName, ProtocolConstants.FUNC_SET_VALVE_PARAMS, BuildValveParamsData);
+        }
+
+        /// <summary>
+        /// 写入扩展时序（0x03+0x0202，固件 codex/configurable-valve-timing 分支）。
+        /// 固件仅电堆 OFF 态接受（否则 0x82 回 0x03，自动启动竞争下可直接重试）；
+        /// 九项须非 0 且排水领启 &lt; 氢阀领启（否则 0x02）。
+        /// 0x82 无参数 ID，写入后登记 pending 供回落分支归属（见 HandleLoadManualResponse）。
+        /// </summary>
+        private void btn_SetValveTimingParams_Click(object sender, RoutedEventArgs e)
+        {
+            if (_pendingValveTimingSet.HasValue &&
+                (DateTime.Now - _pendingValveTimingSet.Value).TotalSeconds <= ValveTimingResponseTimeoutSeconds)
+            {
+                HC.Growl.Warning("上一条扩展时序指令尚在等待响应，请稍候");
+                return;
+            }
+
+            if (_pendingLoadManualCmd != null)
+            {
+                HC.Growl.Warning("拉载手动指令在途，0x82 响应无法区分归属，请稍候再写入扩展时序");
+                return;
+            }
+
+            if (!ConfirmValveTimingBudgetIfOverrun())
+            {
+                return;
+            }
+
+            bool sent = SetParameter("扩展时序参数(0x0202)", ProtocolConstants.FUNC_SET_VALVE_PARAMS,
+                BuildValveTimingDataFromUi);
+            if (sent)
+            {
+                _pendingValveTimingSet = DateTime.Now;
+                RestartValveTimingResponseTimeout();
+            }
+            /* 发送/组包失败（false）：SetParameter 已弹错，不登记 pending、不启表（仿 SOC 失败回滚） */
+        }
+
+        /// <summary>
+        /// 预算软校验：固件不校验时序总长（开机序列 20s 未完成撞 DCDC 门控 FAULT，
+        /// 关机 30s 强制下电截断），写入前对超限配置弹确认。解析失败留待组包硬校验报错。
+        /// </summary>
+        private bool ConfirmValveTimingBudgetIfOverrun()
+        {
+            double[] startupDrain =
+            {
+                ReadTimingOrZero(tbx_StartupDrainLeadDelay), ReadTimingOrZero(tbx_StartupDrainFirstOpen),
+                ReadTimingOrZero(tbx_StartupDrainFirstClose), ReadTimingOrZero(tbx_StartupDrainSecondOpen),
+                ReadTimingOrZero(tbx_StartupDrainThirdInterval), ReadTimingOrZero(tbx_StartupDrainThirdOpen)
+            };
+            double[] startupH2 =
+            {
+                ReadTimingOrZero(tbx_StartupH2LeadDelay), ReadTimingOrZero(tbx_StartupH2FirstDelay),
+                ReadTimingOrZero(tbx_StartupH2FirstOpen), ReadTimingOrZero(tbx_StartupH2ReopenDelay)
+            };
+            double drainTrack = startupDrain.Sum();
+            double h2Track = startupH2.Sum();
+            double shutdownDrain = ReadTimingOrZero(tbx_PurgeDrainHoldSec) + ReadTimingOrZero(tbx_ShutdownEmptySec);
+            double shutdownH2 = ReadTimingOrZero(tbx_ShutdownH2Open1) + ReadTimingOrZero(tbx_ShutdownH2Close2) +
+                                ReadTimingOrZero(tbx_ShutdownH2Open2);
+
+            if (drainTrack <= 20.0 && h2Track <= 20.0 && shutdownDrain <= 30.0 && shutdownH2 <= 30.0)
+            {
+                return true;
+            }
+
+            var overrun = new List<string>();
+            if (drainTrack > 20.0) overrun.Add($"开机排水轨 {drainTrack:0.00}s > 20s");
+            if (h2Track > 20.0) overrun.Add($"开机氢阀轨 {h2Track:0.00}s > 20s");
+            if (shutdownDrain > 30.0) overrun.Add($"关机排水 {shutdownDrain:0.00}s > 30s");
+            if (shutdownH2 > 30.0) overrun.Add($"关机氢阀 {shutdownH2:0.00}s > 30s");
+
+            var confirm = MessageBox.Show(
+                $"当前时序配置超出固件安全时限：\n{string.Join("\n", overrun)}\n\n" +
+                "固件不校验总时长：开机序列 20s 未完成将触发 DCDC 门控故障停机，关机超过 30s 会被强制下电截断。\n确定仍要写入吗？",
+                "扩展时序超限确认", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            return confirm == MessageBoxResult.Yes;
+        }
+
+        private static double ReadTimingOrZero(TextBox box)
+        {
+            return double.TryParse(box.Text?.Trim(), out double v) && v >= 0 ? v : 0;
+        }
+
+        /// <summary>
+        /// 组包 0x03+0x0202（数据域 20B：参数ID 2B + 9×u16 大端 0.1s，整帧 27B）。
+        /// 硬校验对齐固件 fcu_set_valve_timing：九项非 0（ParseSecondsTo0P1 保证 ≥1）、
+        /// 上位机上限 60.0s（600）、startup_drain_delay &lt; startup_h2_delay（违反固件回 0x02）。
+        /// </summary>
+        private byte[] BuildValveTimingDataFromUi()
+        {
+            ushort pause1 = ParseValveTimingField(tbx_StartupDrainFirstClose, "吹扫停止①(start_pause1)");
+            ushort pause2 = ParseValveTimingField(tbx_StartupDrainThirdInterval, "吹扫停止②(start_pause2)");
+            ushort third = ParseValveTimingField(tbx_StartupDrainThirdOpen, "电堆吹扫③(start_third_duration)");
+            ushort h2Close1 = ParseValveTimingField(tbx_StartupH2FirstDelay, "氢阀初始关闭(h2_start_close1)");
+            ushort h2Open = ParseValveTimingField(tbx_StartupH2FirstOpen, "氢阀打开①(h2_start_open)");
+            ushort h2Close2 = ParseValveTimingField(tbx_StartupH2ReopenDelay, "氢阀再开前关闭(h2_start_close2)");
+            ushort shutdownEmpty = ParseValveTimingField(tbx_ShutdownEmptySec, "关机排空保持(shutdown_empty)");
+            ushort drainDelay = ParseValveTimingField(tbx_StartupDrainLeadDelay, "排水领启延时(startup_drain_delay)");
+            ushort h2Delay = ParseValveTimingField(tbx_StartupH2LeadDelay, "氢阀领启延时(startup_h2_delay)");
+
+            if (drainDelay >= h2Delay)
+            {
+                tbx_StartupDrainLeadDelay.Focus();
+                tbx_StartupDrainLeadDelay.SelectAll();
+                throw new ArgumentException(
+                    $"排水领启延时({drainDelay / 10.0:F1}s)必须严格小于氢阀领启延时({h2Delay / 10.0:F1}s)，固件会拒绝整帧");
+            }
+
+            ushort[] values = { pause1, pause2, third, h2Close1, h2Open, h2Close2, shutdownEmpty, drainDelay, h2Delay };
+            byte[] data = new byte[20];
+            data[0] = (byte)(ProtocolConstants.PARAM_TYPE_VALVE_TIMING >> 8);
+            data[1] = (byte)(ProtocolConstants.PARAM_TYPE_VALVE_TIMING & 0xFF);
+            for (int i = 0; i < values.Length; i++)
+            {
+                data[2 + i * 2] = (byte)(values[i] >> 8);
+                data[3 + i * 2] = (byte)(values[i] & 0xFF);
+            }
+            return data;
+        }
+
+        /// <summary>
+        /// 解析扩展时序字段（秒→0.1s）。0x0202 九项上位机上限收紧为 60.0s（固件 u16 允许更宽，
+        /// 预算警示用例可达所需），文案直接按 60.0s 口径提示，避免先报固件宽口径引起误导。
+        /// </summary>
+        private static ushort ParseValveTimingField(TextBox box, string fieldName)
+        {
+            if (!double.TryParse(box.Text?.Trim(), out double seconds))
+            {
+                box.Focus();
+                box.SelectAll();
+                throw new ArgumentException($"{fieldName}「{box.Text}」不是合法数值（秒）");
+            }
+
+            double rounded = Math.Round(seconds * 10.0, MidpointRounding.AwayFromZero);
+            if (!(rounded >= 1.0 && rounded <= 600.0))
+            {
+                box.Focus();
+                box.SelectAll();
+                throw new ArgumentException($"{fieldName}超出范围：{seconds}s，允许 0.1～60.0s");
+            }
+            return (ushort)rounded;
+        }
+
+        /// <summary>
+        /// 0x8A+0x0202 回填九框（÷10 转秒）并重算排氢关机总时长。
+        /// </summary>
+        private void UpdateValveTimingParams(ValveTimingParams data)
+        {
+            tbx_StartupDrainFirstClose.Text = (data.StartPause1 / 10.0).ToString("F2");
+            tbx_StartupDrainThirdInterval.Text = (data.StartPause2 / 10.0).ToString("F2");
+            tbx_StartupDrainThirdOpen.Text = (data.StartThirdDuration / 10.0).ToString("F2");
+            tbx_StartupH2FirstDelay.Text = (data.H2StartClose1 / 10.0).ToString("F2");
+            tbx_StartupH2FirstOpen.Text = (data.H2StartOpen / 10.0).ToString("F2");
+            tbx_StartupH2ReopenDelay.Text = (data.H2StartClose2 / 10.0).ToString("F2");
+            tbx_ShutdownEmptySec.Text = (data.ShutdownEmpty / 10.0).ToString("F2");
+            tbx_StartupDrainLeadDelay.Text = (data.StartupDrainDelay / 10.0).ToString("F2");
+            tbx_StartupH2LeadDelay.Text = (data.StartupH2Delay / 10.0).ToString("F2");
+            UpdateShutdownTotal();
+        }
+
+        private bool _updatingShutdownTotal;
+
+        /// <summary>
+        /// 排氢关机总时长 = 关机排水保持(0x0E) + 关机排空保持(0x0202 shutdown_empty)。
+        /// 公式单一实现（0x0202 回填、0x0601 回填、输入联动三处共用）；解析失败保持原值。
+        /// </summary>
+        private void UpdateShutdownTotal()
+        {
+            if (_updatingShutdownTotal ||
+                !double.TryParse(tbx_PurgeDrainHoldSec?.Text, out double hold) ||
+                !double.TryParse(tbx_ShutdownEmptySec?.Text, out double empty))
+            {
+                return;
+            }
+            _updatingShutdownTotal = true;
+            try
+            {
+                tbx_ShutdownTotal.Text = (hold + empty).ToString("F2");
+            }
+            finally
+            {
+                _updatingShutdownTotal = false;
+            }
+        }
+
+        /// <summary>0x0202 写入结果专属文案（0x82 回落分支按 pending 归属调用）。</summary>
+        private void ShowValveTimingSetResult(byte result)
+        {
+            switch (result)
+            {
+                case ProtocolConstants.ERR_SUCCESS:
+                    UpdateStatus("扩展时序(0x0202)参数设置成功");
+                    HC.Growl.Success("扩展时序(0x0202)写入成功（已固化到FCU），可点击「读取FCU参数」核对回填");
+                    break;
+                case ProtocolConstants.ERR_DEVICE_BUSY:
+                    UpdateStatus("扩展时序(0x0202)写入被拒：设备忙");
+                    HC.Growl.Error("扩展时序(0x0202)写入被拒（0x03 设备忙）：需停机到关机状态后写入；电堆可能被自动启动抢占，可直接重试");
+                    break;
+                case ProtocolConstants.ERR_SAVE_FAILED:
+                    UpdateStatus("扩展时序(0x0202)写入失败：Flash 保存失败");
+                    HC.Growl.Error("扩展时序(0x0202)写入失败（0x09）：固件已回滚内存值；请重启 FCU 后读取全部参数核对，若读回默认值则参数页已损坏需重新配置");
+                    break;
+                default:
+                    UpdateStatus($"扩展时序(0x0202)设置失败: {ProtocolConstants.GetErrorCodeDescription(result)}");
+                    HC.Growl.Error($"扩展时序(0x0202)设置失败：{ProtocolConstants.GetErrorCodeDescription(result)}");
+                    break;
+            }
         }
 
         /// <summary>
@@ -2403,6 +2658,26 @@ namespace FCU_氢燃料电池控
         {
             if (_pendingLoadManualCmd == null)
             {
+                /* 0x0202 扩展时序的 0x82 归属（pending+2s 新鲜度，RX 线程快照/编组内清除，仿拉载模式）。
+                 * 仅此回落分支消费；0x8E 直连 HandleSetParamResponse，不触碰本 pending。
+                 * 2s 内其他 0x82 写的响应先到会冒用 pending（已披露残余风险），超龄则忽略清除走泛化文案。 */
+                DateTime? valveTimingPending = _pendingValveTimingSet;
+                if (valveTimingPending.HasValue)
+                {
+                    byte valveTimingResult = ResponseParser.ParseSetParamResponse(frame);
+                    bool valveTimingFresh =
+                        (DateTime.Now - valveTimingPending.Value).TotalSeconds <= ValveTimingResponseTimeoutSeconds;
+                    MarshalRxToUi(() =>
+                    {
+                        _pendingValveTimingSet = null;
+                        StopValveTimingResponseTimeout();
+                        if (valveTimingFresh)
+                        {
+                            ShowValveTimingSetResult(valveTimingResult);
+                        }
+                    });
+                    return;
+                }
                 HandleSetParamResponse(frame);
                 return;
             }
@@ -3480,7 +3755,9 @@ namespace FCU_氢燃料电池控
                     {
                         _pendingSocReadDeviceAddress = null;
                     }
-                    string msg = $"配置参数 0x{paramTypeID:X4} 解析失败：{failReason}";
+                    string msg = paramTypeID == ProtocolConstants.PARAM_TYPE_VALVE_TIMING
+                        ? $"配置参数 0x0202 读取失败：{failReason}——固件可能不支持扩展时序（需 codex/configurable-valve-timing 分支固件）"
+                        : $"配置参数 0x{paramTypeID:X4} 解析失败：{failReason}";
                     UpdateStatus(msg);
                     HC.Growl.Warning(msg);
                     return;
@@ -3496,6 +3773,11 @@ namespace FCU_氢燃料电池控
                     case 0x0201: // 阀门参数
                         var valveParams = ResponseParser.ParseValveParams(frame);
                         UpdateValveParams(valveParams);
+                        break;
+
+                    case ProtocolConstants.PARAM_TYPE_VALVE_TIMING: // 阀门扩展时序(0x0202)
+                        var valveTimingParams = ResponseParser.ParseValveTimingParams(frame);
+                        UpdateValveTimingParams(valveTimingParams);
                         break;
 
                     case 0x0301: // DCDC参数
@@ -3842,6 +4124,8 @@ namespace FCU_氢燃料电池控
             tbx_ValveNormalInterval.Text = (data.NormalInterval / 10.0).ToString("F2");
             tbx_ValveNormalOpen.Text = (data.NormalOpenTime / 10.0).ToString("F2");
             tbx_ValveShutdownOpen.Text = data.ShutdownOpenTime.ToString();
+            // 0x0201 无 shutdown_empty，总时长按当前排空保持值重算（公式见 UpdateShutdownTotal）
+            UpdateShutdownTotal();
         }
 
         /// <summary>
@@ -3883,7 +4167,8 @@ namespace FCU_氢燃料电池控
             tbx_ShutdownH2Close2.Text = (data.PurgeH2Close / 10.0).ToString("F2");
             tbx_ShutdownH2Open2.Text = (data.PurgeH2Open2 / 10.0).ToString("F2");
             tbx_PurgeDrainHoldSec.Text = (data.PurgeDrainHold / 10.0).ToString("F2");
-            tbx_ShutdownTotal.Text = (data.PurgeDrainHold / 10.0 + 5.0).ToString("F2");
+            // 总时长 = 排水保持(本帧回填) + 排空保持(0x0202 已先回填或界面值)，公式见 UpdateShutdownTotal
+            UpdateShutdownTotal();
             cbx_DrainMode.SelectedIndex = 0;
             tbx_LowNormalRef.Text = data.LowNormalRef.ToString();
             tbx_LoadDuty.Text = data.LoadDuty.ToString();
