@@ -3,11 +3,11 @@
 ;   1. MainWindow.xaml.cs  CustomerCompanyName 常量
 ;   2. MainWindow.xaml     tbk_ApplicationName 默认 Text
 ;   3. MainWindow.xaml     tbk_Copyright 默认 Text
-; 然后执行：dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release -r win-x64 --self-contained -o publish_v1.9.1_zyph
-; 最后 ISCC 本脚本。产物：Output\FCU氢燃料电池控制器_v1.9.1_众赢普惠.exe
+; 然后执行：dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release -r win-x64 --self-contained -o publish_v1.9.2_zyph
+; 最后 ISCC 本脚本。产物：Output\FCU氢燃料电池控制器_v1.9.2_众赢普惠.exe
 
 #define MyAppName "FCU氢燃料电池控制器"
-#define MyAppVersion "1.9.1"
+#define MyAppVersion "1.9.2"
 #define MyAppPublisher "深圳市众赢普惠科技有限公司"
 #define MyAppExeName "FCU 氢燃料电池控.exe"
 #define MyAppCopyright "Copyright (C) 2026 深圳市众赢普惠科技有限公司"
@@ -50,7 +50,7 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 ; === 安装文件 ===
 [Files]
 ; 自包含发布：众赢普惠 OEM 版独立目录
-Source: "publish_v1.9.1_zyph\*"; DestDir: "{app}"; Excludes: "*.pdb,*.xml"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "publish_v1.9.2_zyph\*"; DestDir: "{app}"; Excludes: "*.pdb,*.xml"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; === 快捷方式 ===
 [Icons]

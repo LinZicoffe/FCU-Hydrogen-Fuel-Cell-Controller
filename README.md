@@ -164,6 +164,15 @@ dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release
 
 ## 更新日志
 
+### 2026-10-14（V1.9.2 打包，报警码 0x000D + 阀门扩展时序 0x0202 适配批次，feature/valve-timing-0x0202-adapt）
+
+- **配置变更：项目版本升级至 V1.9.2**（csproj Version/FileVersion/AssemblyVersion 同步），同版本出**两个安装包**（AppId 相同，同机交叉安装按升级覆盖）：
+  - `Output\FCU氢燃料电池控制器_v1.9.2.exe`（正式版，瑞达新能源（广州）有限公司，`setup.iss` + `publish_v1.9.2`，54,126,041B，MD5 0cad78883bc810321063e75c0d5132a3）
+  - `Output\FCU氢燃料电池控制器_v1.9.2_众赢普惠.exe`（OEM 定制版，深圳市众赢普惠科技有限公司，`setup_众赢普惠.iss` + `publish_v1.9.2_zyph`，54,130,114B，MD5 e6d85a695d3136caf714a6919d70a8e4；构建方式同 V1.6.0：临时将 MainWindow.xaml.cs `CustomerCompanyName` 常量与 MainWindow.xaml 两处公司名默认文案改为众赢普惠后发布，发布目录已按 UTF-16/UTF-8 字节级验证仅含众赢普惠、不含瑞达（477 个 exe/dll 扫描），源码发布后即刻还原（git diff 确认），产物不入版本库）
+- V1.9.2 功能内容 = 本分支两批：① **报警码 0x000D「电堆温度采样无效」适配**（见同日下方条目，固件 main 已含）；② **阀门扩展时序 0x0202 适配**（固件分支 `codex/configurable-valve-timing`@0dbf0af，未合固件 main）：阀门页九项时序+领启延时全量可读写、独立「写入扩展时序(0x0202)」按钮（pending 归属机制）、时序预览按固件双轨领启语义重算（含关机终关段）+ 20s/30s 安全预算警示、删「氢阀关闭①」框、排氢总时长改 实时计算。协议核对与逐条审查见《阀门扩展时序0x0202适配功能更新日志.md》与 docs/ 实施文档（3 独立 agent 固件核对 + 3 轮 9 位评审 + 终审全票）
+- **注意**：0x0202 功能需配 `codex/configurable-valve-timing`@0dbf0af 固件（旧固件写超时/读降级提示，0x0201/0x020E 不受影响）；本包不含功率曲线分支改动（feature/power-chart-fix 按指示暂缓合并）；报警 0x000D 部分配固件 main@6ed7c7b 即可
+- **真机验证限制**：两批均按帧级静态验证交付，联调观察项见 docs/实施步骤-报警码0x000D适配.md §7 与 docs/实施步骤-阀门扩展时序0x0202适配.md §7.5
+
 ### 2026-10-14（阀门扩展时序 0x0202 适配批次，feature/valve-timing-0x0202-adapt）
 
 **适配固件分支 `codex/configurable-valve-timing` @ 0dbf0af（2026-10-14 推送，尚未合入固件 main）新增的 0x0202 阀门扩展时序参数组（九项，Flash v9）**——前置：3 个独立 Agent 并行核对固件代码相互验证（唯一分歧 0x82/0x83 由实码裁决），实施文档经 impl-doc-review 3 轮 9 位评审员通过，实施走 feature-dev-workflow（4 开发待办各过独立单步审查 + 终审）：
