@@ -936,8 +936,8 @@ namespace FCU_氢燃料电池控
             };
 
             // 配置Y轴（功率轴）
-            // 不设 MaxLimit：实际电堆输入功率可达数千瓦，固定 1200W 上限会把曲线画出可视区（真机测试曲线消失的根因）；
-            // 也不强制 MinStep/ForceStepToMin，让刻度随量程自适应。MinLimit=0 锚定零功率基线。
+            // 量程固定 0~600W（真机实测工作范围，2026-10-14 指定上限 600）；
+            // 旧的固定 1200W + 强制 200W 步距是真机曲线不显示的根因，已一并移除，刻度在 0~600 内自动均分。
             YAxes = new Axis[]
             {
                 new Axis
@@ -947,6 +947,7 @@ namespace FCU_氢燃料电池控
                     LabelsPaint = new SolidColorPaint(SKColors.Gray),
                     TextSize = 12,
                     MinLimit = 0,
+                    MaxLimit = 600,
                     SeparatorsPaint = new SolidColorPaint(SKColors.LightGray) { StrokeThickness = 1 },
                     ShowSeparatorLines = true
                 }
@@ -978,8 +979,8 @@ namespace FCU_氢燃料电池控
                 // ========== 测试模式：每0.5秒更新一次随机功率数据 ==========
                 if ((DateTime.Now - _lastTestDataUpdate).TotalMilliseconds >= 500)
                 {
-                    // 生成新的随机功率值（0-1200W范围）
-                    _testInputPower = _random.NextDouble() * 1200;
+                    // 生成新的随机功率值（0-600W范围，对齐Y轴固定量程）
+                    _testInputPower = _random.NextDouble() * 600;
                     _lastTestDataUpdate = DateTime.Now;
                 }
 
