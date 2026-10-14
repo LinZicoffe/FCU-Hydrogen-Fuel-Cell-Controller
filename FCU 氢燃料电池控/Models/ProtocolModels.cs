@@ -322,6 +322,7 @@ namespace FCU_氢燃料电池控.Models
                 0x000A => "高压压力高",
                 0x000B => "充电异常",
                 0x000C => "低压超限泄压警示",
+                0x000D => "电堆温度采样无效",
                 _ => "未知报警"
             };
         }
@@ -336,6 +337,7 @@ namespace FCU_氢燃料电池控.Models
         ///   0x0004        风扇异常 → 当前转速 RPM        (fcu_fan.c 堵转/缺相检测, 协议V5.1)
         ///   0x000B        充电异常 → SOC % (1%单位)      (fcu_control.c 充电停滞告警)
         ///   0x000C        泄压警示 → KPA 原值            (fcu_control.c low_pressure_task, >80KPA开阀WARNING, 协议名「低压超限泄压警示」)
+        ///   0x000D        温度采样无效 → 固定文案        (fcu_control.c 安全检查/启动30s采样超时两处触发, PT1000断/短路NaN, value恒0, 此时0x87温度按NaN→0规则报0, 须以本报警码为准)
         /// 0x0005(电压异常)/0x0009(FCU过热) 固件当前无触发点，按同类语义预置换算。
         /// 注：固件行号随提交漂移，以 FCU_ALARM_* 枚举 grep 定位为准。
         /// </summary>
@@ -360,6 +362,9 @@ namespace FCU_氢燃料电池控.Models
 
                 // 充电异常：充电三条件满足但 SOC 持续不涨，数值为当前 SOC(%)
                 0x000B => $"SOC {AlarmValue} %",
+
+                // 温度采样无效：value 固定 0，无物理量纲，显示语义文案而非裸值
+                0x000D => "采样无效（PT1000 断/短路）",
 
                 // 0x0007 阀门异常：固件无触发点，单位未定义，原值输出
                 _ => AlarmValue.ToString()
