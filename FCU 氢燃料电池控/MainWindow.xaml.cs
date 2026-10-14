@@ -936,8 +936,10 @@ namespace FCU_氢燃料电池控
             };
 
             // 配置Y轴（功率轴）
-            // 量程固定 0~600W（真机实测工作范围，2026-10-14 指定上限 600）；
-            // 旧的固定 1200W + 强制 200W 步距是真机曲线不显示的根因，已一并移除，刻度在 0~600 内自动均分。
+            // 量程固定 0~600W（真机实测工作范围，2026-10-14 指定上限 600）。
+            // MinStep=100 + ForceStepToMin 强制刻度 0/100/.../600：不强制时自动步距在 600 量程下只标 0 和 500，
+            // 顶部 600 无标签，会被误读为「上限只有 500」（真机截图反馈）。
+            // 注意：怠速/未连接时功率≈0，曲线贴底属固定大量程的正常表现。
             YAxes = new Axis[]
             {
                 new Axis
@@ -948,6 +950,8 @@ namespace FCU_氢燃料电池控
                     TextSize = 12,
                     MinLimit = 0,
                     MaxLimit = 600,
+                    MinStep = 100,
+                    ForceStepToMin = true,
                     SeparatorsPaint = new SolidColorPaint(SKColors.LightGray) { StrokeThickness = 1 },
                     ShowSeparatorLines = true
                 }
