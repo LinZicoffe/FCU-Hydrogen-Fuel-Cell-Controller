@@ -7,7 +7,7 @@ dotnet run --project Tools/FirmwareAdaptationChecks/FirmwareAdaptationChecks.csp
 dotnet run --project Tools/FirmwareAdaptationChecks/FirmwareAdaptationChecks.csproj -c Release -- --ui
 ```
 
-当前两配置均`PASS 123 checks`。不加`--ui`仅执行协议/会话/报警/S-record检查；加`--ui --render-dir <输出目录>`可保存1280×780离线页面呈现（假数据，不能作为实机截图）。
+当前两配置均`PASS 139 checks`。不加`--ui`仅执行协议/会话/报警/S-record检查；加`--ui --render-dir <输出目录>`可保存1280×780离线页面呈现（假数据，不能作为实机截图）。
 
 覆盖：固定整帧CRC、大小端和负电流、长度/地址/CRC拒绝、碎片接收、6秒缓存年龄续算、超时与停止、旧1B IAP排除；0x0902边界/零值/非法输入、OFF忙/保存失败等错误、共享串口独占、回读匹配/不匹配、不支持旧固件、静默窗口和Epoch；原0x0202/0x0901报文回归；直接诊断接管/保存owner归还/泵送重入；升级准备与S8保锁、最终连接抑制清理；看门狗报警原因；真实S-record错误基址/占位拒绝及兼容镜像接受。
 

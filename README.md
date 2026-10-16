@@ -1,4 +1,4 @@
-﻿# FCU 氢燃料电池控制器上位机
+# FCU 氢燃料电池控制器上位机
 
 > WPF (.NET 8.0) 工业控制软件，通过 RS485 接口与氢燃料电池控制器 (FCU) 和电池管理系统 (BMS) 进行通信。
 
@@ -173,7 +173,8 @@ dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release
 
 - 本地固件只读检出：`D:/C_C++text/worktrees/fcu-main-20261016`；上位机隔离目录：`D:/C#_text/WPF/worktrees/fcu-firmware-main-adapt`，基于`3d3f1fa`，原工作区改动保留。
 - `8b80a34` 协议/模型，`56ca068` 缓存和直接诊断隔离，`800d2f5` 待机周期独占读写与回读，`aa8ed36` 报警/保护及升级歧义清理。
-- 协议、会话及真实WPF事件+假串口检查：`dotnet run --project Tools/FirmwareAdaptationChecks/FirmwareAdaptationChecks.csproj -c Debug -- --ui`；截至本批123项通过。Debug/Release编译零警告零错误。
+- `95c4813` 修复升级退出保存owner归还及真实结果反馈；`ac64ad5` 隔离缓存跨会话排队响应。终审第2轮三位新Reviewer全部通过，无新增阻塞。
+- 协议、会话及真实WPF事件+假串口检查：`dotnet run --project Tools/FirmwareAdaptationChecks/FirmwareAdaptationChecks.csproj -c Debug -- --ui`；截至本批139项通过。Debug/Release编译零警告零错误。
 - 可选离线页面呈现：上述命令追加`--render-dir <目录>`；生成的是假数据离线界面，不是设备实测。
 - 保留0x0202/0x0901固定报文回归、旧BL文件及S-record安全窗。UI小高度时升级页可滚动访问日志与操作。
 - 未操作硬件、未升版本/打包、未合并/推送。Flash掉电保留、物理RS485、保护时序及兼容OpenBLT设备升级需真机验收。实施与评审记录见`docs/实施步骤-固件主线20261016适配.md`、`docs/评审记录-固件主线20261016适配.md`。
