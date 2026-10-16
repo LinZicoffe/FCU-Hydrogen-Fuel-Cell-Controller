@@ -211,6 +211,20 @@ internal static class UiChecks
                 "unconfirmed return is not reported as restored");
             view.GetType().GetField("_busy", Flags)!.SetValue(view, false); bridge.SetBlMode(false);
             Set(window, "_bmsBusMayBeOwned", false); // 清理本假传输未确认场景，避免影响可选呈现
+            mode.IsChecked = false;
+            var cache = (BmsCacheSession)Get(window, "_bmsCache")!;
+            cache.Reset(); cache.Request(2);
+            int oldCacheEpoch = cache.Epoch;
+            byte[] cachedFrame = ProtocolHandler.BuildRequestFrame(2, 0x91,
+                Convert.FromHexString("033CFB2E1194000000000000030000000000"));
+            Call(window, "OnFrameReceived", cachedFrame); // 已到RX但尚未派发到UI
+            cache.Reset(); cache.Request(2); // 同地址重连后新的请求
+            Program.Check(cache.Epoch != oldCacheEpoch, "cache reset/request advances epoch");
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+            Program.Check(cache.Snapshot == null && cache.Waiting, "queued cache from previous session cannot satisfy new same-address request");
+            Call(window, "OnFrameReceived", cachedFrame);
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+            Program.Check(cache.Snapshot?.Soc == 60 && !cache.Waiting, "current session queued cache is accepted");
             if (renderDirectory != null) RenderPages(window, renderDirectory);
         }
         finally

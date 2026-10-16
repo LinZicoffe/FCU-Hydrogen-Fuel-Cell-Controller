@@ -3212,8 +3212,10 @@ namespace FCU_氢燃料电池控
                         break;
 
                     case ProtocolConstants.RESP_BMS_CACHE: // 当前主线0x91为18B缓存，旧IAP 1B不会被接收
+                        int cacheEpoch = _bmsCache?.Epoch ?? -1;
                         Dispatcher.BeginInvoke(() =>
                         {
+                            if (_bmsCache?.Epoch != cacheEpoch) return;
                             if (!DirectBmsMode && _bmsCache?.Receive(frame) == true) RenderBmsCache();
                         });
                         break;

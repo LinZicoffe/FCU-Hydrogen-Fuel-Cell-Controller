@@ -13,6 +13,7 @@ namespace FCU_氢燃料电池控.Services
         private long _receivedAt;
         private byte _address;
         public bool Waiting { get; private set; }
+        public int Epoch { get; private set; }
         public BmsCacheSnapshot? Snapshot { get; private set; }
         public string Status { get; private set; } = "未读取";
         public ulong EffectiveAgeMs => Snapshot == null ? ulong.MaxValue :
@@ -29,6 +30,7 @@ namespace FCU_氢燃料电池控.Services
         public bool Request(byte address)
         {
             if (Waiting) return false;
+            Epoch++;
             _address = address;
             _requestedAt = _clock();
             Waiting = true;
@@ -63,6 +65,7 @@ namespace FCU_氢燃料电池控.Services
 
         public void Reset()
         {
+            Epoch++;
             Waiting = false;
             Snapshot = null;
             Status = "未读取";
