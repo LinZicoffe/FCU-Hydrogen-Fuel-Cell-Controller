@@ -19,7 +19,9 @@ internal static class Program
             StandbyChecks.Run();
             AlarmChecks();
             SrecChecks.Run();
-            if (args.Contains("--ui")) UiChecks.Run();
+            int renderIndex = Array.IndexOf(args, "--render-dir");
+            string? renderDirectory = renderIndex >= 0 && renderIndex + 1 < args.Length ? args[renderIndex + 1] : null;
+            if (args.Contains("--ui")) UiChecks.Run(renderDirectory);
             Console.WriteLine($"PASS {_passed} checks");
             return 0;
         }

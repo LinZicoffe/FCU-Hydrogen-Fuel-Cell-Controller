@@ -1,8 +1,11 @@
 using System.IO.Ports;
 using System.Reflection;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using FCU_氢燃料电池控;
 using FCU_氢燃料电池控.Protocol;
 using FCU_氢燃料电池控.Managers;
@@ -29,7 +32,7 @@ internal static class UiChecks
     private static void Set(object o, string name, object? value) => typeof(MainWindow).GetField(name, Flags)!.SetValue(o, value);
     private static object? Call(object o, string name, params object[] args) => typeof(MainWindow).GetMethod(name, Flags)!.Invoke(o, args);
 
-    public static void Run()
+    public static void Run(string? renderDirectory = null)
     {
         var app = new App(); app.InitializeComponent();
         app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -175,6 +178,7 @@ internal static class UiChecks
                 "direct diagnostic data must not claim FCU gates remain active");
             Call(window, "OnBeforeSerialClose");
             Call(window, "OnSerialConnectionChanged", serial, false);
+            if (renderDirectory != null) RenderPages(window, renderDirectory);
         }
         finally
         {
@@ -182,5 +186,53 @@ internal static class UiChecks
             window.Close();
             app.Shutdown();
         }
+    }
+
+    private static void RenderPages(MainWindow window, string directory)
+    {
+        Directory.CreateDirectory(directory);
+        var tabs = (TabControl)window.FindName("MainTabControl");
+        var root = (FrameworkElement)window.Content;
+        Set(window, "_isSerialOpen", true);
+        ((CheckBox)window.FindName("chk_DirectBmsMode")).IsChecked = false;
+        var cache = (BmsCacheSession)Get(window, "_bmsCache")!;
+        cache.Request(2);
+        cache.Receive(ProtocolHandler.BuildRequestFrame(2, 0x91,
+            Convert.FromHexString("033CFB2E1194000000000000030000000000")));
+        Call(window, "RenderBmsCache");
+        void Select(string header)
+        {
+            tabs.SelectedItem = tabs.Items.OfType<TabItem>().Single(t => t.Header?.ToString() == header);
+            root.Measure(new Size(1280, 780)); root.Arrange(new Rect(0, 0, 1280, 780)); root.UpdateLayout();
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+            root.UpdateLayout();
+        }
+        void Save(FrameworkElement element, string name)
+        {
+            int width = Math.Max(1, (int)Math.Ceiling(element.ActualWidth));
+            int height = Math.Max(1, (int)Math.Ceiling(element.ActualHeight));
+            var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+            var background = new DrawingVisual();
+            using (var drawing = background.RenderOpen()) drawing.DrawRectangle(Brushes.White, null, new Rect(0, 0, width, height));
+            bitmap.Render(background);
+            bitmap.Render(element);
+            var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var output = File.Create(Path.Combine(directory, name)); encoder.Save(output);
+        }
+        Select("BMS电池管理"); Save(root, "BMS缓存-离线验收.png");
+        Select("系统监控");
+        var input = (FrameworkElement)window.FindName("tbx_StandbyPeriod");
+        DependencyObject? scroll = input;
+        while (scroll != null && scroll is not ScrollViewer) scroll = VisualTreeHelper.GetParent(scroll);
+        if (scroll is ScrollViewer viewer)
+        {
+            viewer.ScrollToEnd(); root.UpdateLayout();
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+            root.UpdateLayout();
+        }
+        Save(root, "待机周期-离线验收.png");
+        tabs.SelectedItem = Get(window, "_firmwareUpgradeTab");
+        root.UpdateLayout(); Save(root, "升级边界-离线验收.png");
+        Set(window, "_isSerialOpen", false);
     }
 }

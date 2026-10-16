@@ -7,7 +7,8 @@
              d:DesignHeight="620" d:DesignWidth="900">
 
     <!-- 固件升级页 (OpenBLT XCP): 选 S-record → 前置检查 → 兼容引导设备断电进入 BL → 连机/擦除/写入/固化 → 重启验证 -->
-    <Grid Margin="10">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <Grid Margin="10" MinHeight="540">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -80,4 +81,5 @@
         <!-- 日志 -->
         <ListBox Name="lbx_Log" Grid.Row="5" FontFamily="Consolas" FontSize="12"/>
     </Grid>
+    </ScrollViewer>
 </UserControl>
