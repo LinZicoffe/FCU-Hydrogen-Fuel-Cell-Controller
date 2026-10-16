@@ -111,7 +111,8 @@ internal static class UiChecks
             Call(window, "OnBeforeSerialClose");
             Program.Check(serial.Sent.All(f => f[3] != 0x0D), "cache connection and normal close do not write Flash");
             var standby = (StandbyPeriodSession)Get(window, "_standbyPeriod")!;
-            serial.SendBlocked = standby.Blocks;
+            var calibration = (CurrentCalibrationSession)Get(window, "_currentCalibration")!;
+            serial.SendBlocked = f => standby.Blocks(f) || calibration.Blocks(f);
             var input = (TextBox)window.FindName("tbx_StandbyPeriod");
             var write = (Button)window.FindName("btn_WriteStandbyPeriod");
             foreach (string invalid in new[] { "0", "65536", "1.5", "-1", "abc" })
@@ -225,6 +226,63 @@ internal static class UiChecks
             Call(window, "OnFrameReceived", cachedFrame);
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
             Program.Check(cache.Snapshot?.Soc == 60 && !cache.Waiting, "current session queued cache is accepted");
+            cache.Reset(); Set(window, "_isSerialOpen", true); Port("COM1"); serial.OnSend = null;
+            var kInput = (TextBox)window.FindName("tbx_CurrentCalibrationK");
+            var bInput = (TextBox)window.FindName("tbx_CurrentCalibrationB");
+            var calRead = (Button)window.FindName("btn_ReadCurrentCalibration");
+            var calWrite = (Button)window.FindName("btn_WriteCurrentCalibration");
+            var calStatus = (TextBlock)window.FindName("tbk_CurrentCalibrationStatus");
+            Program.Check(kInput.Text == "1" && bInput.Text == "0", "0302 UI defaults are neutral coefficients");
+            foreach (var invalid in new[] { ("0", "0"), ("-1", "0"), ("NaN", "0"), ("Infinity", "0"),
+                ("1e100", "0"), ("1", "NaN"), ("1", "-Infinity"), ("1", "abc"), ("1", "1,5") })
+            {
+                kInput.Text = invalid.Item1; bInput.Text = invalid.Item2; Set(window, "_lastSharedSetAt", -3001L);
+                int before = serial.Sent.Count; calWrite.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Call(window, "RenderCurrentCalibration");
+                Program.Check(!calibration.IsBusy && serial.Sent.Count == before && calStatus.Text.Contains("有限"), "0302 UI invalid input persists and sends nothing");
+            }
+            kInput.Text = "0.945833"; bInput.Text = "-0.788056";
+            Call(window, "OnFrameSent", ProtocolHandler.BuildRequestFrame(2, 5, new byte[6]));
+            int beforeCal = serial.Sent.Count; calRead.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Program.Check(!calibration.IsBusy && serial.Sent.Count == beforeCal && calStatus.Text.Contains("等待响应"), "0302 quiet window gates real UI");
+            Set(window, "_lastSharedSetAt", -3001L);
+            calWrite.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var expectedCal = new FCU_氢燃料电池控.Models.CurrentCalibration(.945833f, -.788056f);
+            Program.Check(calibration.IsBusy && serial.Sent[^1].SequenceEqual(CurrentCalibrationProtocol.Write(2, expectedCal)) &&
+                !kInput.IsEnabled && !calWrite.IsEnabled, "0302 actual UI sends only BE k/b and freezes editing");
+            Program.Check(!(bool)Call(window, "SendFrame", FirmwareMainProtocol.ReadBmsCache(2))! &&
+                !(bool)Call(window, "SetParameter", "DCDC", (byte)5, (Func<byte[]>)(() => Convert.FromHexString("030100500014")))!, "0302 lease blocks ordinary legacy sends");
+            Call(window, "BeginStandbyPeriod", false);
+            Program.Check(!standby.IsBusy && !bridge.TryPrepareUpgrade(), "0302 blocks standby and upgrade during transaction");
+            Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x82, new byte[] { 0 }));
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+            Program.Check(calibration.IsBusy && !calibration.Verified && serial.Sent[^1].SequenceEqual(CurrentCalibrationProtocol.Read(2)), "0302 actual ACK starts readback before success");
+            byte[] calBack = ProtocolHandler.BuildRequestFrame(2, 0x8A, new byte[] { 3, 2, 0 }
+                .Concat(CurrentCalibrationProtocol.Write(2, expectedCal)[7..15]).ToArray());
+            Call(window, "OnFrameReceived", calBack);
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+            Program.Check(calibration.Verified && kInput.IsEnabled && calStatus.Text.Contains("回读一致") &&
+                float.Parse(kInput.Text, System.Globalization.CultureInfo.InvariantCulture) == expectedCal.K &&
+                float.Parse(bInput.Text, System.Globalization.CultureInfo.InvariantCulture) == expectedCal.B, "0302 actual readback roundtrips float32 through UI");
+            Set(window, "_lastSharedSetAt", -3001L); calRead.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            string savedK = kInput.Text, savedB = bInput.Text;
+            Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x8A, new byte[] { 3, 2, 0 }));
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+            Program.Check(calStatus.Text.Contains("不支持") && kInput.Text == savedK && bInput.Text == savedB, "0302 old firmware cannot zero inputs or claim success");
+            calRead.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Call(window, "OnFrameReceived", calBack); calibration.Reset(); calibration.Read(2);
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+            Program.Check(calibration.IsBusy && calibration.Actual == null, "0302 queued old readback rejected after new same-address epoch");
+            Call(window, "OnSerialConnectionChanged", serial, false);
+            Program.Check(!calibration.IsBusy && calibration.Actual == null && calStatus.Text.Contains("中断"), "0302 disconnect clears pending session and reports uncertainty");
+            Set(window, "_isSerialOpen", true); Set(window, "_lastSharedSetAt", -3001L); calibration.Read(2);
+            vm.DeviceAddress = "3";
+            Program.Check(!calibration.IsBusy && calibration.Actual == null, "0302 target change resets session");
+            vm.DeviceAddress = "2"; calibration.Read(2);
+            Call(window, "ResetFirmwareMainSession");
+            Program.Check(!calibration.IsBusy && kInput.IsEnabled, "0302 common mode/upgrade reset releases UI");
+            // 默认显示回归，呈现时不把示例系数当已保存默认值。
+            kInput.Text = "1"; bInput.Text = "0";
             if (renderDirectory != null) RenderPages(window, renderDirectory);
         }
         finally
@@ -267,6 +325,20 @@ internal static class UiChecks
             using var output = File.Create(Path.Combine(directory, name)); encoder.Save(output);
         }
         Select("BMS电池管理"); Save(root, "BMS缓存-离线验收.png");
+        Select("FCU参数配置");
+        ((CurrentCalibrationSession)Get(window, "_currentCalibration")!).Reset();
+        Call(window, "RenderCurrentCalibration");
+        var calibrationGroup = (FrameworkElement)window.FindName("grp_CurrentCalibration");
+        DependencyObject? calibrationScroll = calibrationGroup;
+        while (calibrationScroll != null && calibrationScroll is not ScrollViewer) calibrationScroll = VisualTreeHelper.GetParent(calibrationScroll);
+        if (calibrationScroll is ScrollViewer calibrationViewer && calibrationViewer.Content is Visual calibrationContent)
+        {
+            calibrationViewer.ScrollToVerticalOffset(Math.Max(0, calibrationGroup.TransformToAncestor(calibrationContent).Transform(new Point(0, 0)).Y - 35));
+            root.UpdateLayout();
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+            root.UpdateLayout();
+        }
+        Save(root, "输入拉载标定0302-离线验收.png");
         Select("系统监控");
         var input = (FrameworkElement)window.FindName("tbx_StandbyPeriod");
         DependencyObject? scroll = input;

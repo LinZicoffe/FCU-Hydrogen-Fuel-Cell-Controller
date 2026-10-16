@@ -1183,7 +1183,7 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void PollingTimer_Tick(object? sender, EventArgs e)
         {
-            if (_bmsCache?.Waiting == true || _standbyPeriod?.IsBusy == true || _bmsBusExchangeInProgress || _bmsReturnInFlight) return;
+            if (_bmsCache?.Waiting == true || _standbyPeriod?.IsBusy == true || _currentCalibration?.IsBusy == true || _bmsBusExchangeInProgress || _bmsReturnInFlight) return;
             try
             {
                 // 检查串口是否打开（静默检查，不显示消息）
@@ -3151,6 +3151,13 @@ namespace FCU_氢燃料电池控
             try
             {
                 functionCode = ResponseParser.GetFunctionCode(frame);
+                if ((_currentCalibration?.IsBusy == true && functionCode == 0x82) ||
+                    (functionCode == 0x8A && frame.Length >= 10 && frame[5] == 3 && frame[6] == 2))
+                {
+                    int calibrationEpoch = _currentCalibration?.Epoch ?? -1;
+                    Dispatcher.BeginInvoke(() => ReceiveCurrentCalibration(frame, calibrationEpoch));
+                    return;
+                }
                 if (_standbyPeriod?.IsBusy == true && (functionCode == 0x82 ||
                     (functionCode == 0x8A && frame.Length >= 10 && frame[5] == 9 && frame[6] == 2)))
                 {
@@ -4708,7 +4715,7 @@ namespace FCU_氢燃料电池控
 
         private bool CheckBmsReady()
         {
-            if (_upgradePrecheckMode || !DirectBmsMode || !_bmsTakeoverConfirmed || _bmsReturnInFlight || _bmsBusExchangeInProgress || _standbyPeriod?.IsBusy == true)
+            if (_upgradePrecheckMode || !DirectBmsMode || !_bmsTakeoverConfirmed || _bmsReturnInFlight || _bmsBusExchangeInProgress || _standbyPeriod?.IsBusy == true || _currentCalibration?.IsBusy == true)
             {
                 HC.Growl.Warning("请先选择直接Modbus诊断并等待FCU确认总线接管");
                 return false;
@@ -5551,7 +5558,7 @@ namespace FCU_氢燃料电池控
             {
                 return _owner.Dispatcher.Invoke(() =>
                 {
-                    if (!_owner._isSerialOpen || _owner._standbyPeriod?.IsBusy == true ||
+                    if (!_owner._isSerialOpen || _owner._standbyPeriod?.IsBusy == true || _owner._currentCalibration?.IsBusy == true ||
                         _owner._bmsCache?.Waiting == true || _owner._awaitingStackInfo || _owner._bmsService?.IsBusy == true ||
                         _owner._bmsBusExchangeInProgress || _owner._bmsReturnInFlight ||
                         _owner._pendingLoadManualCmd != null || _owner._pendingValveTimingSet.HasValue ||

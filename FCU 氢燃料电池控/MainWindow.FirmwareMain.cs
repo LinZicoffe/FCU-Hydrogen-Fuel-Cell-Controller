@@ -35,13 +35,16 @@ namespace FCU_氢燃料电池控
         {
             _bmsCache = new BmsCacheSession(SendFrame);
             _standbyPeriod = new StandbyPeriodSession(SendFrame);
-            _viewModel!.GetSerialPortManager().SendBlocked = frame => _standbyPeriod.Blocks(frame);
+            _currentCalibration = new CurrentCalibrationSession(SendFrame);
+            _viewModel!.GetSerialPortManager().SendBlocked = frame => _standbyPeriod.Blocks(frame) || _currentCalibration.Blocks(frame);
             _firmwareMainTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             _firmwareMainTimer.Tick += (_, _) =>
             {
                 _bmsCache.Tick();
                 _standbyPeriod.Tick();
                 RenderStandbyPeriod();
+                _currentCalibration.Tick();
+                RenderCurrentCalibration();
                 if (!DirectBmsMode)
                 {
                     if (_cacheAutoRefresh && Environment.TickCount64 >= _nextCacheRead && CanReadBmsCache())
@@ -57,7 +60,7 @@ namespace FCU_氢燃料电池控
 
         private bool CanReadBmsCache() => _isSerialOpen && !_blUpgradeMode && !FirmwareUpgradeView.IsBusy &&
             !DirectBmsMode && !_bmsBusExchangeInProgress && !_bmsReturnInFlight && !_awaitingStackInfo &&
-            _bmsService?.IsBusy != true && _bmsCache?.Waiting != true && _standbyPeriod?.IsBusy != true;
+            _bmsService?.IsBusy != true && _bmsCache?.Waiting != true && _standbyPeriod?.IsBusy != true && _currentCalibration?.IsBusy != true;
 
         private void RequestBmsCache()
         {
@@ -85,9 +88,11 @@ namespace FCU_氢燃料电池控
             chk_BmsCacheAuto.IsChecked = false;
             _bmsCache?.Reset();
             _standbyPeriod?.Reset();
+            _currentCalibration?.Reset();
             _nextCacheRead = 0;
             RenderBmsCache();
             RenderStandbyPeriod();
+            RenderCurrentCalibration();
         }
 
         private void RenderStandbyPeriod()
@@ -102,7 +107,7 @@ namespace FCU_氢燃料电池控
         {
             if (!_isSerialOpen || _blUpgradeMode || FirmwareUpgradeView.IsBusy)
             { ReportStandbyError("请先连接FCU并等待固件升级操作结束"); return; }
-            if (_standbyPeriod == null || _standbyPeriod.IsBusy || _bmsCache?.Waiting == true || _awaitingStackInfo ||
+            if (_standbyPeriod == null || _standbyPeriod.IsBusy || _currentCalibration?.IsBusy == true || _bmsCache?.Waiting == true || _awaitingStackInfo ||
                 _bmsService?.IsBusy == true || _bmsBusExchangeInProgress || _bmsReturnInFlight ||
                 _pendingLoadManualCmd != null || _pendingValveTimingSet.HasValue || _pendingSocWrite != null ||
                 _pendingSocReadDeviceAddress.HasValue || _pendingFanManualEnable.HasValue || _pendingSecondMosWrite != null ||

@@ -169,6 +169,14 @@ dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release
 
 ## 更新日志
 
+### 2026-10-16（输入拉载标定0x0302）
+
+- 基于主线适配e7813a5，分支`codex/load-current-calibration-0302`，目录`D:/C#_text/WPF/worktrees/fcu-calibration-0302`；固件依据main@9bdddb0。
+- FCU参数配置页新增“输入拉载标定（0x0302）”：k无量纲、b单位A；默认1/0。填写`实测输入电流=k×原始设定电流+b`的系数，固件自行反算补偿；上位机不拟合、不预填测试系数、不更改ADC读数。
+- 独立读取/写入并固化；设置0x05，回读0x0A/8A，k/b为大端float32。k须有限且>0，b须有限；支持负偏移和科学计数法。只有电堆OFF可写，运行中停止拉载不等于OFF。
+- 共享串口独占与3秒静默、写ACK后回读核对、断线/换目标/升级会话清理。旧固件空回读、错误、超时及不一致均不宣称保存成功；原0x0301布局保持。
+- 离线回归含真实WPF按钮/Dispatcher与假串口，共214项；Debug/Release编译均0警告0错误。真机Flash掉电保留、标定效果及高DPI未验证；未合并/推送/打包。实施与审查见`docs/实施步骤-输入拉载标定0302.md`、`docs/评审记录-输入拉载标定0302.md`。
+
 ### 2026-10-16（固件main@2c8be1d适配，codex/firmware-main-20261016-adapt）
 
 - 本地固件只读检出：`D:/C_C++text/worktrees/fcu-main-20261016`；上位机隔离目录：`D:/C#_text/WPF/worktrees/fcu-firmware-main-adapt`，基于`3d3f1fa`，原工作区改动保留。

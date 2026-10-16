@@ -167,7 +167,7 @@ namespace FCU_氢燃料电池控.Managers
             {
                 if (SendBlocked?.Invoke(data) == true)
                 {
-                    ErrorOccurred?.Invoke(this, "待机参数事务正在等待确认，请稍候再发送普通指令");
+                    ErrorOccurred?.Invoke(this, "参数事务正在等待确认，请稍候再发送普通指令");
                     return false;
                 }
                 if (!IsOpen)
