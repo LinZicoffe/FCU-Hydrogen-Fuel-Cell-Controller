@@ -171,6 +171,8 @@ dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release
 
 ### 2026-10-16（输入拉载标定0x0302）
 
+- 检查点：`606eca8` 协议/事务，`f2f1f0d` UI及读写闭环；单步各1轮、最终1轮三路独立审查全部通过。
+
 - 基于主线适配e7813a5，分支`codex/load-current-calibration-0302`，目录`D:/C#_text/WPF/worktrees/fcu-calibration-0302`；固件依据main@9bdddb0。
 - FCU参数配置页新增“输入拉载标定（0x0302）”：k无量纲、b单位A；默认1/0。填写`实测输入电流=k×原始设定电流+b`的系数，固件自行反算补偿；上位机不拟合、不预填测试系数、不更改ADC读数。
 - 独立读取/写入并固化；设置0x05，回读0x0A/8A，k/b为大端float32。k须有限且>0，b须有限；支持负偏移和科学计数法。只有电堆OFF可写，运行中停止拉载不等于OFF。
