@@ -3000,7 +3000,11 @@ namespace FCU_氢燃料电池控
         private bool SendFrame(byte[] frame)
         {
             // 固件升级模式期间拦截一切 AA55 发送 [BL设计 §4.2 集成点2]
-            if (_blUpgradeMode || _upgradePrecheckMode)
+            // APP探活后的正常退出仍持普通锁；只允许归还已保存owner，不提前放开普通控制。
+            bool savedOwnerReturn = !_blUpgradeMode && _bmsReturnInFlight && _bmsBusMayBeOwned &&
+                string.Equals(_viewModel?.GetSerialPortManager().PortName, _bmsBusOwnerPort, StringComparison.OrdinalIgnoreCase) &&
+                FirmwareMainProtocol.IsResponse(frame, _bmsBusOwnerAddress, ProtocolConstants.FUNC_SET_BMS_POLL, 1) && frame[5] == 1;
+            if (_blUpgradeMode || (_upgradePrecheckMode && !savedOwnerReturn))
                 return false;
 
             // 使用ViewModel的SerialPortManager发送数据
@@ -5629,9 +5633,9 @@ namespace FCU_氢燃料电池控
             /// <summary>统一退出归一化 [BL设计 §4.4 退出规则]:
             /// APP 存活 → 走正常断开命令 (BeforeSerialClose 链路发 0x0D en=1 归还 BMS 总线);
             /// APP 不存活(BL 常驻) → 直接关串口, 提示重新升级。</summary>
-            public void NormalizeExit(bool appAlive)
+            public bool NormalizeExit(bool appAlive)
             {
-                _owner.Dispatcher.Invoke(() =>
+                return _owner.Dispatcher.Invoke(() =>
                 {
                     try
                     {
@@ -5647,7 +5651,9 @@ namespace FCU_氢燃料电池控
                     catch (Exception ex)
                     {
                         _owner.UpdateStatus($"升级退出处理异常: {ex.Message}");
+                        return false;
                     }
+                    return !_owner._bmsBusMayBeOwned;
                 });
             }
         }

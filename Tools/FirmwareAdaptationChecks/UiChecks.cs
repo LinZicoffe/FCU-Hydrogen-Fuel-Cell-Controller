@@ -40,6 +40,7 @@ internal static class UiChecks
         var vm = (MainViewModel)window.DataContext;
         var serial = new FakeSerial();
         typeof(MainViewModel).GetField("_serialPortManager", Flags)!.SetValue(vm, serial);
+        serial.ConnectionStateChanged += (_, connected) => Call(window, "OnSerialConnectionChanged", serial, connected);
         void Port(string port) => typeof(SerialPortManager).GetField("_serialPort", Flags)!.SetValue(serial, new SerialPort(port));
         var mode = (CheckBox)window.FindName("chk_DirectBmsMode");
         try
@@ -178,6 +179,38 @@ internal static class UiChecks
                 "direct diagnostic data must not claim FCU gates remain active");
             Call(window, "OnBeforeSerialClose");
             Call(window, "OnSerialConnectionChanged", serial, false);
+            // 覆盖真实NormalizeExit→VM.Close→BeforeSerialClose→归还→关闭闭环。
+            foreach (string exitPath in new[] { "success", "cancel", "precheck-failure" })
+            {
+                Port("COM1"); Set(window, "_isSerialOpen", true);
+                serial.OnSend = f =>
+                {
+                    if (f[3] == 0x0D)
+                        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(f[2], 0x8D, new byte[] { 0 }));
+                };
+                Call(window, "SendBmsPollEnable", (byte)0);
+                Set(window, "_lastSharedSetAt", -3001L);
+                Program.Check(bridge.TryPrepareUpgrade(), $"{exitPath}: prepare with saved BMS owner");
+                view.GetType().GetField("_busy", Flags)!.SetValue(view, true);
+                if (exitPath != "precheck-failure") bridge.SetBlMode(true);
+                bridge.SetBlMode(false);
+                Program.Check(!(bool)Call(window, "SendFrame", FirmwareMainProtocol.ReadBmsCache(2))!, $"{exitPath}: ordinary lock remains");
+                int beforeReturn = serial.Sent.Count;
+                Program.Check(bridge.NormalizeExit(true), $"{exitPath}: real NormalizeExit confirms return");
+                Program.Check(serial.Sent.Skip(beforeReturn).Any(f => f[2] == 2 && f[3] == 0x0D && f[5] == 1) &&
+                    !(bool)Get(window, "_bmsBusMayBeOwned")! && serial.PortName == null && !(bool)Get(window, "_isSerialOpen")!,
+                    $"{exitPath}: owner returned with ACK before close");
+                view.GetType().GetField("_busy", Flags)!.SetValue(view, false); bridge.SetBlMode(false);
+            }
+            // 未获归还ACK必须保留未归还owner，并返回失败，不能声称已恢复。
+            Port("COM1"); Set(window, "_isSerialOpen", true); serial.OnSend = null;
+            Call(window, "SendBmsPollEnable", (byte)0);
+            Set(window, "_lastSharedSetAt", -3001L); bridge.TryPrepareUpgrade();
+            view.GetType().GetField("_busy", Flags)!.SetValue(view, true); bridge.SetBlMode(false);
+            Program.Check(!bridge.NormalizeExit(true) && (bool)Get(window, "_bmsBusMayBeOwned")! && serial.PortName == null,
+                "unconfirmed return is not reported as restored");
+            view.GetType().GetField("_busy", Flags)!.SetValue(view, false); bridge.SetBlMode(false);
+            Set(window, "_bmsBusMayBeOwned", false); // 清理本假传输未确认场景，避免影响可选呈现
             if (renderDirectory != null) RenderPages(window, renderDirectory);
         }
         finally

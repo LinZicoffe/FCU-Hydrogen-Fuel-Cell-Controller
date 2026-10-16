@@ -43,7 +43,7 @@ namespace FCU_氢燃料电池控.Views
             /// 升级退出归一化: APP 存活 → 走正常断开链路(0x0D en=1 归还 BMS 总线);
             /// APP 不存活(BL常驻) → 直接关串口。UI线程执行。
             /// </summary>
-            void NormalizeExit(bool appAlive);
+            bool NormalizeExit(bool appAlive);
         }
 
         /// <summary>BL XCP 波特率 (Boot-For-FCU blt_conf.h:98 @2a3904b, 单一来源见 ProtocolConstants.XCP_BL_BAUD_RATE)</summary>
@@ -504,10 +504,11 @@ namespace FCU_氢燃料电池控.Views
                 Log("新固件已启动 (0x81 序列号应答) ✓");
                 _ui.StepState(5, "done");
                 Status("升级成功");
-                _bridge.NormalizeExit(true);
+                bool busReturned = _bridge.NormalizeExit(true);
                 _ = Dispatcher.BeginInvoke(() => MessageBox.Show(
                     $"固件升级成功!\n\n镜像: {total / 1024.0:F1} KB @ 0x{baseAddr:X8}\n" +
-                    "串口已正常断开 (BMS 总线已归还 FCU), 重新打开串口即可继续使用。",
+                    (busReturned ? "串口已断开；本次接管的BMS总线已确认归还（未接管时无需归还）。" :
+                        "串口已断开，但BMS轮询归还未获确认；请连接原串口/设备，用恢复FCU采集按钮确认恢复。"),
                     "固件升级", MessageBoxButton.OK, MessageBoxImage.Information));
             }
             catch (OperationCanceledException)
