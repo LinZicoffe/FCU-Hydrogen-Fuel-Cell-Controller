@@ -1182,7 +1182,7 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void PollingTimer_Tick(object? sender, EventArgs e)
         {
-            if (_bmsCache?.Waiting == true || _bmsBusExchangeInProgress || _bmsReturnInFlight) return;
+            if (_bmsCache?.Waiting == true || _standbyPeriod?.IsBusy == true || _bmsBusExchangeInProgress || _bmsReturnInFlight) return;
             try
             {
                 // 检查串口是否打开（静默检查，不显示消息）
@@ -2898,7 +2898,7 @@ namespace FCU_氢燃料电池控
 
                 byte[] data = dataBuilder();
                 byte[] frame = BuildFrame(deviceAddress, functionCode, data);
-                SendFrame(frame);
+                if (!SendFrame(frame)) return false;
                 UpdateStatus($"已发送设置{parameterName}命令");
                 return true;
             }
@@ -3020,6 +3020,10 @@ namespace FCU_氢燃料电池控
 
         private void OnFrameSent(byte[] frame)
         {
+            if (frame.Length >= 7 && frame[0] == 0xAA && frame[1] == 0x55 &&
+                frame[3] is 0x02 or 0x03 or 0x04 or 0x05 or 0x06 or 0x0B)
+                _lastSharedSetAt = Environment.TickCount64;
+
             /* 升级模式下的 BL 二进制帧不进 AA55 通信日志 [批次2审查 P2] */
             if (_blUpgradeMode)
                 return;
@@ -3142,6 +3146,19 @@ namespace FCU_氢燃料电池控
             try
             {
                 functionCode = ResponseParser.GetFunctionCode(frame);
+                if (_standbyPeriod?.IsBusy == true && (functionCode == 0x82 ||
+                    (functionCode == 0x8A && frame.Length >= 10 && frame[5] == 9 && frame[6] == 2)))
+                {
+                    int standbyEpoch = _standbyPeriod.Epoch;
+                    Dispatcher.BeginInvoke(() =>
+                    {
+                        if (_standbyPeriod.Epoch != standbyEpoch) return;
+                        if (_standbyPeriod.Receive(frame) && _standbyPeriod.ActualPeriod.HasValue)
+                            tbx_StandbyPeriod.Text = _standbyPeriod.ActualPeriod.Value.ToString();
+                        RenderStandbyPeriod();
+                    });
+                    return;
+                }
 
                 switch (functionCode)
                 {
@@ -4684,7 +4701,7 @@ namespace FCU_氢燃料电池控
 
         private bool CheckBmsReady()
         {
-            if (!DirectBmsMode || !_bmsTakeoverConfirmed || _bmsReturnInFlight || _bmsBusExchangeInProgress)
+            if (!DirectBmsMode || !_bmsTakeoverConfirmed || _bmsReturnInFlight || _bmsBusExchangeInProgress || _standbyPeriod?.IsBusy == true)
             {
                 HC.Growl.Warning("请先选择直接Modbus诊断并等待FCU确认总线接管");
                 return false;

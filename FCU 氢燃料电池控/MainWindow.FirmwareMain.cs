@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Threading;
 using FCU_氢燃料电池控.Helpers;
@@ -20,6 +21,8 @@ namespace FCU_氢燃料电池控
         private string? _bmsBusOwnerPort;
         private byte _bmsExchangeAddress;
         private int _bmsExchangeGeneration;
+        private StandbyPeriodSession? _standbyPeriod;
+        private long _lastSharedSetAt = -3001;
         private bool DirectBmsMode => chk_DirectBmsMode.IsChecked == true;
 
         private void CancelBmsTakeover()
@@ -31,10 +34,14 @@ namespace FCU_氢燃料电池控
         private void InitializeFirmwareMain()
         {
             _bmsCache = new BmsCacheSession(SendFrame);
+            _standbyPeriod = new StandbyPeriodSession(SendFrame);
+            _viewModel!.GetSerialPortManager().SendBlocked = frame => _standbyPeriod.Blocks(frame);
             _firmwareMainTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             _firmwareMainTimer.Tick += (_, _) =>
             {
                 _bmsCache.Tick();
+                _standbyPeriod.Tick();
+                RenderStandbyPeriod();
                 if (!DirectBmsMode)
                 {
                     if (_cacheAutoRefresh && Environment.TickCount64 >= _nextCacheRead && CanReadBmsCache())
@@ -50,7 +57,7 @@ namespace FCU_氢燃料电池控
 
         private bool CanReadBmsCache() => _isSerialOpen && !_blUpgradeMode && !FirmwareUpgradeView.IsBusy &&
             !DirectBmsMode && !_bmsBusExchangeInProgress && !_bmsReturnInFlight && !_awaitingStackInfo &&
-            _bmsService?.IsBusy != true && _bmsCache?.Waiting != true;
+            _bmsService?.IsBusy != true && _bmsCache?.Waiting != true && _standbyPeriod?.IsBusy != true;
 
         private void RequestBmsCache()
         {
@@ -77,8 +84,53 @@ namespace FCU_氢燃料电池控
             _cacheAutoRefresh = false;
             chk_BmsCacheAuto.IsChecked = false;
             _bmsCache?.Reset();
+            _standbyPeriod?.Reset();
             _nextCacheRead = 0;
             RenderBmsCache();
+            RenderStandbyPeriod();
+        }
+
+        private void RenderStandbyPeriod()
+        {
+            if (_standbyPeriod == null) return;
+            tbk_StandbyPeriodStatus.Text = _standbyPeriod.Status;
+            btn_ReadStandbyPeriod.IsEnabled = !_standbyPeriod.IsBusy;
+            btn_WriteStandbyPeriod.IsEnabled = !_standbyPeriod.IsBusy;
+        }
+
+        private void BeginStandbyPeriod(bool write)
+        {
+            if (!_isSerialOpen || _blUpgradeMode || FirmwareUpgradeView.IsBusy)
+            { ReportStandbyError("请先连接FCU并等待固件升级操作结束"); return; }
+            if (_standbyPeriod == null || _standbyPeriod.IsBusy || _bmsCache?.Waiting == true || _awaitingStackInfo ||
+                _bmsService?.IsBusy == true || _bmsBusExchangeInProgress || _bmsReturnInFlight ||
+                _pendingLoadManualCmd != null || _pendingValveTimingSet.HasValue || _pendingSocWrite != null ||
+                _pendingSocReadDeviceAddress.HasValue || _pendingFanManualEnable.HasValue || _pendingSecondMosWrite != null ||
+                Environment.TickCount64 - _lastSharedSetAt < 3000)
+            { ReportStandbyError("其他指令正在等待响应，请稍候再操作待机周期"); return; }
+            if (!SerialPortHelper.TryParseDeviceAddress(GetDeviceAddress(), out byte address, showError: false))
+            { ReportStandbyError("FCU设备地址无效"); return; }
+            ushort seconds = 0;
+            if (write && (!ushort.TryParse(tbx_StandbyPeriod.Text.Trim(), NumberStyles.None,
+                CultureInfo.InvariantCulture, out seconds) || seconds == 0))
+            { ReportStandbyError("待机采样周期必须为1～65535的整数（秒），0不能关闭采样"); return; }
+            // 直接诊断的周期任务也需暂停，防下一轮在事务期间插入Modbus请求。
+            _bmsService?.StopPolling();
+            btn_StartBMSPolling.IsEnabled = true;
+            btn_StopBMSPolling.IsEnabled = false;
+            cbx_BMSPollingInterval.IsEnabled = true;
+            if (write) _standbyPeriod.Write(address, seconds);
+            else _standbyPeriod.Read(address);
+            RenderStandbyPeriod();
+        }
+
+        private void btn_ReadStandbyPeriod_Click(object sender, RoutedEventArgs e) => BeginStandbyPeriod(false);
+        private void btn_WriteStandbyPeriod_Click(object sender, RoutedEventArgs e) => BeginStandbyPeriod(true);
+
+        private void ReportStandbyError(string reason)
+        {
+            _standbyPeriod?.ReportRejection(reason);
+            tbk_StandbyPeriodStatus.Text = reason;
         }
 
         private void RenderBmsCache()

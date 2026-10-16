@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using FCU_氢燃料电池控;
 using FCU_氢燃料电池控.Protocol;
 using FCU_氢燃料电池控.Managers;
+using FCU_氢燃料电池控.Services;
 using FCU_氢燃料电池控.ViewModels;
 
 internal static class UiChecks
@@ -16,6 +17,7 @@ internal static class UiChecks
         public Action<byte[]>? OnSend;
         public override bool SendData(byte[] frame)
         {
+            if (SendBlocked?.Invoke(frame) == true) return false;
             Sent.Add(frame);
             OnSend?.Invoke(frame);
             return true;
@@ -104,6 +106,42 @@ internal static class UiChecks
             Call(window, "OnSerialConnectionChanged", serial, true);
             Call(window, "OnBeforeSerialClose");
             Program.Check(serial.Sent.All(f => f[3] != 0x0D), "cache connection and normal close do not write Flash");
+            var standby = (StandbyPeriodSession)Get(window, "_standbyPeriod")!;
+            serial.SendBlocked = standby.Blocks;
+            var input = (TextBox)window.FindName("tbx_StandbyPeriod");
+            var write = (Button)window.FindName("btn_WriteStandbyPeriod");
+            foreach (string invalid in new[] { "0", "65536", "1.5", "-1", "abc" })
+            {
+                input.Text = invalid; int count = serial.Sent.Count;
+                write.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Program.Check(serial.Sent.Count == count && !standby.IsBusy, "invalid period UI sends nothing");
+                Call(window, "RenderStandbyPeriod");
+                Program.Check(((TextBlock)window.FindName("tbk_StandbyPeriodStatus")).Text.Contains("整数"),
+                    "period validation survives periodic rendering");
+            }
+            input.Text = "10"; write.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Program.Check(standby.IsBusy && serial.Sent[^1][3] == 0x0B, "standby button sends write");
+            Program.Check(!(bool)Call(window, "SetParameter", "test", (byte)3, (Func<byte[]>)(() => new byte[12]))!,
+                "shared SetParameter reports false when lease blocks it");
+            Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x82, new byte[] { 0 }));
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
+            Program.Check(standby.IsBusy && !standby.Verified && serial.Sent[^1][3] == 0x0A, "actual82 route asks readback before success");
+            Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x8A, new byte[] { 9, 2, 0, 0, 10 }));
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
+            Program.Check(standby.Verified && input.Text == "10" && ((TextBlock)window.FindName("tbk_StandbyPeriodStatus")).Text.Contains("一致"),
+                "actual8A route fills period and verifies");
+            Call(window, "OnFrameSent", ProtocolHandler.BuildRequestFrame(2, 3, new byte[12]));
+            int sentBeforeQuiet = serial.Sent.Count;
+            Call(window, "BeginStandbyPeriod", false);
+            Program.Check(!standby.IsBusy && serial.Sent.Count == sentBeforeQuiet && standby.Status.Contains("等待响应"),
+                "real OnFrameSent shared82 quiet window gates standby start");
+            Set(window, "_lastSharedSetAt", Environment.TickCount64 - 3000);
+            Call(window, "BeginStandbyPeriod", true);
+            Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x82, new byte[] { 0 }));
+            standby.Reset(); standby.Read(2);
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
+            Program.Check(standby.IsBusy && !standby.Verified && !standby.Status.Contains("保存成功"),
+                "queued ACK before reset cannot advance a new epoch");
             Call(window, "OnSerialConnectionChanged", serial, false);
         }
         finally

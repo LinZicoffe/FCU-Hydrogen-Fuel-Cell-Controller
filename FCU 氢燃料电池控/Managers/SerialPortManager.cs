@@ -165,6 +165,11 @@ namespace FCU_氢燃料电池控.Managers
         {
             try
             {
+                if (SendBlocked?.Invoke(data) == true)
+                {
+                    ErrorOccurred?.Invoke(this, "待机参数事务正在等待确认，请稍候再发送普通指令");
+                    return false;
+                }
                 if (!IsOpen)
                 {
                     ErrorOccurred?.Invoke(this, "串口未打开");
@@ -204,6 +209,9 @@ namespace FCU_氢燃料电池控.Managers
                 return false;
             }
         }
+
+        /// <summary>共享串口发送门禁；用于无参数ID的写入应答事务，涵盖MVVM及直接发送路径。</summary>
+        public Func<byte[], bool>? SendBlocked { get; set; }
 
         /// <summary>
         /// 清空接收缓冲区

@@ -16,6 +16,7 @@ internal static class Program
         {
             ProtocolChecks();
             CacheSessionChecks();
+            StandbyChecks.Run();
             if (args.Contains("--ui")) UiChecks.Run();
             Console.WriteLine($"PASS {_passed} checks");
             return 0;

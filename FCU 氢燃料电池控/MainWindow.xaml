@@ -1669,6 +1669,19 @@
                                 </StackPanel>
                             </GroupBox>
 
+                            <GroupBox Header="待机采样周期" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                                <StackPanel>
+                                    <TextBlock Text="仅待机（OFF）可写；默认60秒。写入成功后保存并重新计时，不影响运行采样及上方扫描周期。" Margin="4" TextWrapping="Wrap" Foreground="#616161"/>
+                                    <WrapPanel Margin="4">
+                                        <Label Content="采样周期（秒）：" VerticalAlignment="Center"/>
+                                        <TextBox Name="tbx_StandbyPeriod" Text="60" Width="110" Style="{StaticResource StandardTextBoxStyle}" Margin="4"/>
+                                        <Button Name="btn_ReadStandbyPeriod" Content="读取待机周期" Style="{StaticResource StandardButtonStyle}" Margin="4" Click="btn_ReadStandbyPeriod_Click"/>
+                                        <Button Name="btn_WriteStandbyPeriod" Content="写入并核对" Style="{StaticResource StandardButtonStyle}" Margin="4" Click="btn_WriteStandbyPeriod_Click"/>
+                                    </WrapPanel>
+                                    <TextBlock Name="tbk_StandbyPeriodStatus" Text="尚未读取待机周期" Margin="4" TextWrapping="Wrap" Foreground="#1976D2"/>
+                                </StackPanel>
+                            </GroupBox>
+
                             <!-- 设备地址管理 -->
                             <GroupBox Header="设备地址管理" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,0">
                                 <StackPanel>
