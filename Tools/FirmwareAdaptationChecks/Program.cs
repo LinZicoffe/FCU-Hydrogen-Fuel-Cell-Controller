@@ -17,6 +17,7 @@ internal static class Program
             ProtocolChecks();
             CacheSessionChecks();
             StandbyChecks.Run();
+            CalibrationChecks.Run();
             AlarmChecks();
             SrecChecks.Run();
             int renderIndex = Array.IndexOf(args, "--render-dir");

@@ -209,6 +209,7 @@ namespace FCU_氢燃料电池控.Protocol
         /// 参数类型：DCDC参数
         /// </summary>
         public const ushort PARAM_TYPE_DCDC = 0x0301;
+        public const ushort PARAM_TYPE_CURRENT_CALIBRATION = 0x0302;
 
         /// <summary>
         /// 参数类型：风扇及温度参数

@@ -53,6 +53,7 @@ namespace FCU_氢燃料电池控.Protocol
                 ProtocolConstants.PARAM_TYPE_VALVE => 10,
                 ProtocolConstants.PARAM_TYPE_VALVE_TIMING => 18,   // 9×u16（ID 2B+子索引 1B 之外的参数体长度，响应 LEN=21）
                 ProtocolConstants.PARAM_TYPE_DCDC => 4,
+                ProtocolConstants.PARAM_TYPE_CURRENT_CALIBRATION => 8,
                 ProtocolConstants.PARAM_TYPE_FAN_TEMP => 11,
                 ProtocolConstants.PARAM_TYPE_LOAD_SEQUENCE => -1,   // 变长: 时序数 × 4
                 ProtocolConstants.PARAM_TYPE_LOAD_CONTROL => 9,
