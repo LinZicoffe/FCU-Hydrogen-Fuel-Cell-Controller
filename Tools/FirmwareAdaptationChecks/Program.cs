@@ -17,6 +17,8 @@ internal static class Program
             ProtocolChecks();
             CacheSessionChecks();
             StandbyChecks.Run();
+            AlarmChecks();
+            SrecChecks.Run();
             if (args.Contains("--ui")) UiChecks.Run();
             Console.WriteLine($"PASS {_passed} checks");
             return 0;
@@ -29,6 +31,24 @@ internal static class Program
     }
 
     private static byte[] Hex(string value) => Convert.FromHexString(value.Replace(" ", ""));
+
+    private static void AlarmChecks()
+    {
+        foreach (ushort reason in new ushort[] { 0, 1, 2, 3, 8 })
+        {
+            var frame = ProtocolHandler.BuildRequestFrame(1, 0xF0, new byte[] { 0, 14, 4, 0, (byte)reason });
+            var alarm = ResponseParser.ParseAlarmInfo(frame);
+            Check(alarm.AlarmType == 14 && alarm.GetAlarmTypeName().Contains("看门狗"), "watchdog alarm decoded");
+            string description = alarm.GetAlarmValueDescription();
+            Check(reason is 1 or 3 ? description.Contains("IWDG") : description.Contains("WWDG") || description.Contains("原因位"), "watchdog reset reason bits");
+        }
+        var invalid = new FCU_氢燃料电池控.Models.AlarmData { AlarmType = 13 };
+        Check(invalid.GetAlarmValueDescription().Contains("超时") && invalid.GetAlarmTypeName().Contains("超时"), "alarmD includes complete sample timeout");
+        Check(ProtocolConstants.GetFunctionCodeDescription(0x11).Contains("缓存"), "0x11 current name is cache");
+        Check(typeof(ProtocolHandler).GetMethod("BuildLoadBootloaderCommand") == null, "undefined boot command removed");
+        Check(FCU_氢燃料电池控.Models.SrecFile.APP_BASE == 0x08003000 &&
+            FCU_氢燃料电池控.Models.SrecFile.APP_END_EXCLUSIVE == 0x0801F000, "OpenBLT image address guards retained");
+    }
 
     private static void CacheSessionChecks()
     {

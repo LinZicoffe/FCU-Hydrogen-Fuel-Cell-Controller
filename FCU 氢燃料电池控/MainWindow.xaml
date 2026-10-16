@@ -268,7 +268,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- 左侧面板 -->
-            <ScrollViewer Grid.Column="0"
+            <ScrollViewer Name="pnl_SerialActions" Grid.Column="0"
                           Margin="0,0,10,0"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
@@ -508,7 +508,7 @@
                                             <TextBox Grid.Column="0" Margin="4"
                                                  Text="{Binding HighPressureMax, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource StandardTextBoxStyle}"
-                                                 ToolTip="高压上限告警值，高于此值触发 CRITICAL 停机。建议初值 5000 KPA（等于量程），联调后按实际安全值下调"/>
+                                                 ToolTip="高压上限告警值，达到或超过此值触发过压保护；启动中立即关断，运行中连续3次触发CRITICAL停机。建议初值 5000 KPA（等于量程），联调后按实际安全值下调"/>
                                             <TextBlock Grid.Column="1" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
 
@@ -1240,11 +1240,11 @@
                                             <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
 
-                                        <Label Grid.Row="0" Grid.Column="0" Content="放电电压 (0.1V):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                        <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_DCDCMinVoltage" Style="{StaticResource StandardTextBoxStyle}" Text="80" Margin="4"/>
+                                        <Label Grid.Row="0" Grid.Column="0" Content="DCDC门控电压 (0.1V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_DCDCMinVoltage" ToolTip="启动堆电压须高于此值才能开启DCDC；关机期间低于此值开放电、达到或高于此值关闭放电，默认8.0V" Style="{StaticResource StandardTextBoxStyle}" Text="80" Margin="4"/>
 
-                                        <Label Grid.Row="1" Grid.Column="0" Content="截至电压 (0.1V):" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                        <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_DCDCStopVoltage" Style="{StaticResource StandardTextBoxStyle}" Text="20" Margin="4"/>
+                                        <Label Grid.Row="1" Grid.Column="0" Content="保留截止值 (0.1V):" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_DCDCStopVoltage" ToolTip="保留配置并可回读；当前main关机放电不按此值控制，2V截止采样点仍待确认" Style="{StaticResource StandardTextBoxStyle}" Text="20" Margin="4"/>
                                     </Grid>
                                 </StackPanel>
                             </GroupBox>
@@ -1266,6 +1266,7 @@
                                     Margin="0,0,0,10"
                                     Click="btn_ReadLoadParams_Click"/>
 
+                            <TextBlock Text="自动拉载周期到期不会打断正在执行的扫描或锁流；首次扫描被BMS/电压门控暂时阻断后会补扫，手动停止或恒流接管会取消旧补扫。" TextWrapping="Wrap" Foreground="#616161" Margin="4,0,4,10"/>
                             <TextBlock Text="输入框初始数值仅作界面示例；连接设备后请先点击「读取整套电流参数」，以FCU回读值为准。"
                                        Foreground="#616161" Margin="4,0,4,10" TextWrapping="Wrap"/>
 
@@ -1640,6 +1641,7 @@
                                 </StackPanel>
                             </GroupBox>
 
+                            <TextBlock Text="启动会等待传感器上电后的新采样并重新检查准入；启动中温度或压力越限会立即关断。看门狗复位后保持故障，需排查并人工处理。" TextWrapping="Wrap" Foreground="#616161" Margin="4,4,4,12"/>
                             <!-- 通用参数设置 -->
                             <GroupBox Header="通用参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <StackPanel>
@@ -1715,6 +1717,7 @@
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
                         <StackPanel>
                             <CheckBox Name="chk_DirectBmsMode" Content="直接Modbus诊断（完整寄存器 / MOS控制，需FCU确认接管）"
+                                      ToolTip="直接诊断会暂停FCU的BMS采集，其SOC门控及BMS保护耦合暂不可用；用完请切回缓存并确认归还轮询"
                                       Margin="4,4,4,12" Checked="chk_DirectBmsMode_Changed" Unchecked="chk_DirectBmsMode_Changed"/>
                             <GroupBox Name="pnl_BmsCache" Header="FCU采集的BMS缓存" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <StackPanel>

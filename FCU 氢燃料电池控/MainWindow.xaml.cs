@@ -100,6 +100,7 @@ namespace FCU_氢燃料电池控
         // 互斥窗口 = S1 前置检查完成后启用, S8 切回 9600 并确认 APP 存活后解除;
         // 生效期间: 串口字节分流到升级客户端, SendFrame/ParameterManager 发送被拦截, 主 Tab 被禁用
         private volatile bool _blUpgradeMode;
+        private volatile bool _upgradePrecheckMode;
 
         // 固件升级页所在 TabItem (升级期间保持可用, 其余主 Tab 禁用)
         private System.Windows.Controls.TabItem? _firmwareUpgradeTab;
@@ -247,7 +248,7 @@ namespace FCU_氢燃料电池控
             _firmwareUpgradeTab = FirmwareUpgradeView.Parent as System.Windows.Controls.TabItem;
             FirmwareUpgradeView.Initialize(serialPortManager, new BlHostBridgeImpl(this));
             // 升级期间拦截 ParameterManager 的 AA55 发送 (MVVM 命令 CanExecute 只查 IsConnected 拦不住)
-            _viewModel.ParameterManager.SendBlocked = () => _blUpgradeMode;
+            _viewModel.ParameterManager.SendBlocked = () => _blUpgradeMode || _upgradePrecheckMode;
             InitializeFirmwareMain();
 
             // 图表初始化（保留）
@@ -686,7 +687,7 @@ namespace FCU_氢燃料电池控
                 {
                     _suppressNextAutoBmsPoll = false;
                 }
-                else if (!_blUpgradeMode && DirectBmsMode)
+                else if (!_blUpgradeMode && !_upgradePrecheckMode && DirectBmsMode)
                 {
                     /* [审查修复 P2] 升级入口 SetBlMode(true) 的 57600 重开同样触发连接事件:
                      * 对端是 Bootloader/波特率切换中的设备, 0x0D 无意义且 SendFrame 被
@@ -836,7 +837,7 @@ namespace FCU_氢燃料电池控
                 }
                 _pendingValveTimingSet = null;
                 UpdateStatus("扩展时序(0x0202)写入超时");
-                HC.Growl.Warning("2s 未收到设置响应——固件可能不支持 0x0202（需 codex/configurable-valve-timing 分支固件）或线路异常");
+                HC.Growl.Warning("2s 未收到设置响应——固件可能不支持 0x0202（需包含0x0202扩展的固件，最新main已包含）或线路异常");
             };
         }
 
@@ -2999,7 +3000,7 @@ namespace FCU_氢燃料电池控
         private bool SendFrame(byte[] frame)
         {
             // 固件升级模式期间拦截一切 AA55 发送 [BL设计 §4.2 集成点2]
-            if (_blUpgradeMode)
+            if (_blUpgradeMode || _upgradePrecheckMode)
                 return false;
 
             // 使用ViewModel的SerialPortManager发送数据
@@ -3792,7 +3793,7 @@ namespace FCU_氢燃料电池控
             /* 固件升级进行中禁止关窗 [BL设计 §4.4 中途关窗拦截]:
              * 互斥窗口(S1末~S8末)由 _blUpgradeMode 拦截; S8 之后退出归一化期间(6s 静默等)
              * 由升级页 _busy 拦截 [全量终审 P2] */
-            if (_blUpgradeMode || FirmwareUpgradeView.IsBusy)
+            if (_blUpgradeMode || _upgradePrecheckMode || FirmwareUpgradeView.IsBusy)
             {
                 HC.Growl.Warning("固件升级进行中, 请先在升级页点击[取消]完成退出流程后再关闭程序");
                 e.Cancel = true;
@@ -3862,7 +3863,7 @@ namespace FCU_氢燃料电池控
                         _pendingSocReadDeviceAddress = null;
                     }
                     string msg = paramTypeID == ProtocolConstants.PARAM_TYPE_VALVE_TIMING
-                        ? $"配置参数 0x0202 读取失败：{failReason}——固件可能不支持扩展时序（需 codex/configurable-valve-timing 分支固件）"
+                        ? $"配置参数 0x0202 读取失败：{failReason}——固件可能不支持扩展时序（需包含0x0202扩展的固件，最新main已包含）"
                         : $"配置参数 0x{paramTypeID:X4} 解析失败：{failReason}";
                     UpdateStatus(msg);
                     HC.Growl.Warning(msg);
@@ -4701,7 +4702,7 @@ namespace FCU_氢燃料电池控
 
         private bool CheckBmsReady()
         {
-            if (!DirectBmsMode || !_bmsTakeoverConfirmed || _bmsReturnInFlight || _bmsBusExchangeInProgress || _standbyPeriod?.IsBusy == true)
+            if (_upgradePrecheckMode || !DirectBmsMode || !_bmsTakeoverConfirmed || _bmsReturnInFlight || _bmsBusExchangeInProgress || _standbyPeriod?.IsBusy == true)
             {
                 HC.Growl.Warning("请先选择直接Modbus诊断并等待FCU确认总线接管");
                 return false;
@@ -4801,6 +4802,12 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void UpdateLoadBlockBanner(BmsData data)
         {
+            if (DirectBmsMode)
+            {
+                tbk_LoadBlockReason.Text = "直接Modbus诊断暂停了FCU自身BMS采集，FCU侧SOC门控与BMS故障耦合不可用。退出诊断并确认归还轮询后恢复；直读数据不代表FCU正在执行门控。";
+                bd_LoadBlockBanner.Visibility = Visibility.Visible;
+                return;
+            }
             var reasons = new List<string>();
 
             if (BmsBitDecoder.IsLoadBlocked(data.ProtectStatus, data.SystemStatus, out string bmsReason))
@@ -4812,7 +4819,7 @@ namespace FCU_氢燃料电池控
             {
                 reasons.Add($"SOC={data.Soc}% > {_socStartMax}%：电堆启动会被拒绝（不是拉载指令阻断）");
             }
-            else if (data.Soc > _socStopHigh)
+            if (data.Soc > _socStopHigh)
             {
                 reasons.Add($"SOC={data.Soc}% > {_socStopHigh}%：电堆运行中会自动停机");
             }
@@ -5534,11 +5541,32 @@ namespace FCU_氢燃料电池控
             }
 
             /// <summary>进入/退出升级模式: 标志 + 轮询挂起 + 主 Tab 互斥 + 协议状态机复位 [BL设计 §4.2]</summary>
+            public bool TryPrepareUpgrade()
+            {
+                return _owner.Dispatcher.Invoke(() =>
+                {
+                    if (!_owner._isSerialOpen || _owner._standbyPeriod?.IsBusy == true ||
+                        _owner._bmsCache?.Waiting == true || _owner._awaitingStackInfo || _owner._bmsService?.IsBusy == true ||
+                        _owner._bmsBusExchangeInProgress || _owner._bmsReturnInFlight ||
+                        _owner._pendingLoadManualCmd != null || _owner._pendingValveTimingSet.HasValue ||
+                        _owner._pendingSocWrite != null || _owner._pendingSocReadDeviceAddress.HasValue ||
+                        _owner._pendingSecondMosWrite != null || _owner._diagProbePending || _owner._pendingFanManualEnable.HasValue ||
+                        Environment.TickCount64 - _owner._lastSharedSetAt < 3000) return false;
+                    _owner._upgradePrecheckMode = true;
+                    _owner._pollingTimer?.Stop();
+                    _owner._bmsService?.StopPolling();
+                    _owner.ResetFirmwareMainSession();
+                    SetMainTabsEnabled(false);
+                    return true;
+                });
+            }
+
             public void SetBlMode(bool on)
             {
                 _owner.Dispatcher.Invoke(() =>
                 {
                     _owner._blUpgradeMode = on;
+                    if (!on) _owner._upgradePrecheckMode = _owner.FirmwareUpgradeView.IsBusy;
 
                     if (on)
                     {
@@ -5558,9 +5586,9 @@ namespace FCU_氢燃料电池控
                     else
                     {
                         _owner._protocolHandler?.Reset();
-                        SetMainTabsEnabled(true);
+                        SetMainTabsEnabled(!_owner.FirmwareUpgradeView.IsBusy);
                         /* [BL升级 终审P1] 随后的 9600 重开不自动下发 en=0 (由正常断开链路统一归还) */
-                        _owner._suppressNextAutoBmsPoll = true;
+                        _owner._suppressNextAutoBmsPoll = _owner.FirmwareUpgradeView.IsBusy;
                         /* 轮询不自动恢复; 但按钮状态按实际运行态派生恢复:
                          * 升级入口可能停在"电堆轮询运行中"(前置检查失败路径轮询从未停),
                          * 一律恢复停止态会让用户无法直接停表 [审查修复 C审查建议] */
@@ -5583,6 +5611,7 @@ namespace FCU_氢燃料电池控
             /// <summary>升级期间禁用除固件升级页外的全部主 Tab [BL设计 §4.2 集成点2 等效实现]</summary>
             private void SetMainTabsEnabled(bool enabled)
             {
+                _owner.pnl_SerialActions.IsEnabled = enabled; // 包含串口/地址与快捷操作，防升级中切换目标。
                 foreach (var item in _owner.MainTabControl.Items.OfType<System.Windows.Controls.TabItem>())
                 {
                     item.IsEnabled = enabled;

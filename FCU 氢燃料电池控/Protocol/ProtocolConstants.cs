@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace FCU_氢燃料电池控.Protocol
 {
@@ -149,14 +149,14 @@ namespace FCU_氢燃料电池控.Protocol
         public const byte RESP_SOC_PARAMS = 0x90;
 
         /// <summary>
-        /// 功能码：进入升级模式（数据域1B：confirm=0x01）[RS485协议 V5.2 §4.16]。
+        /// 历史IAP功能码：进入升级模式（仅旧固件，当前main同码为BMS缓存查询；数据域1B：confirm=0x01）[RS485协议 V5.2 §4.16]。
         /// 仅 OFF/FAULT 态接受；APP 应答 0x91 后约 50ms 安全停机+软复位进 Bootloader，
         /// 免断电重启。旧固件（V5.2 之前）无此功能码，上位机回退断电路径。
         /// </summary>
         public const byte FUNC_ENTER_IAP = 0x11;
 
         /// <summary>
-        /// 响应功能码：进入升级模式结果（数据域1B错误码）。
+        /// 历史IAP响应：进入升级模式结果（仅旧固件1B；当前main是18B BMS缓存）。
         /// </summary>
         public const byte RESP_ENTER_IAP = 0x91;
 

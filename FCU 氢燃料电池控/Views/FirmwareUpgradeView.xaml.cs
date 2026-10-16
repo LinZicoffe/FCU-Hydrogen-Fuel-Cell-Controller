@@ -25,6 +25,8 @@ namespace FCU_氢燃料电池控.Views
         {
             /// <summary>串口是否已打开</summary>
             bool IsSerialOpen { get; }
+            /// <summary>无参数事务/接收等待时，暂停轮询并锁定普通操作，准备AA55前置检查。</summary>
+            bool TryPrepareUpgrade();
             /// <summary>当前串口名 (未打开返回 null)</summary>
             string? PortName { get; }
             /// <summary>当前配置的 FCU 设备地址 (AA55 帧用)</summary>
@@ -257,17 +259,23 @@ namespace FCU_氢燃料电池控.Views
             }
             if (!_bridge.IsSerialOpen)
             {
-                MessageBox.Show("请先在 9600 波特率下正常连接 FCU (前置检查需要读取电堆状态)\n" +
-                                "连接动作会自动完成 BMS 总线接管 (0x0D=0)", "提示",
+                MessageBox.Show("请先在 9600 波特率下正常连接 FCU，前置检查需要读取电堆状态。", "提示",
                                 MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             var confirm = MessageBox.Show(
                 $"即将开始固件升级 (OpenBLT XCP @ {BL_BAUD}, 镜像 {_srecFile.Length / 1024.0:F1} KB @ 0x{_srecFile.BaseAddress:X8})。\n\n" +
-                "升级过程中: ① 电堆必须处于关机/故障状态 ② 设备将进入 Bootloader (自动加载指令; 不支持时需按提示断电重新上电) ③ 请勿关闭程序或拔出串口 ④ 总线上仅这一台 FCU\n\n确认开始?",
+                "升级过程中: ① 电堆必须处于关机/故障状态 ② 必须已安装兼容OpenBLT引导，按提示断电重新上电 ③ 请勿关闭程序或拔出串口 ④ 总线上仅这一台 FCU\n\n" +
+                "当前固件main是从0x08000000启动的独立APP，不具备此升级入口；其镜像应通过SWD烧录，不能直接用于本页。\n\n确认开始?",
                 "固件升级", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (confirm != MessageBoxResult.Yes) return;
+
+            if (!_bridge.TryPrepareUpgrade())
+            {
+                Status("参数操作或响应尚未完成，请停止自动刷新并等待应答后再升级");
+                return;
+            }
 
             _cts = new CancellationTokenSource();
             var ct = _cts.Token;
@@ -342,17 +350,8 @@ namespace FCU_氢燃料电池控.Views
                 activeStep = 3;
                 if (appOnline)
                 {
-                    /* 方案一: 加载指令 (帧布局待固件对齐 [待确认①], 无应答 1s 转断电路径)。
-                     * 注意: 当前无应答约定, 固件适配落地后应改为等待确认帧再分支 (参照旧 0x11/0x91 先例),
-                     *       避免加载已成功却仍提示断电、用户照做导致升级中途中断 */
-                    var loadCmd = ProtocolHandler.BuildLoadBootloaderCommand(_bridge!.DeviceAddress);
-                    Log($"发送加载指令: {BitConverter.ToString(loadCmd)}");
-                    _ = _bridge.SendAppFrame(loadCmd);
-                    await Task.Delay(1000, ct);
-                    ct.ThrowIfCancellationRequested();
-                    Log("加载指令无应答 (固件适配中), 转断电重启路径");
-
-                    /* 方案二: 人工断电重启 (BL 复位后开放 500ms 后门窗口) */
+                    // main@2c8be1d没有进入引导命令；0x11是缓存查询，禁止发送猜测裸字节。
+                    Log("未发送加载命令；仅对已安装兼容OpenBLT的设备使用断电连接窗口");
                     Status("请断电重新上电 FCU (30 秒内)");
                     _ = Dispatcher.BeginInvoke(() => MessageBox.Show(
                         "请现在给 FCU 断电, 3 秒后重新上电。\n\n上电后引导程序短暂开放连接窗口, 上位机会自动连上 (30 秒内完成)。",
@@ -553,6 +552,7 @@ namespace FCU_氢燃料电池控.Views
             finally
             {
                 _busy = false;
+                _bridge?.SetBlMode(false); // 所有探活/归一化结束后，才解除普通操作锁定
                 var oldCts = _cts;
                 _cts = null;
                 oldCts?.Dispose();

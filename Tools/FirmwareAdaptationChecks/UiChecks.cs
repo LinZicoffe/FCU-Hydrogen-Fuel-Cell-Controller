@@ -142,6 +142,38 @@ internal static class UiChecks
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
             Program.Check(standby.IsBusy && !standby.Verified && !standby.Status.Contains("保存成功"),
                 "queued ACK before reset cannot advance a new epoch");
+            var view = window.FindName("FirmwareUpgradeView");
+            var bridge = (FCU_氢燃料电池控.Views.FirmwareUpgradeView.IBlHostBridge)
+                view.GetType().GetField("_bridge", Flags)!.GetValue(view)!;
+            Program.Check(!bridge.TryPrepareUpgrade(), "upgrade rejected while standby transaction pending");
+            standby.Reset(); Set(window, "_lastSharedSetAt", -3001L);
+            Set(window, "_pendingSocReadDeviceAddress", (byte?)2);
+            Program.Check(!bridge.TryPrepareUpgrade(), "upgrade rejected while standalone SOC read pending");
+            Set(window, "_pendingSocReadDeviceAddress", null);
+            Program.Check(bridge.TryPrepareUpgrade() && (bool)Get(window, "_upgradePrecheckMode")!, "upgrade preparation locks ordinary sends");
+            Program.Check(!(bool)Call(window, "SendFrame", FirmwareMainProtocol.ReadBmsCache(2))!, "cache cannot send during upgrade prechecks");
+            view.GetType().GetField("_busy", Flags)!.SetValue(view, true);
+            bridge.SetBlMode(true); bridge.SetBlMode(false); // 模拟S8恢复AA55分流，但探活尚未结束
+            Program.Check((bool)Get(window, "_upgradePrecheckMode")! && !(bool)Get(window, "_blUpgradeMode")! &&
+                !(bool)Call(window, "SendFrame", FirmwareMainProtocol.ReadBmsCache(2))!, "S8 still blocks ordinary requests while AA55 probe runs");
+            Program.Check(!((FrameworkElement)window.FindName("pnl_SerialActions")).IsEnabled, "upgrade locks target address and serial actions until completion");
+            view.GetType().GetField("_busy", Flags)!.SetValue(view, false);
+            bridge.SetBlMode(false);
+            Program.Check(!(bool)Get(window, "_upgradePrecheckMode")!, "precheck exit always unlocks");
+            Program.Check(!(bool)Get(window, "_suppressNextAutoBmsPoll")!, "final upgrade exit clears reconnect suppression");
+            Call(window, "OnSerialConnectionChanged", serial, false);
+            mode.IsChecked = true;
+            serial.OnSend = f =>
+            {
+                if (f[3] == 0x0D) { Set(window, "_bmsPollAckReceived", true); Set(window, "_bmsPollAckSuccess", true); }
+            };
+            Call(window, "OnSerialConnectionChanged", serial, true);
+            Program.Check((bool)Get(window, "_bmsTakeoverConfirmed")! && serial.Sent[^1][3] == 0x0D && serial.Sent[^1][5] == 0,
+                "ordinary reconnect after upgrade still takes over explicit direct diagnostic mode");
+            Call(window, "UpdateLoadBlockBanner", new FCU_氢燃料电池控.Models.BmsData { Online = true, Soc = 99 });
+            Program.Check(((TextBlock)window.FindName("tbk_LoadBlockReason")).Text.Contains("门控与BMS故障耦合不可用"),
+                "direct diagnostic data must not claim FCU gates remain active");
+            Call(window, "OnBeforeSerialClose");
             Call(window, "OnSerialConnectionChanged", serial, false);
         }
         finally

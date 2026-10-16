@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using FCU_氢燃料电池控.Models;
 
@@ -282,20 +282,6 @@ namespace FCU_氢燃料电池控.Protocol
             frame[frameLength - 1] = (byte)(crc & 0xFF);         // CRC低字节
             
             return frame;
-        }
-
-        /// <summary>
-        /// [OpenBLT 升级 · 待确认①] 构建进入 Bootloader 的"加载指令"。
-        /// 用户定义: XX 99 88 77 + CRC, XX=设备地址; 固件侧适配中, 完整字节布局待对齐。
-        /// 当前默认实现: 裸序列 [ADDR, 0x99, 0x88, 0x77] + CRC16-CCITT(初值 0xFFFF, 同 AA55,
-        /// 覆盖前 4 字节, 大端)。固件落地后仅需修改本函数 (单点封装, 实施文档 §4.4)。
-        /// 发送通道: 升级页经 IBlHostBridge.SendAppFrame 在 SetBlMode(true) 之前裸发。
-        /// </summary>
-        public static byte[] BuildLoadBootloaderCommand(byte deviceAddress)
-        {
-            var seq = new byte[] { deviceAddress, 0x99, 0x88, 0x77 };
-            ushort crc = CalculateCRC16Static(seq, seq.Length);
-            return new byte[] { seq[0], seq[1], seq[2], seq[3], (byte)(crc >> 8), (byte)(crc & 0xFF) };
         }
 
         /// <summary>
