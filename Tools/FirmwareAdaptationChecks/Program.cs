@@ -15,6 +15,8 @@ internal static class Program
         try
         {
             ProtocolChecks();
+            CacheSessionChecks();
+            if (args.Contains("--ui")) UiChecks.Run();
             Console.WriteLine($"PASS {_passed} checks");
             return 0;
         }
@@ -26,6 +28,28 @@ internal static class Program
     }
 
     private static byte[] Hex(string value) => Convert.FromHexString(value.Replace(" ", ""));
+
+    private static void CacheSessionChecks()
+    {
+        long now = 100;
+        var sent = new List<byte[]>();
+        var session = new FCU_氢燃料电池控.Services.BmsCacheSession(f => { sent.Add(f); return true; }, () => now);
+        Check(session.Request(1) && session.Waiting && sent.Count == 1, "cache send");
+        Check(!session.Request(1) && sent.Count == 1, "one cache in flight");
+        Check(!session.Receive(ProtocolHandler.BuildRequestFrame(1, 0x91, new byte[] { 0 })), "legacy IAP cannot finish cache wait");
+        Check(!session.Receive(ProtocolHandler.BuildRequestFrame(2, 0x91, new byte[18])), "wrong address cannot finish cache wait");
+        now += 1999; session.Tick(); Check(session.Waiting, "cache before timeout");
+        now++; session.Tick(); Check(!session.Waiting && session.Snapshot == null && session.Status.Contains("超时"), "cache timeout");
+        Check(!session.Receive(Hex("AA55019112033CFB2E1194123456789ABCDEF0000017703796")), "late response ignored");
+        session.Request(1);
+        session.Receive(Hex("AA55019112033CFB2E1194123456789ABCDEF0000017703796"));
+        Check(session.Online && session.SocValid, "valid snapshot at exact boundary");
+        now++; session.Tick(); Check(!session.Online && !session.SocValid, "host elapsed time ages snapshot without further responses");
+        session.Reset(); Check(!session.Waiting && session.Snapshot == null, "reset disconnect/mode/upgrade state");
+        var failed = new FCU_氢燃料电池控.Services.BmsCacheSession(_ => false, () => now);
+        Check(!failed.Request(1) && !failed.Waiting && failed.Status.Contains("失败"), "send failure rolls back wait");
+        Check(sent.All(f => f[3] == 0x11 && f[4] == 0), "cache never writes0D or Modbus");
+    }
 
     private static void ProtocolChecks()
     {

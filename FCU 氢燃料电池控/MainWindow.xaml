@@ -1,4 +1,4 @@
-<hc:Window x:Class="FCU_氢燃料电池控.MainWindow"
+﻿<hc:Window x:Class="FCU_氢燃料电池控.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -1701,6 +1701,32 @@
                 <hc:TabItem Header="BMS电池管理">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
                         <StackPanel>
+                            <CheckBox Name="chk_DirectBmsMode" Content="直接Modbus诊断（完整寄存器 / MOS控制，需FCU确认接管）"
+                                      Margin="4,4,4,12" Checked="chk_DirectBmsMode_Changed" Unchecked="chk_DirectBmsMode_Changed"/>
+                            <GroupBox Name="pnl_BmsCache" Header="FCU采集的BMS缓存" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                                <StackPanel>
+                                    <TextBlock Text="由FCU持续采集BMS，上位机只读取缓存。刷新不会触发额外采集；旧固件不支持时可选择直接诊断。" TextWrapping="Wrap" Foreground="#616161" Margin="4,4,4,10"/>
+                                    <WrapPanel Margin="4,0,4,10">
+                                        <Button Content="读取BMS缓存" Style="{StaticResource StandardButtonStyle}" Click="btn_ReadBmsCache_Click"/>
+                                        <CheckBox Name="chk_BmsCacheAuto" Content="每2秒刷新" Margin="15,0,0,0" VerticalAlignment="Center"
+                                                  Checked="chk_BmsCacheAuto_Changed" Unchecked="chk_BmsCacheAuto_Changed"/>
+                                        <Button Content="恢复FCU采集" Style="{StaticResource WarningButtonStyle}" Margin="15,0,0,0" Click="btn_ReturnBmsPoll_Click"
+                                                ToolTip="仅在FCU轮询曾被关闭时使用；需要FCU确认并写入Flash"/>
+                                    </WrapPanel>
+                                    <TextBlock Name="tbk_BmsCacheStatus" Text="未读取" Margin="4" Foreground="#1976D2" TextWrapping="Wrap"/>
+                                    <UniformGrid Columns="2" Margin="4">
+                                        <TextBlock Text="SOC"/><TextBlock Name="tbk_BmsCacheSoc" Text="--"/>
+                                        <TextBlock Text="电池组电压"/><TextBlock Name="tbk_BmsCacheVoltage" Text="--"/>
+                                        <TextBlock Text="电池电流"/><TextBlock Name="tbk_BmsCacheCurrent" Text="--"/>
+                                        <TextBlock Text="距FCU采集的时间"/><TextBlock Name="tbk_BmsCacheAge" Text="--"/>
+                                    </UniformGrid>
+                                    <TextBlock Name="tbk_BmsCacheFlags" Text="--" Margin="4,10,4,4" TextWrapping="Wrap"/>
+                                    <TextBlock Name="tbk_BmsCacheDetails" Text="--" Margin="4" TextWrapping="Wrap"/>
+                                    <TextBlock Text="超过6秒或固件报告无效时不显示实时电流、电压和SOC。缓存不含容量、单体温度等扩展寄存器。" TextWrapping="Wrap" Margin="4,10,4,4" Foreground="#616161"/>
+                                </StackPanel>
+                            </GroupBox>
+                            <StackPanel Name="pnl_DirectBms" Visibility="Collapsed">
+
                             <!-- BMS基本信息 -->
                             <GroupBox Header="BMS基本信息" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <StackPanel>
@@ -1957,6 +1983,7 @@
                                     </Grid>
                                 </StackPanel>
                             </GroupBox>
+                            </StackPanel>
                         </StackPanel>
                     </ScrollViewer>
                 </hc:TabItem>

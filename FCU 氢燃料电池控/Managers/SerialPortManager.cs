@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO.Ports;
 using System.Linq;
@@ -161,7 +161,7 @@ namespace FCU_氢燃料电池控.Managers
         /// </summary>
         /// <param name="data">要发送的数据</param>
         /// <returns>是否发送成功</returns>
-        public bool SendData(byte[] data)
+        public virtual bool SendData(byte[] data)
         {
             try
             {

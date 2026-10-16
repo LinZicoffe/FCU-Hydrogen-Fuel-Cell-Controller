@@ -1,4 +1,4 @@
-// ======================================================================
+﻿// ======================================================================
 // ⚠️ 功率曲线测试模式开关
 // ======================================================================
 // 启用测试模式：取消下面注释（删除前面的 //）
@@ -209,7 +209,16 @@ namespace FCU_氢燃料电池控
             // VM 无 UI 引用，本地校验失败经事件弹 Growl，与 code-behind 参数组的反馈方式一致
             _viewModel.ParameterValidationFailed += (_, msg) => HC.Growl.Warning(msg);
             // 多机共总线切换目标设备后，作废「已读取压力」豁免，防止跨设备静默覆盖隐藏红/黄阈值
-            _viewModel.DeviceAddressChanged += (_, _) => _pressureParamsLoadedFromDevice = false;
+            _viewModel.DeviceAddressChanged += (_, _) =>
+            {
+                _pressureParamsLoadedFromDevice = false;
+                _bmsExchangeGeneration++;
+                ResetFirmwareMainSession();
+                _bmsService?.StopPolling();
+                _bmsTakeoverConfirmed = false;
+                if (_bmsBusMayBeOwned) OnBeforeSerialClose();
+                chk_DirectBmsMode.IsChecked = false;
+            };
             // ==================== MVVM初始化结束 ====================
             
             // 协议处理初始化（保留）
@@ -239,6 +248,7 @@ namespace FCU_氢燃料电池控
             FirmwareUpgradeView.Initialize(serialPortManager, new BlHostBridgeImpl(this));
             // 升级期间拦截 ParameterManager 的 AA55 发送 (MVVM 命令 CanExecute 只查 IsConnected 拦不住)
             _viewModel.ParameterManager.SendBlocked = () => _blUpgradeMode;
+            InitializeFirmwareMain();
 
             // 图表初始化（保留）
             InitializePowerChart();
@@ -633,6 +643,7 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void OnSerialConnectionChanged(object? sender, bool isConnected)
         {
+            _bmsExchangeGeneration++; // 断线后即使重连同一目标，也不能复活先前的接管等待。
             _isSerialOpen = isConnected;
             
             if (isConnected)
@@ -675,7 +686,7 @@ namespace FCU_氢燃料电池控
                 {
                     _suppressNextAutoBmsPoll = false;
                 }
-                else if (!_blUpgradeMode)
+                else if (!_blUpgradeMode && DirectBmsMode)
                 {
                     /* [审查修复 P2] 升级入口 SetBlMode(true) 的 57600 重开同样触发连接事件:
                      * 对端是 Bootloader/波特率切换中的设备, 0x0D 无意义且 SendFrame 被
@@ -688,6 +699,7 @@ namespace FCU_氢燃料电池控
             else
             {
                 StopSocResponseTimeout();
+                ResetFirmwareMainSession();
 
                 // 串口关闭时，停止所有定时器
                 _chartUpdateTimer?.Stop();
@@ -1170,6 +1182,7 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void PollingTimer_Tick(object? sender, EventArgs e)
         {
+            if (_bmsCache?.Waiting == true || _bmsBusExchangeInProgress || _bmsReturnInFlight) return;
             try
             {
                 // 检查串口是否打开（静默检查，不显示消息）
@@ -3176,7 +3189,11 @@ namespace FCU_氢燃料电池控
                         HandleSocParamsSetResponse(frame);
                         break;
 
-                    case ProtocolConstants.RESP_ENTER_IAP: // 进入升级模式响应(升级页 S1.5 已消费, 免"未知码"噪音)
+                    case ProtocolConstants.RESP_BMS_CACHE: // 当前主线0x91为18B缓存，旧IAP 1B不会被接收
+                        Dispatcher.BeginInvoke(() =>
+                        {
+                            if (!DirectBmsMode && _bmsCache?.Receive(frame) == true) RenderBmsCache();
+                        });
                         break;
 
                     case 0xF0: // 报警信息上报
@@ -3492,6 +3509,7 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void HandleBmsPollResponse(byte[] frame)
         {
+            if (!FirmwareMainProtocol.IsResponse(frame, _bmsExchangeAddress, ProtocolConstants.RESP_BMS_POLL, 1)) return;
             byte result = ResponseParser.ParseSetParamResponse(frame);
             bool success = result == ProtocolConstants.ERR_SUCCESS;
 
@@ -3528,13 +3546,39 @@ namespace FCU_氢燃料电池控
 
             // 地址框非法时安全跳过, 不再让 FormatException 沿 Open 事件链
             // 冒泡成"打开串口失败" (物理上串口已开) [审查修复 P3]
-            if (!SerialPortHelper.TryParseDeviceAddress(GetDeviceAddress(), out byte deviceAddress, showError: false))
+            byte deviceAddress;
+            if (en == 1 && _bmsBusMayBeOwned) deviceAddress = _bmsBusOwnerAddress;
+            else if (!SerialPortHelper.TryParseDeviceAddress(GetDeviceAddress(), out deviceAddress, showError: false))
             {
                 UpdateStatus("设备地址非法, 未发送 BMS 轮询使能指令");
                 return false;
             }
 
-            return SendFrame(BuildFrame(deviceAddress, ProtocolConstants.FUNC_SET_BMS_POLL, new[] { en }));
+            string? port = _viewModel?.GetSerialPortManager().PortName;
+            if (en == 0 && _bmsBusMayBeOwned &&
+                (!string.Equals(port, _bmsBusOwnerPort, StringComparison.OrdinalIgnoreCase) || deviceAddress != _bmsBusOwnerAddress))
+            {
+                UpdateStatus("原设备BMS轮询尚未确认归还，请先连接原串口和地址归还，再接管其他设备");
+                return false;
+            }
+            if (en == 1 && _bmsBusMayBeOwned)
+            {
+                if (!string.Equals(port, _bmsBusOwnerPort, StringComparison.OrdinalIgnoreCase))
+                {
+                    UpdateStatus("原BMS总线接管来自其他串口，请连接原设备归还轮询");
+                    return false;
+                }
+                deviceAddress = _bmsBusOwnerAddress;
+            }
+            _bmsExchangeAddress = deviceAddress;
+            bool sent = SendFrame(BuildFrame(deviceAddress, ProtocolConstants.FUNC_SET_BMS_POLL, new[] { en }));
+            if (sent && en == 0)
+            {
+                _bmsBusMayBeOwned = true;
+                _bmsBusOwnerAddress = deviceAddress;
+                _bmsBusOwnerPort = port;
+            }
+            return sent;
         }
 
         /// <summary>
@@ -3553,13 +3597,20 @@ namespace FCU_氢燃料电池控
             if (_bmsBusExchangeInProgress)
                 return;
 
+            int generation = _bmsExchangeGeneration;
+            string? port = _viewModel?.GetSerialPortManager().PortName;
+            string addressText = GetDeviceAddress();
+            bool IsCurrent() => generation == _bmsExchangeGeneration && DirectBmsMode && _isSerialOpen &&
+                !_bmsReturnInFlight && string.Equals(port, _viewModel?.GetSerialPortManager().PortName, StringComparison.OrdinalIgnoreCase) &&
+                addressText == GetDeviceAddress();
+            if (!IsCurrent()) return;
             _bmsBusExchangeInProgress = true;
             try
             {
                 for (int attempt = 1; attempt <= 3; attempt++)
                 {
                     // 泵送期间用户可能已点断开/关窗: 静默退出 (归还流程随后会发 en=1)
-                    if (!_isSerialOpen || _bmsReturnInFlight)
+                    if (!IsCurrent())
                         return;
 
                     _bmsPollAckReceived = false;
@@ -3573,13 +3624,14 @@ namespace FCU_氢燃料电池控
                     int start = Environment.TickCount;
                     while (!_bmsPollAckReceived && Environment.TickCount - start < 300)
                     {
-                        if (!_isSerialOpen || _bmsReturnInFlight)
+                        if (!IsCurrent())
                             return;
                         DoEvents();
                         Thread.Sleep(10);
                     }
 
-                    if (_bmsPollAckReceived && _bmsPollAckSuccess && _isSerialOpen)
+                    if (!IsCurrent()) return;
+                    if (IsCurrent() && _bmsPollAckReceived && _bmsPollAckSuccess)
                     {
                         _bmsTakeoverConfirmed = true;
                         UpdateStatus($"BMS 总线接管成功 (第{attempt}次尝试获 FCU 确认)");
@@ -3611,6 +3663,8 @@ namespace FCU_氢燃料电池控
                 HC.Growl.Warning("请先打开串口");
                 return;
             }
+
+            CancelBmsTakeover();
 
             var confirm = MessageBox.Show(
                 "将向 FCU 发送「启用 BMS 轮询」(0x0D en=1)，恢复固件自身的 BMS Modbus 轮询。\n\n" +
@@ -3644,6 +3698,7 @@ namespace FCU_氢燃料电池控
                 if (_bmsPollAckReceived && _bmsPollAckSuccess)
                 {
                     _bmsTakeoverConfirmed = false;   // 总线已归还, 本会话接管状态失效
+                    _bmsBusMayBeOwned = false;
                     UpdateStatus("已归还 BMS 总线，FCU 侧轮询已启用");
                     HC.Growl.Success("FCU 已确认启用 BMS 轮询");
                 }
@@ -3666,9 +3721,10 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void OnBeforeSerialClose()
         {
-            if (!_isSerialOpen)
+            if (!_isSerialOpen || !_bmsBusMayBeOwned)
                 return;
 
+            _bmsExchangeGeneration++;
             _bmsReturnInFlight = true;   // 通知在途接管泵送中止, 保证 en=1 是最后的 0x0D
             try
             {
@@ -3693,7 +3749,11 @@ namespace FCU_氢燃料电池控
                     }
 
                     if (_bmsPollAckReceived && _bmsPollAckSuccess)
+                    {
+                        _bmsBusMayBeOwned = false;
+                        _bmsTakeoverConfirmed = false;
                         return;
+                    }
                 }
 
                 // 文案不含"重新上电": en 位在 Flash, 重启无法清除残留 [审查修复 P2]
@@ -3726,6 +3786,7 @@ namespace FCU_氢燃料电池控
             {
                 OnBeforeSerialClose();
             }
+            _firmwareMainTimer?.Stop();
             base.OnClosing(e);
         }
 
@@ -4532,6 +4593,7 @@ namespace FCU_氢燃料电池控
                 HC.Growl.Warning("请先打开串口");
                 return;
             }
+            if (!CheckBmsReady()) return;
             _bmsService?.ReadOnce();
         }
 
@@ -4546,28 +4608,7 @@ namespace FCU_氢燃料电池控
                 return;
             }
 
-            // [审查修复 P2] 未确认接管的 FCU 仍在自行轮询 BMS (en=0 未生效),
-            // 直接开轮询会形成双主站互毁: 先补一次接管确认, 仍失败则需用户二次确认
-            if (!_bmsTakeoverConfirmed)
-            {
-                TakeOverBmsBusWithConfirm();
-                // 模态/泵送期间迟到的 0x8D 可能已真实置位, 弹框前复查一次
-                if (!_bmsTakeoverConfirmed && _bmsPollAckReceived && _bmsPollAckSuccess)
-                    _bmsTakeoverConfirmed = true;
-
-                if (!_bmsTakeoverConfirmed)
-                {
-                    var risk = MessageBox.Show(
-                        "BMS 总线接管未获 FCU 确认, FCU 可能仍在自行轮询 BMS。\n\n" +
-                        "此时开启上位机 BMS 轮询会形成双主站互撞 (双方都可能超时离线)。\n\n仍要继续开启？",
-                        "双主站风险", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-                    if (risk != MessageBoxResult.Yes)
-                    {
-                        UpdateStatus("已取消开启 BMS 自动刷新 (总线接管未确认)");
-                        return;
-                    }
-                }
-            }
+            if (!CheckBmsReady()) return;
 
             double intervalSec = 2.0;
             if (cbx_BMSPollingInterval.SelectedItem is ComboBoxItem item && item.Tag != null)
@@ -4643,6 +4684,11 @@ namespace FCU_氢燃料电池控
 
         private bool CheckBmsReady()
         {
+            if (!DirectBmsMode || !_bmsTakeoverConfirmed || _bmsReturnInFlight || _bmsBusExchangeInProgress)
+            {
+                HC.Growl.Warning("请先选择直接Modbus诊断并等待FCU确认总线接管");
+                return false;
+            }
             if (!_isSerialOpen)
             {
                 HC.Growl.Warning("请先打开串口");
@@ -4683,6 +4729,7 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void OnBmsDataUpdated(BmsData data)
         {
+            if (!DirectBmsMode) return;
             if (!data.Online)
             {
                 ResetBmsDisplay();
@@ -5484,6 +5531,7 @@ namespace FCU_氢燃料电池控
                          * 经 ReopenSerial→Close→断开分支已有复位兜底) */
                         _owner._pollingTimer?.Stop();
                         _owner._bmsService?.StopPolling();
+                        _owner.ResetFirmwareMainSession();
                         _owner._awaitingStackInfo = false;
                         _owner._stackInfoMissCount = 0;
                         _owner._diagProbePending = false;
