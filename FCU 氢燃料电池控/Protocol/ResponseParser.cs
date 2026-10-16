@@ -60,6 +60,7 @@ namespace FCU_氢燃料电池控.Protocol
                 ProtocolConstants.PARAM_TYPE_FLOW => 12,
                 ProtocolConstants.PARAM_TYPE_SOC => ProtocolConstants.SOC_PARAMS_DATA_LENGTH,
                 ProtocolConstants.PARAM_TYPE_GENERAL => 2,
+                ProtocolConstants.PARAM_TYPE_STANDBY => 2,
                 _ => -2                                             // 未知参数ID
             };
         }

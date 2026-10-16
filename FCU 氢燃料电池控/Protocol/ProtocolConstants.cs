@@ -160,6 +160,11 @@ namespace FCU_氢燃料电池控.Protocol
         /// </summary>
         public const byte RESP_ENTER_IAP = 0x91;
 
+        // main@2c8be1d：同码的当前含义，旧IAP定义仅供离线保留文件使用。
+        public const byte FUNC_READ_BMS_CACHE = 0x11;
+        public const byte RESP_BMS_CACHE = 0x91;
+        public const ushort PARAM_TYPE_STANDBY = 0x0902;
+
         /// <summary>
         /// 响应功能码：读取配置参数
         /// </summary>
@@ -538,8 +543,8 @@ namespace FCU_氢燃料电池控.Protocol
                 RESP_FAN_MANUAL => "风扇手动运行控制响应",
                 FUNC_SET_SOC_PARAMS => "设置BMS/SOC参数",
                 RESP_SOC_PARAMS => "BMS/SOC参数设置响应",
-                FUNC_ENTER_IAP => "进入升级模式",
-                RESP_ENTER_IAP => "进入升级模式响应",
+                FUNC_READ_BMS_CACHE => "读取BMS缓存",
+                RESP_BMS_CACHE => "BMS缓存响应（旧IAP同码须按长度区分）",
                 FUNC_ALARM_REPORT => "报警信息上报",
                 FUNC_STATE_CHANGE_REPORT => "状态变更上报",
                 FUNC_LOAD_STATUS_REPORT => "拉载状态上报",
