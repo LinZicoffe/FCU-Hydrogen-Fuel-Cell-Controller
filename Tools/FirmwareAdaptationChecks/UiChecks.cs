@@ -227,6 +227,7 @@ internal static class UiChecks
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
             Program.Check(cache.Snapshot?.Soc == 60 && !cache.Waiting, "current session queued cache is accepted");
             cache.Reset(); Set(window, "_isSerialOpen", true); Port("COM1"); serial.OnSend = null;
+            CheckCalibrationCurrent(window, vm);
             var kInput = (TextBox)window.FindName("tbx_CurrentCalibrationK");
             var bInput = (TextBox)window.FindName("tbx_CurrentCalibrationB");
             var calRead = (Button)window.FindName("btn_ReadCurrentCalibration");
@@ -293,6 +294,45 @@ internal static class UiChecks
         }
     }
 
+    private static void CheckCalibrationCurrent(MainWindow window, MainViewModel vm)
+    {
+        var group = (FrameworkElement)window.FindName("grp_CurrentCalibration");
+        DependencyObject? parent = group;
+        while (parent != null && parent is not TabItem) parent = LogicalTreeHelper.GetParent(parent);
+        Program.Check(parent is TabItem tab && tab.Header?.ToString() == "电流设置", "0302 calibration belongs to current settings tab");
+        var tabs = (TabControl)window.FindName("MainTabControl");
+        tabs.SelectedItem = parent;
+        var display = (TextBlock)window.FindName("tbk_CalibrationInputCurrent");
+        void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        void Report(ushort current)
+        {
+            byte[] data = new byte[26];
+            data[9] = (byte)(current >> 8); data[10] = (byte)current;
+            data[13] = 0; data[14] = 99; // 输出电流9.9A，用于排除显示错通道。
+            Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x87, data));
+            Pump();
+        }
+        vm.IsConnected = true;
+        Pump();
+        Program.Check(display.Text == "--", "0302 current unavailable before first report");
+        Report(123);
+        Program.Check(display.Text == vm.DCDCInputCurrent && display.Text == (12.3).ToString("F1") &&
+            display.Text != vm.DCDCOutputCurrent, "0302 current uses real 0x87 input current scaled by 0.1A");
+        Report(245);
+        Program.Check(display.Text == (24.5).ToString("F1"), "0302 current follows subsequent reports on the same tab");
+        Report(0);
+        Program.Check(display.Text == (0.0).ToString("F1"), "0302 current shows a valid zero reading");
+        Report(123);
+        vm.IsConnected = false;
+        Pump();
+        Program.Check(display.Text == "--", "0302 current hides old readings when disconnected");
+        vm.IsConnected = true;
+        vm.DeviceAddress = "3";
+        Pump();
+        Program.Check(display.Text == "--" && vm.DCDCInputCurrent == "--", "0302 current cleared when target changes");
+        vm.DeviceAddress = "2";
+    }
+
     private static void RenderPages(MainWindow window, string directory)
     {
         Directory.CreateDirectory(directory);
@@ -325,9 +365,11 @@ internal static class UiChecks
             using var output = File.Create(Path.Combine(directory, name)); encoder.Save(output);
         }
         Select("BMS电池管理"); Save(root, "BMS缓存-离线验收.png");
-        Select("FCU参数配置");
+        Select("电流设置");
         ((CurrentCalibrationSession)Get(window, "_currentCalibration")!).Reset();
         Call(window, "RenderCurrentCalibration");
+        ((MainViewModel)window.DataContext).IsConnected = true;
+        Call(window, "UpdateViewModelStackInfo", new FCU_氢燃料电池控.Models.StackInfoData { DCDCInputCurrent = 123 });
         var calibrationGroup = (FrameworkElement)window.FindName("grp_CurrentCalibration");
         DependencyObject? calibrationScroll = calibrationGroup;
         while (calibrationScroll != null && calibrationScroll is not ScrollViewer) calibrationScroll = VisualTreeHelper.GetParent(calibrationScroll);

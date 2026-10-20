@@ -1216,27 +1216,6 @@
                             </GroupBox>
 
                             <!-- DCDC参数 -->
-                            <GroupBox Name="grp_CurrentCalibration" Header="输入拉载标定（0x0302）" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
-                                <StackPanel>
-                                    <TextBlock Text="输入拉载标定（0x0302）" FontSize="16" FontWeight="SemiBold" Foreground="#1976D2" Margin="4,0,4,8"/>
-                                    <TextBlock Text="实测输入电流(A) = k × 原始设定电流(A) + b" TextWrapping="Wrap" Margin="4" FontWeight="SemiBold"/>
-                                    <TextBlock Text="填写测量曲线系数，固件自动反算补偿；默认 k=1、b=0 表示不补偿。仅电堆关机（OFF）可写入并保存，停止拉载不等于关机。" TextWrapping="Wrap" Margin="4,4,4,10" Foreground="#666666"/>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="1.5*"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
-                                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                        <Label Grid.Row="0" Content="增益 k（无量纲）:" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                        <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_CurrentCalibrationK" Text="1" Style="{StaticResource StandardTextBoxStyle}" Margin="4" ToolTip="必须为有限正数；支持小数点和科学计数法"/>
-                                        <Label Grid.Row="1" Content="偏移 b（A）:" Style="{StaticResource LabelStyle}" Margin="4"/>
-                                        <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_CurrentCalibrationB" Text="0" Style="{StaticResource StandardTextBoxStyle}" Margin="4" ToolTip="必须为有限数，允许负数；单位A，不是0.1A"/>
-                                    </Grid>
-                                    <WrapPanel HorizontalAlignment="Right" Margin="0,8,0,4">
-                                        <Button Name="btn_ReadCurrentCalibration" Content="读取标定参数" Width="150" Margin="4" Style="{StaticResource StandardButtonStyle}" Click="btn_ReadCurrentCalibration_Click"/>
-                                        <Button Name="btn_WriteCurrentCalibration" Content="写入并固化标定" Width="170" Margin="4" Style="{StaticResource SuccessButtonStyle}" Click="btn_WriteCurrentCalibration_Click"/>
-                                    </WrapPanel>
-                                    <TextBlock Name="tbk_CurrentCalibrationStatus" Text="尚未读取输入拉载标定，输入框为默认值" Margin="4" TextWrapping="Wrap" Foreground="#1976D2"/>
-                                    <TextBlock Text="本参数只校正电流设定，不改变ADC检测值；写入后自动回读核对。重新拟合前请先恢复 k=1、b=0；不同输入电压的标定效果需分别验证。" TextWrapping="Wrap" Margin="4" Foreground="#666666" FontSize="12"/>
-                                </StackPanel>
-                            </GroupBox>
                             <GroupBox Header="DCDC参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <StackPanel>
                                     <!-- 读取按钮 -->
@@ -1278,6 +1257,48 @@
                 <hc:TabItem Header="电流设置">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
                         <StackPanel>
+                            <GroupBox Name="grp_CurrentCalibration" Header="输入拉载标定（0x0302）" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                                <StackPanel>
+                                    <TextBlock Text="输入拉载标定（0x0302）" FontSize="16" FontWeight="SemiBold" Foreground="#1976D2" Margin="4,0,4,8"/>
+                                    <Border Background="#E3F2FD" CornerRadius="4" Padding="12,8" Margin="4,0,4,10">
+                                        <StackPanel>
+                                            <WrapPanel>
+                                                <TextBlock Text="当前输入电流（A）：" VerticalAlignment="Center" Margin="0,0,12,0" FontWeight="SemiBold"/>
+                                                <TextBlock Name="tbk_CalibrationInputCurrent" FontSize="24" FontWeight="Bold" Foreground="#1976D2">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Text" Value="{Binding DCDCInputCurrent}"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsConnected}" Value="False">
+                                                                    <Setter Property="Text" Value="--"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </WrapPanel>
+                                            <TextBlock Text="与系统监控页的DCDC输入电流同步；随电堆信息自动刷新，或点击左侧「读取电堆信息」更新。"
+                                                       TextWrapping="Wrap" Foreground="#616161" Margin="0,4,0,0" FontSize="12"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="实测输入电流(A) = k × 原始设定电流(A) + b" TextWrapping="Wrap" Margin="4" FontWeight="SemiBold"/>
+                                    <TextBlock Text="填写测量曲线系数，固件自动反算补偿；默认 k=1、b=0 表示不补偿。仅电堆关机（OFF）可写入并保存，停止拉载不等于关机。" TextWrapping="Wrap" Margin="4,4,4,10" Foreground="#666666"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="1.5*"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                        <Label Grid.Row="0" Content="增益 k（无量纲）:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBox Grid.Row="0" Grid.Column="1" Name="tbx_CurrentCalibrationK" Text="1" Style="{StaticResource StandardTextBoxStyle}" Margin="4" ToolTip="必须为有限正数；支持小数点和科学计数法"/>
+                                        <Label Grid.Row="1" Content="偏移 b（A）:" Style="{StaticResource LabelStyle}" Margin="4"/>
+                                        <TextBox Grid.Row="1" Grid.Column="1" Name="tbx_CurrentCalibrationB" Text="0" Style="{StaticResource StandardTextBoxStyle}" Margin="4" ToolTip="必须为有限数，允许负数；单位A，不是0.1A"/>
+                                    </Grid>
+                                    <WrapPanel HorizontalAlignment="Right" Margin="0,8,0,4">
+                                        <Button Name="btn_ReadCurrentCalibration" Content="读取标定参数" Width="150" Margin="4" Style="{StaticResource StandardButtonStyle}" Click="btn_ReadCurrentCalibration_Click"/>
+                                        <Button Name="btn_WriteCurrentCalibration" Content="写入并固化标定" Width="170" Margin="4" Style="{StaticResource SuccessButtonStyle}" Click="btn_WriteCurrentCalibration_Click"/>
+                                    </WrapPanel>
+                                    <TextBlock Name="tbk_CurrentCalibrationStatus" Text="尚未读取输入拉载标定，输入框为默认值" Margin="4" TextWrapping="Wrap" Foreground="#1976D2"/>
+                                    <TextBlock Text="本参数只校正电流设定，不改变ADC检测值；写入后自动回读核对。重新拟合前请先恢复 k=1、b=0；不同输入电压的标定效果需分别验证。" TextWrapping="Wrap" Margin="4" Foreground="#666666" FontSize="12"/>
+                                </StackPanel>
+                            </GroupBox>
                             <!-- 读取按钮 -->
                             <Button Name="btn_ReadLoadParams"
                                     Content="读取整套电流参数"

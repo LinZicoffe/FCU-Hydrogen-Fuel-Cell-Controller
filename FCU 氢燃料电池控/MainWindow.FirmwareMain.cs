@@ -84,6 +84,8 @@ namespace FCU_氢燃料电池控
 
         private void ResetFirmwareMainSession()
         {
+            // 标定区与系统监控共用输入电流，连接/目标改变后等待新设备读数。
+            if (_viewModel != null) _viewModel.DCDCInputCurrent = "--";
             _cacheAutoRefresh = false;
             chk_BmsCacheAuto.IsChecked = false;
             _bmsCache?.Reset();
