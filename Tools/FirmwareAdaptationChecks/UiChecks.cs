@@ -284,6 +284,7 @@ internal static class UiChecks
             Program.Check(!calibration.IsBusy && kInput.IsEnabled, "0302 common mode/upgrade reset releases UI");
             // 默认显示回归，呈现时不把示例系数当已保存默认值。
             kInput.Text = "1"; bInput.Text = "0";
+            CheckMonitoring(window, vm);
             if (renderDirectory != null) RenderPages(window, renderDirectory);
         }
         finally
@@ -331,6 +332,68 @@ internal static class UiChecks
         Pump();
         Program.Check(display.Text == "--" && vm.DCDCInputCurrent == "--", "0302 current cleared when target changes");
         vm.DeviceAddress = "2";
+    }
+
+    private static void CheckMonitoring(MainWindow window, MainViewModel vm)
+    {
+        void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        void Receive(byte function, byte[] data, byte address = 2)
+        {
+            Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(address, function, data));
+            Pump();
+        }
+        Set(window, "_isSerialOpen", true);
+        vm.DeviceAddress = "2";
+        Call(window, "ResetMonitoring");
+        byte[] stack = new byte[26];
+        stack[0] = 2; stack[1] = 0x0D; stack[2] = 0xA6; stack[4] = 69;
+        stack[8] = 118; stack[10] = 19;
+        Receive(0x87, stack);
+        Program.Check(vm.HighPressure == "3494" && vm.LowPressure == "69" && vm.DCDCInputCurrent == (1.9).ToString("F1"),
+            "valid telemetry retains firmware pressure and current scaling");
+        Set(window, "_awaitingStackInfo", true);
+        Receive(0x87, Array.Empty<byte>());
+        Program.Check(vm.HighPressure == "3494" && vm.DCDCInputCurrent == (1.9).ToString("F1") &&
+            (bool)Get(window, "_awaitingStackInfo")! && ((TextBlock)window.FindName("tbk_StackDataStatus")).Text.Contains("无效"),
+            "malformed87 preserves last data and cannot acknowledge polling");
+        byte[] damaged = ProtocolHandler.BuildRequestFrame(2, 0x87, stack); damaged[^1] ^= 1;
+        Call(window, "OnFrameReceived", damaged); Pump();
+        Program.Check(vm.HighPressure == "3494", "invalid87 CRC never updates readings");
+        Receive(0x87, new byte[26], 3);
+        Program.Check(vm.HighPressure == "3494", "another device cannot overwrite telemetry");
+        Receive(0x87, new byte[26], 0);
+        Program.Check(vm.HighPressure == "3494", "broadcast probe cannot overwrite configured target telemetry");
+        Receive(0x87, new byte[26]);
+        Program.Check(vm.HighPressure == "0" && vm.DCDCInputCurrent == (0.0).ToString("F1"), "real zero telemetry remains valid");
+        byte[] load = new byte[14]; load[2] = 19; load[3] = 1; load[4] = 0x7C; load[8] = 233;
+        Receive(0xF2, load);
+        Receive(0xF2, Array.Empty<byte>());
+        Program.Check(((TextBlock)window.FindName("tbk_LoadCurrentPower")).Text == (23.3).ToString("F1") &&
+            ((TextBlock)window.FindName("tbk_LoadTargetCurrent")).Text == (38.0).ToString("F1") &&
+            ((Label)window.FindName("lbl_LoadPeakCurrent")).Content.ToString()!.Contains("扫描峰值"),
+            "load values stay unmodified on malformed F2 and peak has correct label");
+        Set(window, "_lastStackInfoAt", Environment.TickCount64 - 20000);
+        Call(window, "RenderMonitoringStatus");
+        Program.Check(((TextBlock)window.FindName("tbk_StackDataStatus")).Text.Contains("过期") && vm.HighPressure == "0",
+            "stale data explicitly labelled without inventing replacement values");
+        var timer = (DispatcherTimer)Get(window, "_pollingTimer")!;
+        timer.Interval = TimeSpan.FromMilliseconds(500);
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x87, stack));
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0xF2, load));
+        System.Threading.Thread.Sleep(3100); // 模拟 UI 忙，已经收到的报文仍排在 Dispatcher 队列。
+        Pump();
+        Program.Check(((TextBlock)window.FindName("tbk_StackDataStatus")).Text.Contains("过期") &&
+            ((TextBlock)window.FindName("tbk_LoadDataStatus")).Text.Contains("过期"),
+            "Dispatcher backlog cannot turn old RX packets into fresh readings");
+        vm.DeviceAddress = "0";
+        Receive(0x87, stack, 0);
+        Program.Check(vm.HighPressure == "3494", "configured broadcast target retains original monitoring support");
+        vm.DeviceAddress = "2";
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x87, stack));
+        Call(window, "ResetFirmwareMainSession"); Pump();
+        Program.Check(vm.HighPressure == "--" && ((TextBlock)window.FindName("tbk_LoadCurrentPower")).Text == "--",
+            "queued previous-session telemetry cannot refill cleared target");
+        Set(window, "_isSerialOpen", false);
     }
 
     private static void RenderPages(MainWindow window, string directory)

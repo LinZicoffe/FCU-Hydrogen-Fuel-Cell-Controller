@@ -1088,6 +1088,8 @@ namespace FCU_氢燃料电池控
                 double outputPower = _testOutputPower;
 #else
                 // ========== 正常模式：使用实际电堆数据 ==========
+                if (!_isSerialOpen || !_lastStackInfoAt.HasValue ||
+                    Environment.TickCount64 - _lastStackInfoAt.Value > StackDataStaleAfterMs) return;
                 // 计算输入功率和输出功率
                 double inputPower = _currentInputVoltage * _currentInputCurrent;
                 double outputPower = _currentOutputVoltage * _currentOutputCurrent;
@@ -3141,7 +3143,8 @@ namespace FCU_氢燃料电池控
             // (正常轮询/读取用配置地址, 只有诊断探针用 0 地址; RX 线程调用)。
             // [审查修复 P3] 写序: 先写 func 再清 pending (volatile 释放序),
             // 保证 UI 侧读到 pending=false 时 func 已可见
-            if (_diagProbePending && frame.Length > 4 && frame[2] == 0x00)
+            if (_diagProbePending && frame.Length > 4 && frame[2] == 0x00 &&
+                (frame[3] != 0x87 || ResponseParser.TryParseStackInfo(frame, out _)))
             {
                 _diagProbeFunc = frame[3];
                 _diagProbePending = false;
@@ -3288,23 +3291,31 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void HandleStackInfoResponse(byte[] frame)
         {
-            StackInfoData data = ResponseParser.ParseStackInfo(frame);
-            // [轮询修复] 收到 0x87 即链路存活, 清除轮询未命中计数 (RX 线程调用, 字段为 volatile)
-            _awaitingStackInfo = false;
-            _stackInfoMissCount = 0;
-            // 更新功率曲线图数据（DCDC电压/电流）
-            UpdateStackInfo(data);
-            bool isDiagProbe = frame.Length > 2 && frame[2] == 0x00;
+            int epoch = _monitoringEpoch;
+            long receivedAt = Environment.TickCount64;
             MarshalRxToUi(() =>
             {
-                if (_viewModel != null)
+                // 广播探针只诊断链路，不能混入目标设备的遥测或解除其在途等待。
+                if (frame.Length >= 7 && frame[2] == 0 && epoch == _monitoringEpoch &&
+                    SerialPortHelper.TryParseDeviceAddress(GetDeviceAddress(), out byte target, showError: false) && target != 0)
                 {
-                    UpdateViewModelStackInfo(data);
-                    // 广播回包是诊断探针的应答, 不与正常读取的成功提示混淆
-                    _viewModel.StatusMessage = isDiagProbe
-                        ? "诊断探针已获 FCU 响应 (广播地址)"
-                        : "电堆信息读取成功";
+                    if (ResponseParser.TryParseStackInfo(frame, out _)) UpdateStatus("诊断探针已获 FCU 响应（广播地址）");
+                    return;
                 }
+                if (!IsCurrentTelemetry(frame, epoch)) return;
+                if (!ResponseParser.TryParseStackInfo(frame, out var data))
+                {
+                    _stackInfoError = "电堆信息响应无效（长度或CRC错误）";
+                    RenderMonitoringStatus();
+                    return;
+                }
+                _awaitingStackInfo = false;
+                _stackInfoMissCount = 0;
+                _lastStackInfoAt = receivedAt;
+                _stackInfoError = null;
+                UpdateStackInfo(data);
+                UpdateViewModelStackInfo(data);
+                RenderMonitoringStatus();
             });
         }
 
@@ -4417,11 +4428,21 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void HandleLoadStatusReport(byte[] frame)
         {
-            LoadStatusData data = ResponseParser.ParseLoadStatusReport(frame);
+            int epoch = _monitoringEpoch;
+            long receivedAt = Environment.TickCount64;
             MarshalRxToUi(() =>
             {
+                if (!IsCurrentTelemetry(frame, epoch)) return;
+                if (!ResponseParser.TryParseLoadStatusReport(frame, out var data))
+                {
+                    _loadStatusError = "拉载状态响应无效（长度或CRC错误）";
+                    RenderMonitoringStatus();
+                    return;
+                }
+                _lastLoadStatusAt = receivedAt;
+                _loadStatusError = null;
                 UpdateLoadStatusDisplay(data);
-                UpdateStatus("收到拉载状态上报");
+                RenderMonitoringStatus();
             });
         }
 

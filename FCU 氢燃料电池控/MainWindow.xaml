@@ -1296,6 +1296,7 @@
                                         <Button Name="btn_WriteCurrentCalibration" Content="写入并固化标定" Width="170" Margin="4" Style="{StaticResource SuccessButtonStyle}" Click="btn_WriteCurrentCalibration_Click"/>
                                     </WrapPanel>
                                     <TextBlock Name="tbk_CurrentCalibrationStatus" Text="尚未读取输入拉载标定，输入框为默认值" Margin="4" TextWrapping="Wrap" Foreground="#1976D2"/>
+                                    <TextBlock Text="{Binding Text, ElementName=tbk_StackDataStatus}" Margin="4" TextWrapping="Wrap" Foreground="#666666"/>
                                     <TextBlock Text="本参数只校正电流设定，不改变ADC检测值；写入后自动回读核对。重新拟合前请先恢复 k=1、b=0；不同输入电压的标定效果需分别验证。" TextWrapping="Wrap" Margin="4" Foreground="#666666" FontSize="12"/>
                                 </StackPanel>
                             </GroupBox>
@@ -1514,7 +1515,7 @@
                                     <Label Grid.Row="1" Grid.Column="0" Content="当前电流(A):" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="4"/>
                                     <TextBlock Grid.Row="1" Grid.Column="1" Name="tbk_LoadCurrentCurrent" Text="--" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4"/>
 
-                                    <Label Grid.Row="1" Grid.Column="2" Content="目标电流(A):" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="4"/>
+                                    <Label Grid.Row="1" Grid.Column="2" Name="lbl_LoadPeakCurrent" Content="扫描峰值电流(A):" ToolTip="固件上报的扫描峰值参数，不是下方手动设置电流框的当前目标" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="4"/>
                                     <TextBlock Grid.Row="1" Grid.Column="3" Name="tbk_LoadTargetCurrent" Text="--" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4"/>
 
                                     <!-- 第3行 -->
@@ -1533,6 +1534,7 @@
                                 </Grid>
                             </GroupBox>
 
+                            <TextBlock Name="tbk_LoadDataStatus" Text="尚未收到当前设备的有效数据" TextWrapping="Wrap" Margin="4,0,4,12" Foreground="#666666"/>
                             <!-- 拉载手动控制 -->
                             <GroupBox Header="拉载手动控制" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,0">
                                 <StackPanel>
@@ -1610,6 +1612,7 @@
                                     </StackPanel>
 
                                     <!-- 电堆信息显示区 -->
+                                    <TextBlock Name="tbk_StackDataStatus" Text="尚未收到当前设备的有效数据" TextWrapping="Wrap" Margin="4,0,4,8" Foreground="#666666"/>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="1*"/>
