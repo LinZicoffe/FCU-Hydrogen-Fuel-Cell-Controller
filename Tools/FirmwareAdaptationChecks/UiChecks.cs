@@ -1,4 +1,4 @@
-using System.IO.Ports;
+﻿using System.IO.Ports;
 using System.Reflection;
 using System.IO;
 using System.Windows;
@@ -289,6 +289,7 @@ internal static class UiChecks
             // 默认显示回归，呈现时不把示例系数当已保存默认值。
             kInput.Text = "1"; bInput.Text = "0";
             CheckParameterWrites(window, vm, serial);
+            CheckPressureFields(window, vm, serial);
             CheckMonitoring(window, vm);
             if (renderDirectory != null) RenderPages(window, renderDirectory);
         }
@@ -476,6 +477,43 @@ internal static class UiChecks
             ((OrdinaryQueryTracker)Get(window, "_ordinaryQueries")!).Blocks(f);
     }
 
+    private static void CheckPressureFields(MainWindow window, MainViewModel vm, FakeSerial serial)
+    {
+        void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        var tabs = (TabControl)window.FindName("MainTabControl");
+        tabs.SelectedItem = tabs.Items.OfType<TabItem>().Single(t => t.Header?.ToString() == "FCU参数配置");
+        var root = (FrameworkElement)window.Content;
+        root.Measure(new Size(1280, 780)); root.Arrange(new Rect(0, 0, 1280, 780)); root.UpdateLayout();
+        var red = (TextBox)window.FindName("tbx_HighPressureRed");
+        var yellow = (TextBox)window.FindName("tbx_HighPressureYellow");
+        var write = (Button)window.FindName("btn_WritePressureParams");
+        var status = (TextBlock)window.FindName("tbk_ParameterWriteStatus");
+        var session = (ParameterWriteSession)Get(window, "_parameterWrite")!;
+        Set(window, "_isSerialOpen", true); vm.IsConnected = true;
+        Set(window, "_lastSharedSetAt", -3001L); Set(window, "_lastParameterReadAt", -3001L);
+        Set(window, "_pressureParamsLoadedFromDevice", true);
+        red.Text = "250"; yellow.Text = "500"; vm.HighPressureRange = "300";
+        Pump();
+        int before = serial.Sent.Count;
+        write.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
+        Program.Check(red.Visibility == Visibility.Visible && yellow.Visibility == Visibility.Visible && vm.HighPressureRed == "250" && vm.HighPressureYellow == "500",
+            "pressure red/yellow always visible and bound on parameter page");
+        Program.Check(serial.Sent.Count == before && !session.IsBusy && status.Text.Contains("黄警值") && status.Text.Contains("量程"),
+            "range below visible threshold rejects whole pressure write with persistent field error");
+        red.Text = "100"; yellow.Text = "200"; vm.HighPressureMin = "50"; vm.HighPressureMax = "300"; Pump();
+        write.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
+        Program.Check(session.IsBusy && !red.IsEnabled && !yellow.IsEnabled &&
+            serial.Sent[^1][5..23].SequenceEqual(Convert.FromHexString("01010032006400C8012C00140064012C00FA")),
+            "visible pressure inputs build full eight-field big-endian write and freeze during confirmation");
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x82, new byte[] { 0 })); Pump();
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x8A,
+            Convert.FromHexString("0101000032006400C8012C00140064012C00FA"))); Pump();
+        Program.Check(session.Verified && red.IsEnabled && yellow.IsEnabled && status.Text.Contains("回读一致"),
+            "actual pressure button verifies all visible thresholds and range after ACK");
+        vm.HighPressureMin = "100"; red.Text = "250"; yellow.Text = "500"; vm.HighPressureMax = "5000"; vm.HighPressureRange = "5000";
+        Call(window, "ResetFirmwareMainSession");
+    }
+
     private static void CheckMonitoring(MainWindow window, MainViewModel vm)
     {
         void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
@@ -569,12 +607,33 @@ internal static class UiChecks
             var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
             using var output = File.Create(Path.Combine(directory, name)); encoder.Save(output);
         }
+        void ScrollTo(FrameworkElement element, bool top = false)
+        {
+            DependencyObject? parent = element;
+            while (parent != null && parent is not ScrollViewer) parent = VisualTreeHelper.GetParent(parent);
+            if (parent is ScrollViewer viewer && viewer.Content is Visual content)
+            {
+                viewer.ScrollToVerticalOffset(top ? 0 : Math.Max(0, element.TransformToAncestor(content).Transform(new Point()).Y - 35));
+                root.UpdateLayout();
+                Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+                root.UpdateLayout();
+            }
+        }
+        ((MainViewModel)window.DataContext).IsConnected = true;
+        ((ParameterWriteSession)Get(window, "_parameterWrite")!).ReportRejection("电流时序回读不一致，未确认保存；请检查设备后重试");
+        Call(window, "RenderParameterWrite");
+        Select("FCU参数配置"); ScrollTo((FrameworkElement)window.FindName("grp_PressureParameters"), true);
+        Save(root, "压力整组与写入结果-离线验收.png");
         Select("BMS电池管理"); Save(root, "BMS缓存-离线验收.png");
         Select("电流设置");
         ((CurrentCalibrationSession)Get(window, "_currentCalibration")!).Reset();
         Call(window, "RenderCurrentCalibration");
         ((MainViewModel)window.DataContext).IsConnected = true;
-        Call(window, "UpdateViewModelStackInfo", new FCU_氢燃料电池控.Models.StackInfoData { DCDCInputCurrent = 123 });
+        byte[] stackSample = new byte[26];
+        stackSample[0] = 2; stackSample[1] = 0x0D; stackSample[2] = 0xA6; stackSample[4] = 69;
+        stackSample[5] = 1; stackSample[8] = 118; stackSample[10] = 57;
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x87, stackSample));
+        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
         var calibrationGroup = (FrameworkElement)window.FindName("grp_CurrentCalibration");
         DependencyObject? calibrationScroll = calibrationGroup;
         while (calibrationScroll != null && calibrationScroll is not ScrollViewer) calibrationScroll = VisualTreeHelper.GetParent(calibrationScroll);
@@ -586,7 +645,14 @@ internal static class UiChecks
             root.UpdateLayout();
         }
         Save(root, "输入拉载标定0302-离线验收.png");
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0xF2,
+            Convert.FromHexString("060039017C007602A202A2000001")));
+        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        ScrollTo((FrameworkElement)window.FindName("tbk_LoadState"));
+        Save(root, "拉载峰值与数据状态-离线验收.png");
         Select("系统监控");
+        ScrollTo((FrameworkElement)window.FindName("tbk_StackDataStatus"), true);
+        Save(root, "系统监控数据状态-离线验收.png");
         var input = (FrameworkElement)window.FindName("tbx_StandbyPeriod");
         DependencyObject? scroll = input;
         while (scroll != null && scroll is not ScrollViewer) scroll = VisualTreeHelper.GetParent(scroll);

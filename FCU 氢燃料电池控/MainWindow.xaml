@@ -442,11 +442,11 @@
                                         Margin="4"
                                         IsEnabled="{Binding IsConnected}"
                                         Click="btn_ReadPressureParams_Click"/>
-                                        <!-- 固件0x02已按18B新格式实现；红/黄阈值不在界面展示，整帧写入时取回读值/固件默认值原样回写。 -->
-                                        <Button Content="写入FCU并固化"
+                                        <!-- 0x02整帧写入全部8项；红/黄阈值与量程一起编辑、校验和回读。 -->
+                                        <Button Name="btn_WritePressureParams" Content="写入FCU并固化"
                                         Style="{StaticResource SuccessButtonStyle}" Width="200" Margin="4"
                                         IsEnabled="{Binding IsConnected}"
-                                        ToolTip="整帧写入18字节压力参数(0x02)并固化Flash。红/黄阈值不在界面展示：先「读取压力参数」再写入可保留设备当前值"
+                                        ToolTip="整组写入全部8项压力参数并固化Flash，收到确认后回读核对。建议先读取设备当前参数。"
                                         Click="btn_SetPressureParams_Click"/>
                                     </StackPanel>
 
@@ -479,7 +479,7 @@
                                                ToolTip="压力允许区间上限。高压超过设定值触发 CRITICAL 停机；低压超过设定值同样触发 CRITICAL 停机"/>
                                         <TextBlock Grid.Row="0" Grid.Column="4" Style="{StaticResource PressureHeaderStyle}"
                                                Text="量程"
-                                               ToolTip="传感器满量程。写 0 会被固件静默接受并固化，导致压力读数恒为 0 且重启不恢复"/>
+                                               ToolTip="传感器满量程，必须为1～65535整数kPa；阈值不得超过对应量程，整组校验通过后才能写入。"/>
 
                                         <!-- ===== 第1行：高压传感器 ===== -->
                                         <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource PressureRowHeaderStyle}"
@@ -579,6 +579,27 @@
                                             <TextBlock Grid.Column="2" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
                                         </Grid>
                                     </Grid>
+                                    <Grid Margin="4,10,4,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="高压红警值" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBox Name="tbx_HighPressureRed" Grid.Column="1" Margin="4"
+                                                 Text="{Binding HighPressureRed, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource StandardTextBoxStyle}"/>
+                                        <TextBlock Grid.Column="2" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
+                                        <TextBlock Grid.Column="3" Text="高压黄警值" VerticalAlignment="Center" Margin="16,0,8,0"/>
+                                        <TextBox Name="tbx_HighPressureYellow" Grid.Column="4" Margin="4"
+                                                 Text="{Binding HighPressureYellow, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource StandardTextBoxStyle}"/>
+                                        <TextBlock Grid.Column="5" Text="kPa" Style="{StaticResource PressureUnitStyle}"/>
+                                    </Grid>
+                                    <TextBlock Margin="4,8,4,0" Foreground="#546E7A" TextWrapping="Wrap"
+                                               Text="整组8项一起保存：红警值＜黄警值＜高压最高限制≤高压量程；高压最低限制＜最高限制；低压最低限制＜最高限制≤低压量程。各项均为正整数kPa。"/>
+                                    <TextBlock Margin="4,4,4,0" Foreground="#546E7A" TextWrapping="Wrap"
+                                               Text="首次未读取设备参数时会询问覆盖确认；读取成功或写后回读一致后不再询问。每次写入结果见页面顶部。"/>
                                 </StackPanel>
                             </GroupBox>
 

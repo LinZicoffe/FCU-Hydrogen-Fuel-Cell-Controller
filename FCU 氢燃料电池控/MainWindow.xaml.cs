@@ -93,7 +93,7 @@ namespace FCU_氢燃料电池控
         /// <summary>0x8F 风扇手动控制响应超时（秒）。旧固件无 0x0F 分支时静默丢帧，需明确反馈而非永远“等待确认”。</summary>
         private const int FanManualResponseTimeoutSeconds = 3;
         private DispatcherTimer? _fanManualResponseTimeoutTimer;
-        /// <summary>本次连接内是否已从设备回读过压力参数；未读先写会整帧覆盖含未展示的红/黄阈值，需确认。</summary>
+        /// <summary>本次连接内是否已从设备回读过压力参数；未读先写会整帧覆盖全部8项，需确认。</summary>
         private bool _pressureParamsLoadedFromDevice;
 
         // 固件升级 (Bootloader) 模式标志 [BL设计 §4.2]:
@@ -209,7 +209,7 @@ namespace FCU_氢燃料电池控
             _viewModel.BeforeSerialClose += OnBeforeSerialClose;
             // VM 无 UI 引用，本地校验失败经事件弹 Growl，与 code-behind 参数组的反馈方式一致
             _viewModel.ParameterValidationFailed += (_, msg) => RejectParameterWrite(msg);
-            // 多机共总线切换目标设备后，作废「已读取压力」豁免，防止跨设备静默覆盖隐藏红/黄阈值
+            // 多机共总线切换目标设备后，作废「已读取压力」豁免，防止跨设备静默覆盖全部八项
             _viewModel.DeviceAddressChanged += (_, _) =>
             {
                 _pressureParamsLoadedFromDevice = false;
@@ -1556,7 +1556,7 @@ namespace FCU_氢燃料电池控
 
         /// <summary>
         /// 整帧写入压力参数（0x02，18B 固化 Flash）。
-        /// 未先「读取压力参数」时，界面值（含未展示的红/黄阈值）会整帧覆盖设备，需二次确认。
+        /// 未先「读取压力参数」时，界面全部8项值会整帧覆盖设备，需二次确认。
         /// </summary>
         private void btn_SetPressureParams_Click(object sender, RoutedEventArgs e)
         {
@@ -1569,7 +1569,7 @@ namespace FCU_氢燃料电池控
             if (!_pressureParamsLoadedFromDevice)
             {
                 var confirm = MessageBox.Show(
-                    "尚未从设备读取压力参数，将以上位机当前界面值整帧覆盖设备全部 8 项并固化到 Flash（含未在界面展示的高压红/黄阈值）。\n\n建议先「读取压力参数」以保留设备当前值。确定继续写入？",
+                    "尚未从设备读取压力参数，将以上位机当前界面值整帧覆盖设备全部 8 项并固化到 Flash（包括高压红/黄阈值）。\n\n建议先「读取压力参数」以保留设备当前值。确定继续写入？",
                     "压力参数写入确认",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning);
@@ -4255,7 +4255,7 @@ namespace FCU_氢燃料电池控
             _viewModel.HighPressureRange = data.HighPressureRange.ToString();
             _viewModel.LowPressureRange = data.LowPressureRange.ToString();
 
-            // 已从设备取得当前值（含未展示的红/黄阈值），此后写入可免“覆盖未展示字段”确认
+            // 已从设备取得全部8项当前值，此后写入可免首次覆盖确认
             _pressureParamsLoadedFromDevice = true;
         }
 

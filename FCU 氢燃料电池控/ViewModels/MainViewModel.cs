@@ -483,8 +483,8 @@ namespace FCU_氢燃料电池控.ViewModels
         }
 
         /// <summary>
-        /// 整帧写入压力参数（0x02，18B）。红/黄阈值不在界面展示，
-        /// 取 ViewModel 当前值（设备回读值或固件默认值）原样回写，避免整帧覆盖时篡改未展示字段。
+        /// 整帧写入压力参数（0x02，18B），全部8项在压力设置区可见可改。
+        /// 先校验整组约束，再由参数写事务执行确认和回读核对。
         /// </summary>
         private void ExecuteWritePressureParams()
         {
