@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Windows.Media;
 using FCU_氢燃料电池控.Helpers;
 using FCU_氢燃料电池控.Protocol;
@@ -22,6 +22,12 @@ namespace FCU_氢燃料电池控
         private void ResetMonitoring()
         {
             _monitoringEpoch++;
+            _awaitingStackInfo = false;
+            _stackInfoResponseMissing = false;
+            _stackInfoMissCount = 0;
+            _diagProbePending = false;
+            _diagDoneForConnection = false;
+            StopStackInfoLinkDiagnosis();
             _lastStackInfoAt = _lastLoadStatusAt = null;
             _stackInfoError = _loadStatusError = null;
             if (_viewModel != null)

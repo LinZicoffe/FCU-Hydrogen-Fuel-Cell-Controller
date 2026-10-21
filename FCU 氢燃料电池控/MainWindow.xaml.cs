@@ -80,6 +80,7 @@ namespace FCU_氢燃料电池控
         // 一个轮询周期内未收到响应即记一次未命中; 连续多次未命中时自动发广播探针鉴别
         // "设备地址不匹配" 与 "链路不通" (固件 fcu_protocol.c:527-530 接受广播地址 0x00)
         private volatile bool _awaitingStackInfo;      // 上一轮轮询尚无 0x87 响应 (RX 线程清除)
+        private bool _stackInfoResponseMissing;      // UI线程：已实际发出查询但尚无有效响应，与串口在途状态分离
         private volatile int _stackInfoMissCount;      // 连续未命中计数
         private volatile bool _diagProbePending;       // 广播探针在途 (RX 线程清除)
         private volatile byte _diagProbeFunc;          // 广播探针响应的功能码
@@ -714,6 +715,7 @@ namespace FCU_氢燃料电池控
                 // 轮询健康监测状态复位 (探针定时器一并停止, 防跨会话残留误报)
                 _awaitingStackInfo = false;
                 _stackInfoMissCount = 0;
+                _stackInfoResponseMissing = false;
                 _diagProbePending = false;
                 _diagDoneForConnection = false;
                 StopStackInfoLinkDiagnosis();
@@ -1205,7 +1207,7 @@ namespace FCU_氢燃料电池控
 
                 // [轮询修复] 上一轮至今未收到 0x87: 固件对 0x07 恒有响应, 持续未命中
                 // 说明请求未到达或被固件 BMS 轮询窗口吞掉, 必须显式反馈而非静默
-                if (_awaitingStackInfo)
+                if (_stackInfoResponseMissing)
                 {
                     _stackInfoMissCount++;
                     // >= 而非 ==: 与 RX 线程清零交错时防跳过触发 (交错最多丢一次自增)
@@ -1273,6 +1275,7 @@ namespace FCU_氢燃料电池控
                 // 新轮询会话复位健康监测状态 (含升级路径停表未复位的兜底) [审查修复 B审查建议]
                 _awaitingStackInfo = false;
                 _stackInfoMissCount = 0;
+                _stackInfoResponseMissing = false;
                 _diagDoneForConnection = false;
 
                 // 获取选择的轮询间隔
@@ -1320,6 +1323,7 @@ namespace FCU_氢燃料电池控
                 // 轮询健康监测状态复位, 防下次启动时把停止期间的静默误记为未命中
                 _awaitingStackInfo = false;
                 _stackInfoMissCount = 0;
+                _stackInfoResponseMissing = false;
                 _diagDoneForConnection = false;
 
                 UpdateStatus("已停止电堆信息自动刷新");
@@ -3031,7 +3035,12 @@ namespace FCU_氢燃料电池控
             if (_parameterWrite?.IsBusy != true && _standbyPeriod?.IsBusy != true && _currentCalibration?.IsBusy != true)
             {
                 _ordinaryQueries?.Sent(frame);
-                if (frame.Length >= 7 && frame[3] == 7 && frame[2] != 0) _awaitingStackInfo = true;
+                if (frame.Length >= 7 && frame[3] == 7 &&
+                    SerialPortHelper.TryParseDeviceAddress(GetDeviceAddress(), out byte target, showError: false) && frame[2] == target)
+                {
+                    _awaitingStackInfo = true;
+                    _stackInfoResponseMissing = true;
+                }
             }
             if (frame.Length >= 7 && frame[0] == 0xAA && frame[1] == 0x55 && frame[3] == 0x0A)
                 _lastParameterReadAt = Environment.TickCount64;
@@ -3334,6 +3343,7 @@ namespace FCU_氢燃料电池控
                 _awaitingStackInfo = false;
                 _ordinaryQueries?.Receive(frame);
                 _stackInfoMissCount = 0;
+                _stackInfoResponseMissing = false;
                 _lastStackInfoAt = receivedAt;
                 _stackInfoError = null;
                 UpdateStackInfo(data);
@@ -5650,6 +5660,7 @@ namespace FCU_氢燃料电池控
                         _owner.ResetFirmwareMainSession();
                         _owner._awaitingStackInfo = false;
                         _owner._stackInfoMissCount = 0;
+                        _owner._stackInfoResponseMissing = false;
                         _owner._diagProbePending = false;
                         _owner._protocolHandler?.Reset();
                         SetMainTabsEnabled(false);

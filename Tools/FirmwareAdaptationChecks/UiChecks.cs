@@ -290,6 +290,7 @@ internal static class UiChecks
             kInput.Text = "1"; bInput.Text = "0";
             CheckParameterWrites(window, vm, serial);
             CheckPressureFields(window, vm, serial);
+            CheckPollingTimeoutHealth(window, vm, serial);
             CheckMonitoring(window, vm);
             if (renderDirectory != null) RenderPages(window, renderDirectory);
         }
@@ -512,6 +513,50 @@ internal static class UiChecks
             "actual pressure button verifies all visible thresholds and range after ACK");
         vm.HighPressureMin = "100"; red.Text = "250"; yellow.Text = "500"; vm.HighPressureMax = "5000"; vm.HighPressureRange = "5000";
         Call(window, "ResetFirmwareMainSession");
+    }
+
+    private static void CheckPollingTimeoutHealth(MainWindow window, MainViewModel vm, FakeSerial serial)
+    {
+        Set(window, "_isSerialOpen", true); vm.IsConnected = true; vm.DeviceAddress = "2";
+        var polling = (DispatcherTimer)Get(window, "_pollingTimer")!;
+        var savedInterval = polling.Interval;
+        foreach (int interval in new[] { 1000, 5000 })
+        {
+            Call(window, "ResetFirmwareMainSession");
+            Set(window, "_awaitingStackInfo", false); Set(window, "_diagDoneForConnection", false);
+            long now = 10000;
+            Set(window, "_ordinaryQueries", new OrdinaryQueryTracker(() => now));
+            serial.OnSend = f => Call(window, "OnFrameSent", f);
+            polling.Interval = TimeSpan.FromMilliseconds(interval);
+            Call(window, "PollingTimer_Tick", window, EventArgs.Empty);
+            for (int i = 0; i < 5; i++)
+            {
+                // 驱动250ms超时清理后，再驱动较慢的轮询tick；不等真实设备或真实秒数。
+                now += 3000; Call(window, "TickOrdinaryQueries");
+                Program.Check(!(bool)Get(window, "_awaitingStackInfo")!, $"{interval}ms poll releases expired serial wait");
+                Call(window, "PollingTimer_Tick", window, EventArgs.Empty);
+            }
+            Program.Check((bool)Get(window, "_diagDoneForConnection")! && serial.Sent[^1][2] == 0,
+                $"{interval}ms polling retains missing-response diagnosis across query expiry");
+            Call(window, "StopStackInfoLinkDiagnosis"); Set(window, "_diagProbePending", false);
+            Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x87, new byte[26]));
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+            Program.Check(!(bool)Get(window, "_stackInfoResponseMissing")! && (int)Get(window, "_stackInfoMissCount")! == 0,
+                $"{interval}ms poll valid target response clears missing-response health");
+            Call(window, "btn_StopPolling_Click", window, new RoutedEventArgs());
+            Program.Check(!(bool)Get(window, "_stackInfoResponseMissing")!, "stop polling clears missing-response health");
+        }
+        Set(window, "_awaitingStackInfo", true); Set(window, "_stackInfoResponseMissing", true);
+        Set(window, "_diagDoneForConnection", true); Set(window, "_diagProbePending", true);
+        vm.DeviceAddress = "3";
+        Program.Check(!(bool)Get(window, "_awaitingStackInfo")! && !(bool)Get(window, "_stackInfoResponseMissing")! &&
+            !(bool)Get(window, "_diagDoneForConnection")! && !(bool)Get(window, "_diagProbePending")!,
+            "target change clears serial wait and polling diagnosis lifecycle together");
+        vm.DeviceAddress = "2";
+        polling.Interval = savedInterval;
+        Call(window, "ResetFirmwareMainSession");
+        serial.OnSend = null;
+        Set(window, "_ordinaryQueries", new OrdinaryQueryTracker());
     }
 
     private static void CheckMonitoring(MainWindow window, MainViewModel vm)
