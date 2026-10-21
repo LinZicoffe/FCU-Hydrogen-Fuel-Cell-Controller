@@ -3906,9 +3906,12 @@ namespace FCU_氢燃料电池控
 
             MarshalRxToUi(() =>
             {
-                if (!IsCurrentTelemetry(frame, epoch) || _parameterWrite?.IsBusy == true) return;
+                if (!IsCurrentTelemetry(frame, epoch)) return;
                 // FrameSent在port.Write之后触发；UI回调内关联可接住先于该观察者到达的快速RX。
-                if (_ordinaryQueries?.Receive(frame) != true)
+                // RX排队后才开始写入时，先完成旧查询排空；事务忙时保留编辑，不将旧回包用于验证。
+                bool matchedQuery = _ordinaryQueries?.Receive(frame) == true;
+                if (_parameterWrite?.IsBusy == true) return;
+                if (!matchedQuery)
                 {
                     UpdateStatus("收到无对应读取请求的配置响应，未覆盖当前参数输入");
                     return;

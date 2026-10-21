@@ -459,6 +459,24 @@ internal static class UiChecks
             "RX arriving before FrameSent observer still matches query in Dispatcher callback");
         ((TextBox)window.FindName("tbx_Seq1_Current")).Text = "5";
         serial.OnSend = f => Call(window, "OnFrameSent", f);
+        // RX先到并排队，UI事件尚未返回时又开始写入：旧回包仍须完成排空，不能覆盖编辑。
+        Set(window, "_lastSharedSetAt", -3001L); Set(window, "_lastParameterReadAt", -3001L);
+        ((TextBox)window.FindName("tbx_Seq1_Current")).Text = "7";
+        Call(window, "SendReadConfigCommand", (byte)2, (byte)5, (byte)1, (byte)0);
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x8A, defaults));
+        Set(window, "_lastParameterReadAt", -3001L);
+        before = serial.Sent.Count;
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Program.Check(session.IsBusy && serial.Sent.Count == before, "queued RX still holds query until UI response processing");
+        Pump();
+        Program.Check(!((OrdinaryQueryTracker)Get(window, "_ordinaryQueries")!).IsBusy &&
+            ((TextBox)window.FindName("tbx_Seq1_Current")).Text == "7" && !session.Verified,
+            "RX queued before write drains matching query without overwriting edits or verifying new write");
+        session.Tick();
+        Program.Check(session.IsBusy && serial.Sent.Count == before + 1 && serial.Sent[^1][3] == 4,
+            "queued matching config response releases draining write without false timeout");
+        Receive(0x82, new byte[] { 2 });
+        ((TextBox)window.FindName("tbx_Seq1_Current")).Text = "5";
         var queries = new OrdinaryQueryTracker(() => now);
         Set(window, "_ordinaryQueries", queries);
         Set(window, "_lastSharedSetAt", -3001L); Set(window, "_lastParameterReadAt", -3001L);
