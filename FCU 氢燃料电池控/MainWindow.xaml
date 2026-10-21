@@ -418,7 +418,11 @@
             </ScrollViewer>
 
             <!-- 右侧Tab区域 -->
-            <hc:TabControl x:Name="MainTabControl" Grid.Column="1"
+            <DockPanel Grid.Column="1">
+                <Border DockPanel.Dock="Top" BorderBrush="#90CAF9" BorderThickness="1" CornerRadius="4" Background="#E3F2FD" Padding="10,6" Margin="4,0,4,6">
+                    <TextBlock Name="tbk_ParameterWriteStatus" Text="尚无参数写入操作" TextWrapping="Wrap" Foreground="#1976D2" ToolTip="参数写入的独立结果；自动刷新不会覆盖。只有设备确认且回读一致才显示已保存。"/>
+                </Border>
+            <hc:TabControl x:Name="MainTabControl"
                         Background="Transparent"
                         BorderThickness="0">
                 <!-- FCU参数配置 Tab（合并：压力/阀门/DCDC/风扇温度） -->
@@ -427,7 +431,7 @@
                         <StackPanel>
                             <TextBlock Text="参数设定：读取当前参数，修改后写入FCU并固化到Flash。" FontWeight="SemiBold" Margin="4,0,4,10"/>
                             <!-- 压力参数 -->
-                            <GroupBox Header="压力传感器设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                            <GroupBox Name="grp_PressureParameters" Header="压力传感器设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <StackPanel>
                                     <!-- 读取按钮 -->
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
@@ -579,7 +583,7 @@
                             </GroupBox>
 
                             <!-- 按客户草图合并温度与双风扇：限制值、当前值、百分比和转速量程同表展示 -->
-                            <GroupBox Header="温度与双风扇设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                            <GroupBox Name="grp_FanParameters" Header="温度与双风扇设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <StackPanel>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,8">
                                         <Button Name="btn_ReadFanTempParams"
@@ -910,7 +914,7 @@
                             </GroupBox>
 
                             <!-- 阀门时序含 0x0202 扩展时序读写（固件 codex/configurable-valve-timing 分支）；0x0201/0x020E 按原协议 -->
-                            <GroupBox Header="氢阀 / 排水阀开关逻辑" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                            <GroupBox Name="grp_ValveParameters" Header="氢阀 / 排水阀开关逻辑" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <StackPanel>
                                     <Grid Margin="4,0,4,10">
                                         <Grid.ColumnDefinitions>
@@ -1216,7 +1220,7 @@
                             </GroupBox>
 
                             <!-- DCDC参数 -->
-                            <GroupBox Header="DCDC参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                            <GroupBox Name="grp_DcdcParameters" Header="DCDC参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <StackPanel>
                                     <!-- 读取按钮 -->
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
@@ -1314,7 +1318,7 @@
                                        Foreground="#616161" Margin="4,0,4,10" TextWrapping="Wrap"/>
 
                             <!-- 拉载时序参数 -->
-                            <GroupBox Header="电流执行时序（唯一一套）" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                            <GroupBox Name="grp_LoadSequences" Header="电流执行时序（唯一一套）" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="0.45*"/>
@@ -1404,7 +1408,7 @@
                             </GroupBox>
 
                             <!-- 草图底部只突出一套正常运行系数、拉载间隔和拉载次数 -->
-                            <GroupBox Header="正常运行参数（唯一一套）" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                            <GroupBox Name="grp_LoadControlParameters" Header="正常运行参数（唯一一套）" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <StackPanel>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -1688,7 +1692,7 @@
 
                             <TextBlock Text="启动会等待传感器上电后的新采样并重新检查准入；启动中温度或压力越限会立即关断。看门狗复位后保持故障，需排查并人工处理。" TextWrapping="Wrap" Foreground="#616161" Margin="4,4,4,12"/>
                             <!-- 通用参数设置 -->
-                            <GroupBox Header="通用参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                            <GroupBox Name="grp_GeneralParameters" Header="通用参数设置" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                 <StackPanel>
                                     <!-- 读取按钮 -->
                                     <Button Name="btn_ReadGeneralParams"
@@ -2174,7 +2178,7 @@
                                                Foreground="{DynamicResource PrimaryBrush}"
                                                Margin="0,0,0,10"/>
 
-                                    <GroupBox Header="时序参数" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
+                                    <GroupBox Name="grp_RecipeParameters" Header="时序参数" Style="{StaticResource ModernGroupBoxStyle}" Margin="0,0,0,15">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="1.2*"/>
@@ -2297,6 +2301,7 @@
                     <views:FirmwareUpgradeView x:Name="FirmwareUpgradeView"/>
                 </hc:TabItem>
             </hc:TabControl>
+            </DockPanel>
         </Grid>
 
         <GridSplitter Grid.Row="2"

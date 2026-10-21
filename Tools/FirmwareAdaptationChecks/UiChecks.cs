@@ -18,9 +18,11 @@ internal static class UiChecks
     {
         public readonly List<byte[]> Sent = new();
         public Action<byte[]>? OnSend;
+        public bool FailSend;
         public override bool SendData(byte[] frame)
         {
             if (SendBlocked?.Invoke(frame) == true) return false;
+            if (FailSend) return false;
             Sent.Add(frame);
             OnSend?.Invoke(frame);
             return true;
@@ -112,7 +114,9 @@ internal static class UiChecks
             Program.Check(serial.Sent.All(f => f[3] != 0x0D), "cache connection and normal close do not write Flash");
             var standby = (StandbyPeriodSession)Get(window, "_standbyPeriod")!;
             var calibration = (CurrentCalibrationSession)Get(window, "_currentCalibration")!;
-            serial.SendBlocked = f => standby.Blocks(f) || calibration.Blocks(f);
+            var parameterWrite = (ParameterWriteSession)Get(window, "_parameterWrite")!;
+            serial.SendBlocked = f => standby.Blocks(f) || calibration.Blocks(f) || parameterWrite.Blocks(f) ||
+                ((OrdinaryQueryTracker)Get(window, "_ordinaryQueries")!).Blocks(f);
             var input = (TextBox)window.FindName("tbx_StandbyPeriod");
             var write = (Button)window.FindName("btn_WriteStandbyPeriod");
             foreach (string invalid in new[] { "0", "65536", "1.5", "-1", "abc" })
@@ -284,6 +288,7 @@ internal static class UiChecks
             Program.Check(!calibration.IsBusy && kInput.IsEnabled, "0302 common mode/upgrade reset releases UI");
             // 默认显示回归，呈现时不把示例系数当已保存默认值。
             kInput.Text = "1"; bInput.Text = "0";
+            CheckParameterWrites(window, vm, serial);
             CheckMonitoring(window, vm);
             if (renderDirectory != null) RenderPages(window, renderDirectory);
         }
@@ -332,6 +337,143 @@ internal static class UiChecks
         Pump();
         Program.Check(display.Text == "--" && vm.DCDCInputCurrent == "--", "0302 current cleared when target changes");
         vm.DeviceAddress = "2";
+    }
+
+    private static void CheckParameterWrites(MainWindow window, MainViewModel vm, FakeSerial serial)
+    {
+        void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        void Receive(byte function, byte[] data)
+        {
+            Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, function, data)); Pump();
+        }
+        var session = (ParameterWriteSession)Get(window, "_parameterWrite")!;
+        var status = (TextBlock)window.FindName("tbk_ParameterWriteStatus");
+        Set(window, "_isSerialOpen", true); vm.IsConnected = true; vm.DeviceAddress = "2";
+        Set(window, "_lastSharedSetAt", -3001L); Set(window, "_lastParameterReadAt", -3001L);
+        Set(window, "_awaitingStackInfo", false); serial.OnSend = null;
+        // 底层发送返回false：真实时序按钮不再声称已发送。
+        for (int i = 1; i <= 15; i++)
+        {
+            ((TextBox)window.FindName($"tbx_Seq{i}_Current")).Text = i == 15 ? "" : "5";
+            ((TextBox)window.FindName($"tbx_Seq{i}_Time")).Text = i == 15 ? "" : "0.50";
+        }
+        serial.FailSend = true; int before = serial.Sent.Count;
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Program.Check(!session.IsBusy && !session.Verified && serial.Sent.Count == before && status.Text.Contains("发送失败"),
+            "actual sequence button reports transport false without sent/success claim");
+        serial.FailSend = false;
+        // 用可控时钟的新会话避免真实等待3秒的迟到ACK保护窗口。
+        long now = 10000;
+        session = new ParameterWriteSession(f => (bool)Call(window, "SendFrame", f)!,
+            () => (bool)Call(window, "CanSendParameterWrite")!, () => now);
+        Set(window, "_parameterWrite", session);
+        serial.SendBlocked = f => ((StandbyPeriodSession)Get(window, "_standbyPeriod")!).Blocks(f) ||
+            ((CurrentCalibrationSession)Get(window, "_currentCalibration")!).Blocks(f) || session.Blocks(f) ||
+            ((OrdinaryQueryTracker)Get(window, "_ordinaryQueries")!).Blocks(f);
+        Set(window, "_awaitingStackInfo", true); before = serial.Sent.Count;
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Program.Check(session.IsBusy && serial.Sent.Count == before && status.Text.Contains("尚未发送"),
+            "actual button queues behind existing monitoring request");
+        Call(window, "PollingTimer_Tick", window, EventArgs.Empty);
+        Call(window, "RequestBmsCache");
+        Program.Check(serial.Sent.Count == before && !(bool)Call(window, "SendFrame", ProtocolHandler.BuildRequestFrame(2, 10, new byte[] { 5, 1, 0 }))!,
+            "ordinary write suppresses monitoring/cache/manual reads while draining");
+        Receive(0x87, new byte[26]); session.Tick(); Call(window, "RenderParameterWrite");
+        Program.Check(serial.Sent.Count == before + 1 && serial.Sent[^1][3] == 4 &&
+            !((GroupBox)window.FindName("grp_LoadSequences")).IsEnabled,
+            "drained telemetry allows a single write and freezes submitted input group");
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Program.Check(serial.Sent.Count == before + 1, "repeat click cannot insert second write before ACK");
+        Program.Check((bool)Call(window, "SendFrame", ProtocolHandler.BuildRequestFrame(2, 9, Array.Empty<byte>()))! &&
+            (bool)Call(window, "SendFrame", ProtocolHandler.BuildRequestFrame(2, 13, new byte[] { 1 }))!,
+            "real transport lease preserves stack stop and BMS return");
+        Receive(0x82, new byte[] { 9 });
+        string failed = status.Text;
+        Receive(0x87, new byte[26]); Receive(0xF2, new byte[14]); Call(window, "RenderParameterWrite");
+        Program.Check(!session.IsBusy && !session.Verified && failed.Contains("存储失败") && status.Text == failed &&
+            ((GroupBox)window.FindName("grp_LoadSequences")).IsEnabled,
+            "save failure persists through both monitoring streams and releases group");
+        // 回读出厂默认值而非5A，不得覆盖用户输入或提示保存成功。
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Receive(0x82, new byte[] { 0 });
+        Program.Check(session.IsBusy && !session.Verified && serial.Sent[^1][3] == 10, "actual ACK route reads table before success");
+        byte[] defaults = new byte[3 + 14 * 4]; defaults[0] = 5; defaults[1] = 1;
+        for (int i = 0; i < 14; i++) { defaults[3 + i * 4 + 1] = 10; defaults[3 + i * 4 + 3] = 50; }
+        Receive(0x8A, defaults);
+        Program.Check(!session.Verified && status.Text.Contains("不一致") && ((TextBox)window.FindName("tbx_Seq1_Current")).Text == "5",
+            "default readback cannot masquerade as successful write or overwrite edits");
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs()); Receive(0x82, new byte[] { 0 });
+        for (int i = 0; i < 14; i++) defaults[3 + i * 4 + 1] = 50;
+        Receive(0x8A, defaults);
+        Program.Check(session.Verified && status.Text.Contains("回读一致"), "second complete sequence write can verify successfully");
+        // 压力MVVM/ParameterManager同样走事务，不依赖真实打开的串口对象。
+        vm.HighPressureMin = "100"; vm.HighPressureRed = "250"; vm.HighPressureYellow = "500"; vm.HighPressureMax = "5000";
+        vm.LowPressureMin = "20"; vm.LowPressureMax = "100"; vm.HighPressureRange = "5000"; vm.LowPressureRange = "250";
+        vm.WritePressureParamsCommand.Execute(null);
+        Program.Check(session.IsBusy && serial.Sent[^1][3] == 2, "pressure VM command uses common write session");
+        Receive(0x82, new byte[] { 0 }); Receive(0x8A, Convert.FromHexString("010100006400FA01F4138800140064138800FA"));
+        Program.Check(session.Verified && (bool)Get(window, "_pressureParamsLoadedFromDevice")!, "pressure verified readback satisfies initial-load gate");
+        // 旧会话已入站但尚未执行的ACK不能推进新的写入。
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x82, new byte[] { 0 }));
+        session.Reset(); now += 3000;
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs()); before = serial.Sent.Count; Pump();
+        Program.Check(session.IsBusy && serial.Sent.Count == before && !session.Verified,
+            "queued previous write ACK cannot request readback for new epoch");
+        now += 3000; session.Tick(); Call(window, "RenderParameterWrite");
+        Program.Check(!session.IsBusy && status.Text.Contains("超时"), "actual integration exposes missing ACK timeout");
+        now += 3000;
+        session.Reset();
+        Set(window, "_lastSharedSetAt", -3001L); Set(window, "_lastParameterReadAt", -3001L);
+        serial.OnSend = f => Call(window, "OnFrameSent", f); // 与真实 SerialPortManager.FrameSent 的统一接线相同。
+        Call(window, "SendFrame", ProtocolHandler.BuildRequestFrame(2, 7, Array.Empty<byte>()));
+        before = serial.Sent.Count;
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Program.Check(session.IsBusy && (bool)Get(window, "_awaitingStackInfo")! && serial.Sent.Count == before,
+            "manual07 observed at real send event prevents immediate parameter write");
+        Receive(0x87, new byte[26]); session.Tick();
+        Receive(0x82, new byte[] { 2 });
+        Set(window, "_lastSharedSetAt", -3001L); Set(window, "_lastParameterReadAt", -3001L);
+        Call(window, "SendReadConfigCommand", (byte)2, (byte)5, (byte)1, (byte)0);
+        before = serial.Sent.Count;
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        System.Threading.Thread.Sleep(400); session.Tick();
+        Program.Check(session.IsBusy && serial.Sent.Count == before, "unanswered0A longer than350ms still prevents write");
+        Receive(0x8A, defaults); session.Tick();
+        Program.Check(session.IsBusy && !session.Verified && serial.Sent.Count == before + 1 && serial.Sent[^1][3] == 4,
+            "old config response must drain before write and cannot verify new parameters");
+        Receive(0x82, new byte[] { 0 }); Receive(0x8A, defaults);
+        Program.Check(session.Verified, "new post-ACK readback verifies after old query has drained");
+        ((TextBox)window.FindName("tbx_Seq1_Current")).Text = "7";
+        serial.OnSend = f =>
+        {
+            if (f[3] == 10 && !session.IsBusy)
+                Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x8A, defaults));
+            Call(window, "OnFrameSent", f);
+        };
+        Call(window, "SendReadConfigCommand", (byte)2, (byte)5, (byte)1, (byte)0); Pump();
+        Program.Check(((TextBox)window.FindName("tbx_Seq1_Current")).Text == (5.0).ToString("0.0"),
+            "RX arriving before FrameSent observer still matches query in Dispatcher callback");
+        ((TextBox)window.FindName("tbx_Seq1_Current")).Text = "5";
+        serial.OnSend = f => Call(window, "OnFrameSent", f);
+        var queries = new OrdinaryQueryTracker(() => now);
+        Set(window, "_ordinaryQueries", queries);
+        Set(window, "_lastSharedSetAt", -3001L); Set(window, "_lastParameterReadAt", -3001L);
+        Call(window, "SendReadConfigCommand", (byte)2, (byte)5, (byte)1, (byte)0);
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs()); before = serial.Sent.Count;
+        now += 3000; Call(window, "TickOrdinaryQueries"); session.Tick();
+        Program.Check(!session.IsBusy && serial.Sent.Count == before && status.Text.Contains("尚未发送"),
+            "query timeout cancels queued write instead of releasing it onto unknown response");
+        defaults[4] = 10;
+        Receive(0x8A, defaults);
+        Program.Check(((TextBox)window.FindName("tbx_Seq1_Current")).Text == "5", "unmatched late config cannot overwrite edits");
+        serial.OnSend = null;
+        Call(window, "ResetFirmwareMainSession");
+        Set(window, "_ordinaryQueries", new OrdinaryQueryTracker());
+        Set(window, "_parameterWrite", new ParameterWriteSession(f => (bool)Call(window, "SendFrame", f)!, () => true));
+        serial.SendBlocked = f => ((StandbyPeriodSession)Get(window, "_standbyPeriod")!).Blocks(f) ||
+            ((CurrentCalibrationSession)Get(window, "_currentCalibration")!).Blocks(f) || ((ParameterWriteSession)Get(window, "_parameterWrite")!).Blocks(f) ||
+            ((OrdinaryQueryTracker)Get(window, "_ordinaryQueries")!).Blocks(f);
     }
 
     private static void CheckMonitoring(MainWindow window, MainViewModel vm)

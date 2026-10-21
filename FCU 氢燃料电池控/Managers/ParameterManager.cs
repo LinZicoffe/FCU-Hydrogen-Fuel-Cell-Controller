@@ -14,6 +14,8 @@ namespace FCU_氢燃料电池控.Managers
 
         /// <summary>发送拦截钩子: 返回 true 时拦截一切 AA55 发送 (固件升级模式由 MainWindow 注入) [BL设计 §4.2]</summary>
         public Func<bool>? SendBlocked { get; set; }
+        /// <summary>由窗口注入普通参数确认/回读事务；参数验证仍由调用方负责。</summary>
+        public Func<byte, byte[], string, bool>? ParameterWriter { get; set; }
         private byte _deviceAddress = ProtocolConstants.DEFAULT_DEVICE_ADDRESS;
 
         #region 事件定义
@@ -193,6 +195,7 @@ namespace FCU_氢燃料电池控.Managers
         {
             try
             {
+                if (ParameterWriter != null) return ParameterWriter(functionCode, data, parameterName);
                 if (SendBlocked?.Invoke() == true)
                 {
                     ErrorOccurred?.Invoke(this, "固件升级进行中, 串口已被升级功能占用");

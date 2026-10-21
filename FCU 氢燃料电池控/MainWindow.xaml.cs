@@ -208,7 +208,7 @@ namespace FCU_氢燃料电池控
             serialPortManager.FrameSent += OnFrameSent;
             _viewModel.BeforeSerialClose += OnBeforeSerialClose;
             // VM 无 UI 引用，本地校验失败经事件弹 Growl，与 code-behind 参数组的反馈方式一致
-            _viewModel.ParameterValidationFailed += (_, msg) => HC.Growl.Warning(msg);
+            _viewModel.ParameterValidationFailed += (_, msg) => RejectParameterWrite(msg);
             // 多机共总线切换目标设备后，作废「已读取压力」豁免，防止跨设备静默覆盖隐藏红/黄阈值
             _viewModel.DeviceAddressChanged += (_, _) =>
             {
@@ -238,7 +238,7 @@ namespace FCU_氢燃料电池控
             _bmsService.IsAa55Idle = () => _protocolHandler?.IsIdle ?? true;
             // 总线仲裁第三条件 [审查修复 P1②]: 自身 0x07 在途(已发未收 0x87)期间不插入 Modbus 请求,
             // 否则会与 FCU 的响应发送相撞——"总线静默"只看收, 看不到自己刚发出的请求
-            _bmsService.IsAa55RequestInFlight = () => _awaitingStackInfo;
+            _bmsService.IsAa55RequestInFlight = () => _awaitingStackInfo || _parameterWrite?.IsBusy == true || _ordinaryQueries?.IsBusy == true;
             _bmsService.DataUpdated += OnBmsDataUpdated;
             _bmsService.StatusChanged += msg => Dispatcher.Invoke(() => UpdateStatus(msg));
             _bmsService.ErrorOccurred += msg => Dispatcher.Invoke(() => { HC.Growl.Warning(msg); UpdateStatus(msg); });
@@ -1166,7 +1166,13 @@ namespace FCU_氢燃料电池控
             // A sub-index of 0 requests every parameter in the selected group.
             byte[] data = new byte[] { paramTypeHigh, paramTypeLow, subIndex };
             byte[] frame = BuildFrame(deviceAddress, ProtocolConstants.FUNC_READ_CONFIG, data);
-            return SendFrame(frame);
+            bool sent = SendFrame(frame);
+            if (!sent)
+            {
+                UpdateStatus("读取参数请求未发送：串口正被事务占用或发送失败，请稍后重试");
+                HC.Growl.Warning("读取参数请求未发送，请等待当前事务结束后重试");
+            }
+            return sent;
         }
 
         #endregion
@@ -1185,7 +1191,8 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void PollingTimer_Tick(object? sender, EventArgs e)
         {
-            if (_bmsCache?.Waiting == true || _standbyPeriod?.IsBusy == true || _currentCalibration?.IsBusy == true || _bmsBusExchangeInProgress || _bmsReturnInFlight) return;
+            if (_bmsCache?.Waiting == true || _standbyPeriod?.IsBusy == true || _currentCalibration?.IsBusy == true ||
+                _parameterWrite?.IsBusy == true || _bmsBusExchangeInProgress || _bmsReturnInFlight) return;
             try
             {
                 // 检查串口是否打开（静默检查，不显示消息）
@@ -1230,7 +1237,9 @@ namespace FCU_氢燃料电池控
                 if (_bmsService?.IsBusy == true)
                     return;
 
+                if (_ordinaryQueries?.IsBusy == true) return;
                 byte[] frame = BuildReadFrame(deviceAddress, ProtocolConstants.FUNC_READ_STACK_INFO);
+                if (_ordinaryQueries?.Blocks(frame) == true) return;
                 _awaitingStackInfo = true;
                 if (!SendFrame(frame))
                 {
@@ -1394,7 +1403,7 @@ namespace FCU_氢燃料电池控
                 }
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
-                SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_PRESSURE >> 8), (byte)(ProtocolConstants.PARAM_TYPE_PRESSURE & 0xFF));
+                if (!SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_PRESSURE >> 8), (byte)(ProtocolConstants.PARAM_TYPE_PRESSURE & 0xFF))) return;
                 UpdateStatus("已发送读取压力参数命令");
             }
             catch (Exception ex)
@@ -1422,13 +1431,13 @@ namespace FCU_氢燃料电池控
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
 
-                SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_VALVE >> 8), (byte)(ProtocolConstants.PARAM_TYPE_VALVE & 0xFF));
+                if (!SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_VALVE >> 8), (byte)(ProtocolConstants.PARAM_TYPE_VALVE & 0xFF))) return;
                 System.Threading.Thread.Sleep(100);
 
-                SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_VALVE_TIMING >> 8), (byte)(ProtocolConstants.PARAM_TYPE_VALVE_TIMING & 0xFF));
+                if (!SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_VALVE_TIMING >> 8), (byte)(ProtocolConstants.PARAM_TYPE_VALVE_TIMING & 0xFF))) return;
                 System.Threading.Thread.Sleep(100);
 
-                SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_FLOW >> 8), (byte)(ProtocolConstants.PARAM_TYPE_FLOW & 0xFF));
+                if (!SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_FLOW >> 8), (byte)(ProtocolConstants.PARAM_TYPE_FLOW & 0xFF))) return;
 
                 UpdateStatus("已发送读取阀门/扩展时序/工作流程参数命令");
             }
@@ -1452,7 +1461,7 @@ namespace FCU_氢燃料电池控
                 }
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
-                SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_DCDC >> 8), (byte)(ProtocolConstants.PARAM_TYPE_DCDC & 0xFF));
+                if (!SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_DCDC >> 8), (byte)(ProtocolConstants.PARAM_TYPE_DCDC & 0xFF))) return;
                 UpdateStatus("已发送读取DCDC参数命令");
             }
             catch (Exception ex)
@@ -1475,7 +1484,7 @@ namespace FCU_氢燃料电池控
                 }
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
-                SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_FAN_TEMP >> 8), (byte)(ProtocolConstants.PARAM_TYPE_FAN_TEMP & 0xFF));
+                if (!SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_FAN_TEMP >> 8), (byte)(ProtocolConstants.PARAM_TYPE_FAN_TEMP & 0xFF))) return;
                 UpdateStatus("已发送读取风扇温度参数命令");
             }
             catch (Exception ex)
@@ -1498,7 +1507,7 @@ namespace FCU_氢燃料电池控
                 }
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
-                SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_GENERAL >> 8), (byte)(ProtocolConstants.PARAM_TYPE_GENERAL & 0xFF));
+                if (!SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_GENERAL >> 8), (byte)(ProtocolConstants.PARAM_TYPE_GENERAL & 0xFF))) return;
                 UpdateStatus("已发送读取通用参数命令");
             }
             catch (Exception ex)
@@ -1523,15 +1532,15 @@ namespace FCU_氢燃料电池控
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
                 
                 // 读取拉载时序参数 (0x0501)
-                SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_LOAD_SEQUENCE >> 8), (byte)(ProtocolConstants.PARAM_TYPE_LOAD_SEQUENCE & 0xFF));
+                if (!SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_LOAD_SEQUENCE >> 8), (byte)(ProtocolConstants.PARAM_TYPE_LOAD_SEQUENCE & 0xFF))) return;
                 System.Threading.Thread.Sleep(100);
 
                 // 读取拉载控制参数 (0x0502)
-                SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_LOAD_CONTROL >> 8), (byte)(ProtocolConstants.PARAM_TYPE_LOAD_CONTROL & 0xFF));
+                if (!SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_LOAD_CONTROL >> 8), (byte)(ProtocolConstants.PARAM_TYPE_LOAD_CONTROL & 0xFF))) return;
                 System.Threading.Thread.Sleep(100);
 
                 // 读取拉载启动参数 (0x0503)
-                SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_LOAD_STARTUP >> 8), (byte)(ProtocolConstants.PARAM_TYPE_LOAD_STARTUP & 0xFF));
+                if (!SendReadConfigCommand(deviceAddress, (byte)(ProtocolConstants.PARAM_TYPE_LOAD_STARTUP >> 8), (byte)(ProtocolConstants.PARAM_TYPE_LOAD_STARTUP & 0xFF))) return;
 
                 UpdateStatus("已发送读取整套电流参数命令");
             }
@@ -2007,9 +2016,7 @@ namespace FCU_氢燃料电池控
                 byte[] data = BuildFanTempParamsData(lowDuty, tempMin, tempMax,
                     fullSpeedTime, lowTempCheckTime, fanMinRpm);
 
-                byte[] frame = BuildFrame(deviceAddress, ProtocolConstants.FUNC_SET_FAN_TEMP_PARAMS, data);
-                SendFrame(frame);
-                UpdateStatus($"已发送设置{paramName}命令");
+                BeginParameterWrite(ProtocolConstants.FUNC_SET_FAN_TEMP_PARAMS, data, paramName);
             }
             catch (Exception ex)
             {
@@ -2095,9 +2102,7 @@ namespace FCU_氢燃料电池控
                     data[6 + i * 4] = (byte)(times[i] & 0xFF);
                 }
 
-                byte[] frame = BuildFrame(deviceAddress, ProtocolConstants.FUNC_SET_LOAD_PARAMS, data);
-                SendFrame(frame);
-                UpdateStatus($"已发送设置拉载时序参数命令（{seqCount} 条）");
+                BeginParameterWrite(ProtocolConstants.FUNC_SET_LOAD_PARAMS, data, $"拉载时序表（{seqCount}条）");
             }
             catch (Exception ex)
             {
@@ -2200,9 +2205,7 @@ namespace FCU_氢燃料电池控
                 data[7] = (byte)(minVoltage >> 8); data[8] = (byte)(minVoltage & 0xFF);
                 data[9] = (byte)(currentStep >> 8); data[10] = (byte)(currentStep & 0xFF);
 
-                byte[] frame = BuildFrame(deviceAddress, ProtocolConstants.FUNC_SET_LOAD_PARAMS, data);
-                SendFrame(frame);
-                UpdateStatus($"已发送设置拉载{paramName}命令");
+                BeginParameterWrite(ProtocolConstants.FUNC_SET_LOAD_PARAMS, data, $"拉载{paramName}");
             }
             catch (Exception ex)
             {
@@ -2290,9 +2293,7 @@ namespace FCU_氢燃料电池控
                 data[3] = (byte)(firstInterval >> 8); data[4] = (byte)(firstInterval & 0xFF);
                 data[5] = (byte)(normalInterval >> 8); data[6] = (byte)(normalInterval & 0xFF);
 
-                byte[] frame = BuildFrame(deviceAddress, ProtocolConstants.FUNC_SET_LOAD_PARAMS, data);
-                SendFrame(frame);
-                UpdateStatus($"已发送设置{paramName}命令");
+                BeginParameterWrite(ProtocolConstants.FUNC_SET_LOAD_PARAMS, data, paramName);
             }
             catch (Exception ex)
             {
@@ -2341,8 +2342,8 @@ namespace FCU_氢燃料电池控
                 byte[] dataField = new byte[] { newAddress };
                 byte[] frame = ProtocolHandler.BuildRequestFrame(currentAddress, ProtocolConstants.FUNC_SET_DEVICE_ADDRESS, dataField);
 
-                SendFrame(frame);
-                UpdateStatus($"已发送修改设备地址指令 (新地址: {newAddress})");
+                if (SendFrame(frame)) UpdateStatus($"已发送修改设备地址指令 (新地址: {newAddress})");
+                else RejectParameterWrite("修改设备地址指令发送失败，设备未确认；请稍后重试");
             }
             catch (Exception ex)
             {
@@ -2377,9 +2378,7 @@ namespace FCU_氢燃料电池控
                 data[0] = 0x09; data[1] = 0x01;
                 data[2] = (byte)(scanPeriod >> 8); data[3] = (byte)(scanPeriod & 0xFF);
 
-                byte[] frame = BuildFrame(deviceAddress, ProtocolConstants.FUNC_SET_GENERAL_PARAMS, data);
-                SendFrame(frame);
-                UpdateStatus("已发送设置扫描周期命令");
+                BeginParameterWrite(ProtocolConstants.FUNC_SET_GENERAL_PARAMS, data, "扫描周期");
             }
             catch (Exception ex)
             {
@@ -2900,15 +2899,17 @@ namespace FCU_氢燃料电池控
                     return false;
 
                 byte[] data = dataBuilder();
+                // 0x0202 保留现有专用确认/预览事务；其余普通参数统一写后回读。
+                if (!(functionCode == 0x03 && data.Length >= 2 && data[0] == 2 && data[1] == 2))
+                    return BeginParameterWrite(functionCode, data, parameterName);
                 byte[] frame = BuildFrame(deviceAddress, functionCode, data);
-                if (!SendFrame(frame)) return false;
+                if (!SendFrame(frame)) return RejectParameterWrite($"{parameterName}发送失败，设备未确认；请稍后重试");
                 UpdateStatus($"已发送设置{parameterName}命令");
                 return true;
             }
             catch (Exception ex)
             {
-                SerialPortHelper.ShowParameterSetError(parameterName, ex);
-                return false;
+                return RejectParameterWrite($"{parameterName}未发送：{ex.Message}");
             }
         }
 
@@ -3027,6 +3028,13 @@ namespace FCU_氢燃料电池控
 
         private void OnFrameSent(byte[] frame)
         {
+            if (_parameterWrite?.IsBusy != true && _standbyPeriod?.IsBusy != true && _currentCalibration?.IsBusy != true)
+            {
+                _ordinaryQueries?.Sent(frame);
+                if (frame.Length >= 7 && frame[3] == 7 && frame[2] != 0) _awaitingStackInfo = true;
+            }
+            if (frame.Length >= 7 && frame[0] == 0xAA && frame[1] == 0x55 && frame[3] == 0x0A)
+                _lastParameterReadAt = Environment.TickCount64;
             if (frame.Length >= 7 && frame[0] == 0xAA && frame[1] == 0x55 &&
                 frame[3] is 0x02 or 0x03 or 0x04 or 0x05 or 0x06 or 0x0B)
                 _lastSharedSetAt = Environment.TickCount64;
@@ -3175,6 +3183,13 @@ namespace FCU_氢燃料电池控
                     return;
                 }
 
+                if (_parameterWrite?.IsBusy == true && functionCode is 0x82 or 0x8E or 0x8A)
+                {
+                    int writeEpoch = _parameterWrite.Epoch;
+                    MarshalRxToUi(() => ReceiveParameterWrite(frame, writeEpoch));
+                    return;
+                }
+
                 switch (functionCode)
                 {
                     case 0x81: // 设备序列号响应
@@ -3275,12 +3290,15 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void HandleSerialNumberResponse(byte[] frame)
         {
-            string serialNumber = ResponseParser.ParseSerialNumber(frame);
+            int epoch = _monitoringEpoch;
             MarshalRxToUi(() =>
             {
+                if (!IsCurrentTelemetry(frame, epoch) ||
+                    !FirmwareMainProtocol.IsResponse(frame, frame[2], 0x81, 12)) return;
+                _ordinaryQueries?.Receive(frame);
                 if (_viewModel != null)
                 {
-                    _viewModel.SerialNumber = serialNumber;
+                    _viewModel.SerialNumber = ResponseParser.ParseSerialNumber(frame);
                     _viewModel.StatusMessage = "设备序列号读取成功";
                 }
             });
@@ -3299,7 +3317,11 @@ namespace FCU_氢燃料电池控
                 if (frame.Length >= 7 && frame[2] == 0 && epoch == _monitoringEpoch &&
                     SerialPortHelper.TryParseDeviceAddress(GetDeviceAddress(), out byte target, showError: false) && target != 0)
                 {
-                    if (ResponseParser.TryParseStackInfo(frame, out _)) UpdateStatus("诊断探针已获 FCU 响应（广播地址）");
+                    if (ResponseParser.TryParseStackInfo(frame, out _))
+                    {
+                        _ordinaryQueries?.Receive(frame);
+                        UpdateStatus("诊断探针已获 FCU 响应（广播地址）");
+                    }
                     return;
                 }
                 if (!IsCurrentTelemetry(frame, epoch)) return;
@@ -3310,6 +3332,7 @@ namespace FCU_氢燃料电池控
                     return;
                 }
                 _awaitingStackInfo = false;
+                _ordinaryQueries?.Receive(frame);
                 _stackInfoMissCount = 0;
                 _lastStackInfoAt = receivedAt;
                 _stackInfoError = null;
@@ -3329,7 +3352,7 @@ namespace FCU_氢燃料电池控
             {
                 if (result == 0x00)
                 {
-                    UpdateStatus("参数设置成功");
+                    UpdateStatus("收到未关联的参数成功响应，请读取参数核对实际保存结果");
                 }
                 else
                 {
@@ -3763,6 +3786,12 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void OnBeforeSerialClose()
         {
+            // 归还总线前撤销普通写事务，防等0x8D的DoEvents期间旧ACK触发回读发送。
+            if (_parameterWrite?.IsBusy == true)
+            {
+                _parameterWrite.Reset();
+                RenderParameterWrite();
+            }
             if (!_isSerialOpen || !_bmsBusMayBeOwned)
                 return;
 
@@ -3829,6 +3858,7 @@ namespace FCU_氢燃料电池控
                 OnBeforeSerialClose();
             }
             _firmwareMainTimer?.Stop();
+            _parameterWrite?.Reset();
             base.OnClosing(e);
         }
 
@@ -3855,9 +3885,17 @@ namespace FCU_氢燃料电池控
         private void HandleConfigParamResponse(byte[] frame)
         {
             ushort paramTypeID = ResponseParser.GetParameterTypeID(frame);
+            int epoch = _monitoringEpoch;
 
             MarshalRxToUi(() =>
             {
+                if (!IsCurrentTelemetry(frame, epoch) || _parameterWrite?.IsBusy == true) return;
+                // FrameSent在port.Write之后触发；UI回调内关联可接住先于该观察者到达的快速RX。
+                if (_ordinaryQueries?.Receive(frame) != true)
+                {
+                    UpdateStatus("收到无对应读取请求的配置响应，未覆盖当前参数输入");
+                    return;
+                }
                 if (paramTypeID == ProtocolConstants.PARAM_TYPE_SOC)
                 {
                     if (!_pendingSocReadDeviceAddress.HasValue)
@@ -5381,10 +5419,7 @@ namespace FCU_氢燃料电池控
                     data[6 + i * 4] = (byte)(times[i] & 0xFF);
                 }
 
-                byte[] frame = BuildFrame(deviceAddress, ProtocolConstants.FUNC_SET_LOAD_PARAMS, data);
-                SendFrame(frame);
-                UpdateStatus("已发送应用配方到设备命令");
-                HC.Growl.Success("配方已发送到设备");
+                BeginParameterWrite(ProtocolConstants.FUNC_SET_LOAD_PARAMS, data, "配方时序参数");
             }
             catch (Exception ex)
             {
@@ -5581,6 +5616,8 @@ namespace FCU_氢燃料电池控
                 {
                     if (!_owner._isSerialOpen || _owner._standbyPeriod?.IsBusy == true || _owner._currentCalibration?.IsBusy == true ||
                         _owner._bmsCache?.Waiting == true || _owner._awaitingStackInfo || _owner._bmsService?.IsBusy == true ||
+                        _owner._parameterWrite?.IsBusy == true || _owner._parameterWrite?.MayHaveLateAck == true ||
+                        _owner._ordinaryQueries?.IsBusy == true || _owner._ordinaryQueries?.MayHaveLateReply == true ||
                         _owner._bmsBusExchangeInProgress || _owner._bmsReturnInFlight ||
                         _owner._pendingLoadManualCmd != null || _owner._pendingValveTimingSet.HasValue ||
                         _owner._pendingSocWrite != null || _owner._pendingSocReadDeviceAddress.HasValue ||
