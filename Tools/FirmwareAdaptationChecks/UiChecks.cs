@@ -291,6 +291,7 @@ internal static class UiChecks
             CheckParameterWrites(window, vm, serial);
             CheckPressureFields(window, vm, serial);
             CheckPollingTimeoutHealth(window, vm, serial);
+            CheckProbeRecovery(window, vm, serial);
             CheckMonitoring(window, vm);
             if (renderDirectory != null) RenderPages(window, renderDirectory);
         }
@@ -557,6 +558,59 @@ internal static class UiChecks
         Call(window, "ResetFirmwareMainSession");
         serial.OnSend = null;
         Set(window, "_ordinaryQueries", new OrdinaryQueryTracker());
+    }
+
+    private static void CheckProbeRecovery(MainWindow window, MainViewModel vm, FakeSerial serial)
+    {
+        void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        Set(window, "_isSerialOpen", true); vm.IsConnected = true; vm.DeviceAddress = "2";
+        Call(window, "ResetFirmwareMainSession");
+        Set(window, "_lastSharedSetAt", -3001L); Set(window, "_lastParameterReadAt", -3001L);
+        long now = 10000;
+        var queries = new OrdinaryQueryTracker(() => now);
+        Set(window, "_ordinaryQueries", queries);
+        var session = new ParameterWriteSession(f => (bool)Call(window, "SendFrame", f)!,
+            () => (bool)Call(window, "CanSendParameterWrite")!, () => now);
+        Set(window, "_parameterWrite", session);
+        serial.OnSend = f => Call(window, "OnFrameSent", f);
+        Call(window, "StartStackInfoLinkDiagnosis", (byte)2);
+        var timer = (DispatcherTimer)Get(window, "_diagProbeTimer")!;
+        Program.Check(timer.Interval.TotalMilliseconds == 600 && (bool)Get(window, "_diagProbePending")! && queries.IsBusy,
+            "diagnosis starts actual 600ms timer and tracks broadcast query");
+        System.Threading.Thread.Sleep(650); Pump();
+        Program.Check(!(bool)Get(window, "_diagProbePending")! && Get(window, "_diagProbeTimer") == null && queries.IsBusy,
+            "actual probe timeout releases diagnosis gate but preserves unanswered query isolation");
+        int before = serial.Sent.Count;
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Program.Check(session.IsBusy && serial.Sent.Count == before, "post-probe write waits for old broadcast query");
+        now += 3000; Call(window, "TickOrdinaryQueries");
+        Program.Check(!session.IsBusy && serial.Sent.Count == before, "unanswered broadcast query cancels queued write without sending");
+        now += 3000;
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x87, new byte[26])); Pump();
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Program.Check(session.IsBusy && serial.Sent[^1][3] == 4, "recovered target can write after probe timeout and quiet window");
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x82, new byte[] { 2 })); Pump();
+        Call(window, "StartStackInfoLinkDiagnosis", (byte)2);
+        Set(window, "_stackInfoResponseMissing", true);
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(0, 0x87, new byte[26])); Pump();
+        Program.Check((bool)Get(window, "_stackInfoResponseMissing")!, "broadcast answer never clears configured-target health");
+        timer = (DispatcherTimer)Get(window, "_diagProbeTimer")!;
+        timer.Interval = TimeSpan.FromMilliseconds(1); System.Threading.Thread.Sleep(30); Pump();
+        Program.Check(vm.StatusMessage.Contains("疑似设备地址不匹配") && !(bool)Get(window, "_diagProbePending")!,
+            "answered probe result survives terminal pending cleanup");
+        Call(window, "StartStackInfoLinkDiagnosis", (byte)2);
+        Call(window, "btn_StopPolling_Click", window, new RoutedEventArgs());
+        Program.Check(!(bool)Get(window, "_diagProbePending")! && Get(window, "_diagProbeTimer") == null,
+            "stop polling cancels diagnosis timer and gate");
+        Call(window, "StartStackInfoLinkDiagnosis", (byte)2);
+        Call(window, "btn_StartPolling_Click", window, new RoutedEventArgs());
+        Program.Check(!(bool)Get(window, "_diagProbePending")! && Get(window, "_diagProbeTimer") == null,
+            "restart polling cancels prior diagnosis timer and gate");
+        Call(window, "btn_StopPolling_Click", window, new RoutedEventArgs());
+        Call(window, "ResetFirmwareMainSession");
+        serial.OnSend = null;
+        Set(window, "_ordinaryQueries", new OrdinaryQueryTracker());
+        Set(window, "_parameterWrite", new ParameterWriteSession(f => (bool)Call(window, "SendFrame", f)!, () => true));
     }
 
     private static void CheckMonitoring(MainWindow window, MainViewModel vm)

@@ -1272,6 +1272,7 @@ namespace FCU_氢燃料电池控
                 if (_pollingTimer == null)
                     return;
 
+                StopStackInfoLinkDiagnosis();
                 // 新轮询会话复位健康监测状态 (含升级路径停表未复位的兜底) [审查修复 B审查建议]
                 _awaitingStackInfo = false;
                 _stackInfoMissCount = 0;
@@ -1320,6 +1321,7 @@ namespace FCU_氢燃料电池控
                 btn_StopPolling.IsEnabled = false;
                 cbx_PollingInterval.IsEnabled = true;
 
+                StopStackInfoLinkDiagnosis();
                 // 轮询健康监测状态复位, 防下次启动时把停止期间的静默误记为未命中
                 _awaitingStackInfo = false;
                 _stackInfoMissCount = 0;
@@ -1359,8 +1361,10 @@ namespace FCU_氢燃料电池控
             _diagProbeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
             _diagProbeTimer.Tick += (s, e) =>
             {
+                if (!ReferenceEquals(s, _diagProbeTimer)) return;
+                bool answered = !_diagProbePending && _diagProbeFunc == 0x87;
                 StopStackInfoLinkDiagnosis();
-                ShowStackInfoDiagnosisResult(!_diagProbePending && _diagProbeFunc == 0x87);
+                ShowStackInfoDiagnosisResult(answered);
             };
             _diagProbeTimer.Start();
         }
@@ -1369,6 +1373,9 @@ namespace FCU_氢燃料电池控
         {
             _diagProbeTimer?.Stop();
             _diagProbeTimer = null;
+            _diagProbePending = false;
+            _diagProbeFunc = 0;
+            // 已发出的查询仍由OrdinaryQueryTracker等待响应/超时，保留迟到隔离。
         }
 
         /// <summary>诊断结论提示: 区分地址不匹配与链路不通, 给出对应处置</summary>

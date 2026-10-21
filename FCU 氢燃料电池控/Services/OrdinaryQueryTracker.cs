@@ -6,7 +6,7 @@ using FCU_氢燃料电池控.Protocol;
 
 namespace FCU_氢燃料电池控.Services
 {
-    /// <summary>跟踪真实发出的0x01/0x07/0x0A查询；RX线程可完成请求，UI线程负责超时和清理。</summary>
+    /// <summary>跟踪真实发出的0x01/0x07/0x0A查询；FrameSent登记请求，UI回调完成响应关联、超时和清理。</summary>
     public sealed class OrdinaryQueryTracker
     {
         private readonly ConcurrentDictionary<(byte Address, byte Function, ushort Id, byte SubIndex), long> _pending = new();
