@@ -119,10 +119,6 @@ namespace FCU_氢燃料电池控
         private int _socStopHigh = 61;
         private int _socStopMin = 60;
 
-        /// <summary>0x0502 lock_coefficient(单位0.001)透传缓存：固件保留字段，控件置灰，
-        /// 写入时按回读值原样回传（初值 900=固件默认，回读时更新，依据 fcu_protocol.h 保留字段注释）</summary>
-        private ushort _lastLockFactor0P001 = 900;
-
         /// <summary>待确认的 0x0504 拉载手动指令名（null=无在途指令）；0x82 响应据此路由到专用处理器</summary>
         private string? _pendingLoadManualCmd;
         private DispatcherTimer? _loadManualResponseTimeoutTimer;
@@ -2191,13 +2187,13 @@ namespace FCU_氢燃料电池控
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
 
-                /* lock_coefficient 为固件保留字段(最大功率锁定不再乘系数, fcu_protocol.h 注释):
-                 * 控件已置灰, 组包按回读缓存透传(初值 900=固件默认), 不再取控件值参与校验 */
-                ushort lockFactor = _lastLockFactor0P001;
-
-                // 下位机 fcu_protocol_set_load_control() 的校验范围，发送前先本地拦截
+                // 下位机 fcu_protocol_set_load_control() 的校验范围，发送前先本地拦截。
+                // 锁定系数 1..1000 (0.001~1.000)：固件已恢复系数参与锁定计算
+                // (feat/restore-load-lock-coefficient, fcu_control.c 最大功率时序设定电流×系数/1000)
                 if (!TryParseScaledRange(tbx_LoadPeakCurrent, "峰值电流",
                         10m, 1, LoadMaxCurrent0P1A, "A", out ushort peakCurrent) ||
+                    !TryParseScaledRange(tbx_LoadLockFactor, "锁定系数",
+                        1000m, 1, 1000, "", out ushort lockFactor) ||
                     !TryParseScaledRange(tbx_LoadMinVoltage, "最低电压",
                         10m, 1, ushort.MaxValue, "V", out ushort minVoltage) ||
                     !TryParseScaledRange(tbx_LoadCurrentStep, "电流步长",
@@ -4448,12 +4444,6 @@ namespace FCU_氢燃料电池控
             {
                 tbx_LoadPeakCurrent.Text = (data.PeakCurrent / 10m).ToString("0.0", CultureInfo.CurrentCulture);
                 tbx_LoadLockFactor.Text = (data.LockFactor / 1000m).ToString("0.000", CultureInfo.CurrentCulture);
-                /* 透传缓存防污染: 固件校验合法域为 1..1000 (fcu_protocol.c 写入校验),
-                 * 畸形回读帧(解析失败给 0)不得进缓存——否则后续 0x0502 整帧被固件拒绝, 四个有效字段也写不进 */
-                if (data.LockFactor >= 1 && data.LockFactor <= 1000)
-                {
-                    _lastLockFactor0P001 = data.LockFactor;   /* 保留字段透传缓存随回读更新 */
-                }
                 chk_LoadLockFlag.IsChecked = data.LockFlag == 1;
                 tbx_LoadMinVoltage.Text = (data.MinVoltage / 10m).ToString("0.0", CultureInfo.CurrentCulture);
                 tbx_LoadCurrentStep.Text = (data.CurrentStep / 10m).ToString("0.0", CultureInfo.CurrentCulture);

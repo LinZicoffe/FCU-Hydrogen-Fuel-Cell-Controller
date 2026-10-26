@@ -1442,12 +1442,12 @@
                                             <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
 
-                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="正常运行系数(保留)" Style="{StaticResource PressureHeaderStyle}"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="正常运行系数" Style="{StaticResource PressureHeaderStyle}"/>
                                         <TextBlock Grid.Row="0" Grid.Column="1" Text="拉载间隔" Style="{StaticResource PressureHeaderStyle}"/>
                                         <TextBlock Grid.Row="0" Grid.Column="2" Text="拉载次数" Style="{StaticResource PressureHeaderStyle}"/>
 
                                         <TextBox Grid.Row="1" Grid.Column="0" Name="tbx_LoadLockFactor" Style="{StaticResource StandardTextBoxStyle}" Text="0.900" Margin="4"
-                                                 IsEnabled="False" ToolTip="固件 V1.2 起最大功率锁定不再乘系数，此字段仅存储回读（保留字段，依据 fcu_protocol.h lock_coefficient 注释）；写入时按回读值/默认 0.900 原样透传"/>
+                                                 ToolTip="锁定系数(0x0502 lock_coefficient，0.001单位，范围0.001~1.000，默认0.900)。锁定电流 = 最大功率时序的设定电流 × 本系数，向下取整到0.1A；需固件 feat/restore-load-lock-coefficient 及之后版本"/>
                                         <Grid Grid.Row="1" Grid.Column="1">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
