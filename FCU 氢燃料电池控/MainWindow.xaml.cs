@@ -133,13 +133,6 @@ namespace FCU_氢燃料电池控
         private DispatcherTimer? _socResponseTimeoutTimer;
         private const int SocResponseTimeoutSeconds = 5;
 
-        // 0x0202 扩展时序写入的 0x82 归属（pending+超时，仿 SOC 模式）。
-        // 0x82 响应数据域仅 1 字节错误码、无参数 ID，多帧连发无法归属——pending 仅由
-        // btn_SetValveTimingParams_Click 登记，消费点在 HandleLoadManualResponse 的
-        // 0x82 回落分支（0x8E 直连 HandleSetParamResponse，不触碰本 pending）。
-        private DateTime? _pendingValveTimingSet;
-        private DispatcherTimer? _valveTimingResponseTimeoutTimer;
-        private const int ValveTimingResponseTimeoutSeconds = 2;
 #if ENABLE_LICENSE_FEATURE
         private readonly LicenseService? _licenseService;
 #endif
@@ -221,7 +214,6 @@ namespace FCU_氢燃料电池控
             // 轮询定时器初始化（保留）
             InitializePollingTimer();
             InitializeSocResponseTimeoutTimer();
-            InitializeValveTimingResponseTimeoutTimer();
             InitializeFanManualResponseTimeoutTimer();
             InitializeLoadManualResponseTimeoutTimer();
 
@@ -231,7 +223,7 @@ namespace FCU_氢燃料电池控
             _bmsService.IsAa55Idle = () => _protocolHandler?.IsIdle ?? true;
             // 总线仲裁第三条件 [审查修复 P1②]: 自身 0x07 在途(已发未收 0x87)期间不插入 Modbus 请求,
             // 否则会与 FCU 的响应发送相撞——"总线静默"只看收, 看不到自己刚发出的请求
-            _bmsService.IsAa55RequestInFlight = () => _awaitingStackInfo || _parameterWrite?.IsBusy == true || _ordinaryQueries?.IsBusy == true;
+            _bmsService.IsAa55RequestInFlight = () => _awaitingStackInfo || _parameterWrite?.IsBusy == true || _ordinaryQueries?.IsBusy == true || ManualControlBusy;
             _bmsService.DataUpdated += OnBmsDataUpdated;
             _bmsService.StatusChanged += msg => Dispatcher.Invoke(() => UpdateStatus(msg));
             _bmsService.ErrorOccurred += msg => Dispatcher.Invoke(() => { HC.Growl.Warning(msg); UpdateStatus(msg); });
@@ -243,6 +235,8 @@ namespace FCU_氢燃料电池控
             // 升级期间拦截 ParameterManager 的 AA55 发送 (MVVM 命令 CanExecute 只查 IsConnected 拦不住)
             _viewModel.ParameterManager.SendBlocked = () => _blUpgradeMode || _upgradePrecheckMode;
             InitializeFirmwareMain();
+            _recipeService = new RecipeService();
+            LoadRecipeList();
 
             // 图表初始化（保留）
             InitializePowerChart();
@@ -722,8 +716,6 @@ namespace FCU_氢燃料电池控
                 StopFanManualResponseTimeout();
                 _pendingLoadManualCmd = null;
                 StopLoadManualResponseTimeout();
-                _pendingValveTimingSet = null;
-                StopValveTimingResponseTimeout();
                 if (!_socWriteReadbackPending)
                 {
                     bool hadUnconfirmedSocWrite = _pendingSocWrite != null;
@@ -813,40 +805,6 @@ namespace FCU_氢燃料电池控
         }
 
         /// <summary>
-        /// 0x0202 扩展时序写入响应超时计时器：响应到达（0x82 回落分支消费）即停表；
-        /// 超时说明固件未回包（旧固件对 27B 的 0x03 帧静默丢弃）或线路异常。
-        /// </summary>
-        private void InitializeValveTimingResponseTimeoutTimer()
-        {
-            _valveTimingResponseTimeoutTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(ValveTimingResponseTimeoutSeconds)
-            };
-            _valveTimingResponseTimeoutTimer.Tick += (s, e) =>
-            {
-                _valveTimingResponseTimeoutTimer?.Stop();
-                if (_pendingValveTimingSet == null)
-                {
-                    return;
-                }
-                _pendingValveTimingSet = null;
-                UpdateStatus("扩展时序(0x0202)写入超时");
-                HC.Growl.Warning("2s 未收到设置响应——固件可能不支持 0x0202（需包含0x0202扩展的固件，最新main已包含）或线路异常");
-            };
-        }
-
-        private void RestartValveTimingResponseTimeout()
-        {
-            _valveTimingResponseTimeoutTimer?.Stop();
-            _valveTimingResponseTimeoutTimer?.Start();
-        }
-
-        private void StopValveTimingResponseTimeout()
-        {
-            _valveTimingResponseTimeoutTimer?.Stop();
-        }
-
-        /// <summary>
         /// 0x8F 风扇手动控制单次超时计时器；响应到达、断线或窗口关闭时立即停止。
         /// </summary>
         private void InitializeFanManualResponseTimeoutTimer()
@@ -878,7 +836,7 @@ namespace FCU_氢燃料电池控
                 return;
             }
 
-            _pendingFanManualEnable = null;
+            EndManualControlUnknown();
             tbk_FanManualMode.Text = "未收到FCU确认（固件可能不支持0x0F或链路异常），当前风扇模式未知";
             tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
             UpdateStatus("风扇手动控制响应超时");
@@ -917,7 +875,7 @@ namespace FCU_氢燃料电池控
             }
 
             string cmd = _pendingLoadManualCmd;
-            _pendingLoadManualCmd = null;
+            EndManualControlUnknown();
             UpdateStatus($"拉载指令[{cmd}]响应超时");
             HC.Growl.Warning($"拉载指令[{cmd}] {LoadManualResponseTimeoutSeconds} 秒内未收到FCU确认，执行结果未知（请检查链路或查看设备状态）");
         }
@@ -1173,6 +1131,7 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void PollingTimer_Tick(object? sender, EventArgs e)
         {
+            if (ManualControlBusy) return;
             if (_bmsCache?.Waiting == true || _standbyPeriod?.IsBusy == true || _currentCalibration?.IsBusy == true ||
                 _parameterWrite?.IsBusy == true || _bmsBusExchangeInProgress || _bmsReturnInFlight) return;
             try
@@ -1646,11 +1605,12 @@ namespace FCU_氢燃料电池控
                 return;
             }
 
+            if (!CanStartManualControl()) return;
             byte wireDuty = enable ? duty : (byte)0;
             _pendingFanManualEnable = enable;
             _pendingFanManualDuty = wireDuty;
 
-            if (!SendFrame(ProtocolHandler.BuildRequestFrame(deviceAddress,
+            if (!SendManualControlFrame(ProtocolHandler.BuildRequestFrame(deviceAddress,
                     ProtocolConstants.FUNC_SET_FAN_MANUAL,
                     new[] { enable ? (byte)1 : (byte)0, wireDuty })))
             {
@@ -1698,36 +1658,17 @@ namespace FCU_氢燃料电池控
         /// 写入扩展时序（0x03+0x0202，固件 codex/configurable-valve-timing 分支）。
         /// 固件仅电堆 OFF 态接受（否则 0x82 回 0x03，自动启动竞争下可直接重试）；
         /// 九项须非 0 且排水领启 &lt; 氢阀领启（否则 0x02）。
-        /// 0x82 无参数 ID，写入后登记 pending 供回落分支归属（见 HandleLoadManualResponse）。
+        /// 共享普通参数事务独占0x82，并在写入后回读九项时序。
         /// </summary>
         private void btn_SetValveTimingParams_Click(object sender, RoutedEventArgs e)
         {
-            if (_pendingValveTimingSet.HasValue &&
-                (DateTime.Now - _pendingValveTimingSet.Value).TotalSeconds <= ValveTimingResponseTimeoutSeconds)
-            {
-                HC.Growl.Warning("上一条扩展时序指令尚在等待响应，请稍候");
-                return;
-            }
-
-            if (_pendingLoadManualCmd != null)
-            {
-                HC.Growl.Warning("拉载手动指令在途，0x82 响应无法区分归属，请稍候再写入扩展时序");
-                return;
-            }
-
             if (!ConfirmValveTimingBudgetIfOverrun())
             {
                 return;
             }
 
-            bool sent = SetParameter("扩展时序参数(0x0202)", ProtocolConstants.FUNC_SET_VALVE_PARAMS,
+            SetParameter("扩展时序参数(0x0202)", ProtocolConstants.FUNC_SET_VALVE_PARAMS,
                 BuildValveTimingDataFromUi);
-            if (sent)
-            {
-                _pendingValveTimingSet = DateTime.Now;
-                RestartValveTimingResponseTimeout();
-            }
-            /* 发送/组包失败（false）：SetParameter 已弹错，不登记 pending、不启表（仿 SOC 失败回滚） */
         }
 
         /// <summary>
@@ -1875,30 +1816,6 @@ namespace FCU_氢燃料电池控
             finally
             {
                 _updatingShutdownTotal = false;
-            }
-        }
-
-        /// <summary>0x0202 写入结果专属文案（0x82 回落分支按 pending 归属调用）。</summary>
-        private void ShowValveTimingSetResult(byte result)
-        {
-            switch (result)
-            {
-                case ProtocolConstants.ERR_SUCCESS:
-                    UpdateStatus("扩展时序(0x0202)参数设置成功");
-                    HC.Growl.Success("扩展时序(0x0202)写入成功（已固化到FCU），可点击「读取FCU参数」核对回填");
-                    break;
-                case ProtocolConstants.ERR_DEVICE_BUSY:
-                    UpdateStatus("扩展时序(0x0202)写入被拒：设备忙");
-                    HC.Growl.Error("扩展时序(0x0202)写入被拒（0x03 设备忙）：需停机到关机状态后写入；电堆可能被自动启动抢占，可直接重试");
-                    break;
-                case ProtocolConstants.ERR_SAVE_FAILED:
-                    UpdateStatus("扩展时序(0x0202)写入失败：Flash 保存失败");
-                    HC.Growl.Error("扩展时序(0x0202)写入失败（0x09）：固件已回滚内存值；请重启 FCU 后读取全部参数核对，若读回默认值则参数页已损坏需重新配置");
-                    break;
-                default:
-                    UpdateStatus($"扩展时序(0x0202)设置失败: {ProtocolConstants.GetErrorCodeDescription(result)}");
-                    HC.Growl.Error($"扩展时序(0x0202)设置失败：{ProtocolConstants.GetErrorCodeDescription(result)}");
-                    break;
             }
         }
 
@@ -2627,11 +2544,7 @@ namespace FCU_氢燃料电池控
                     return false;
                 }
 
-                if (_pendingLoadManualCmd != null)
-                {
-                    HC.Growl.Warning($"拉载指令[{_pendingLoadManualCmd}]仍在等待FCU响应，请稍候再发下一条");
-                    return false;
-                }
+                if (!CanStartManualControl()) return false;
 
                 byte deviceAddress = byte.Parse(GetDeviceAddress());
 
@@ -2647,7 +2560,7 @@ namespace FCU_氢燃料电池控
 
                 _pendingLoadManualCmd = GetLoadCommandDescription(commandCode);
                 StartLoadManualResponseTimeout();
-                if (!SendFrame(frame))
+                if (!SendManualControlFrame(frame))
                 {
                     /* 串口写失败: 立即回滚 pending, 不让互斥窗口空挂 5s (终审 R1) */
                     _pendingLoadManualCmd = null;
@@ -2682,48 +2595,21 @@ namespace FCU_氢燃料电池控
 
         /// <summary>
         /// 处理 0x0504 拉载手动控制的 0x82 响应（pending+超时模式）。
-        /// 固件 0x0504 新语义（beforepined@51bf7e2 fcu_protocol.c:981-1030）：
-        /// 仅 RUNNING 状态接受（STARTING 拒 0x03），八条命令返回真实错误码——弹窗级反馈呈现。
-        /// 无在途 0x0504 指令时回落通用 HandleSetParamResponse（0x82 还承载 0x0501/0x0502/0x0503 的设置结果）。
+        /// 仅RUNNING接受；只消费当前目标、当前请求的应答，其他0x82由参数事务处理。
         /// </summary>
-        private void HandleLoadManualResponse(byte[] frame)
+        private void HandleLoadManualResponse(byte[] frame, ManualControlRequest? request)
         {
-            if (_pendingLoadManualCmd == null)
-            {
-                /* 0x0202 扩展时序的 0x82 归属（pending+2s 新鲜度，RX 线程快照/编组内清除，仿拉载模式）。
-                 * 仅此回落分支消费；0x8E 直连 HandleSetParamResponse，不触碰本 pending。
-                 * 2s 内其他 0x82 写的响应先到会冒用 pending（已披露残余风险）；超龄（计时器 Tick 未及触发的
-                 * 竞态窗口）则清除 pending 并静默忽略本迟到响应——超时 Growl 已由计时器兜底。
-                 * 结构注：0x82 泛化处理与 0x0202 pending 消费都以本回落分支为唯一入口。 */
-                DateTime? valveTimingPending = _pendingValveTimingSet;
-                if (valveTimingPending.HasValue)
-                {
-                    byte valveTimingResult = ResponseParser.ParseSetParamResponse(frame);
-                    bool valveTimingFresh =
-                        (DateTime.Now - valveTimingPending.Value).TotalSeconds <= ValveTimingResponseTimeoutSeconds;
-                    MarshalRxToUi(() =>
-                    {
-                        _pendingValveTimingSet = null;
-                        StopValveTimingResponseTimeout();
-                        if (valveTimingFresh)
-                        {
-                            ShowValveTimingSetResult(valveTimingResult);
-                        }
-                    });
-                    return;
-                }
-                HandleSetParamResponse(frame);
-                return;
-            }
+            if (request?.LoadCommand == null) return;
 
             byte result = ResponseParser.ParseSetParamResponse(frame);
-            /* 在接收线程快照 pending（改进自风扇模式）：防 5s 边界处 Tick 先清 pending、
-             * 编组回调内读到 null 产生"拉载指令[]已执行"空名 Growl */
-            string cmd = _pendingLoadManualCmd;
+            string cmd = request.LoadCommand;
             MarshalRxToUi(() =>
             {
+                if (_pendingLoadManualCmd == null ||
+                    !IsCurrentManualResponse(frame, 0x82, request)) return;
                 StopLoadManualResponseTimeout();
                 _pendingLoadManualCmd = null;
+                _manualControlRequest = null;
 
                 if (result == ProtocolConstants.ERR_SUCCESS)
                 {
@@ -2890,13 +2776,7 @@ namespace FCU_氢燃料电池控
                     return false;
 
                 byte[] data = dataBuilder();
-                // 0x0202 保留现有专用确认/预览事务；其余普通参数统一写后回读。
-                if (!(functionCode == 0x03 && data.Length >= 2 && data[0] == 2 && data[1] == 2))
-                    return BeginParameterWrite(functionCode, data, parameterName);
-                byte[] frame = BuildFrame(deviceAddress, functionCode, data);
-                if (!SendFrame(frame)) return RejectParameterWrite($"{parameterName}发送失败，设备未确认；请稍后重试");
-                UpdateStatus($"已发送设置{parameterName}命令");
-                return true;
+                return BeginParameterWrite(functionCode, data, parameterName);
             }
             catch (Exception ex)
             {
@@ -3138,6 +3018,9 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void OnFrameReceived(byte[] frame)
         {
+            // 在接收入口固定请求归属，后续日志/事件或UI切换不能重新标记旧ACK。
+            var manualRequest = _manualControlRequest;
+            int responseEpoch = _monitoringEpoch;
             AppendCommunicationFrame(CommunicationDirection.Rx, frame);
 
             // 广播给固件升级页 (S1 前置检查读 0x87 / S8 存活确认等 0x81) [BL设计 §4.2]
@@ -3158,6 +3041,13 @@ namespace FCU_氢燃料电池控
             try
             {
                 functionCode = ResponseParser.GetFunctionCode(frame);
+                if (manualRequest != null && (functionCode == 0x8F && manualRequest.FanEnable.HasValue ||
+                    functionCode == 0x82 && manualRequest.LoadCommand != null))
+                {
+                    if (functionCode == 0x8F) HandleFanManualResponse(frame, manualRequest);
+                    else HandleLoadManualResponse(frame, manualRequest);
+                    return;
+                }
                 if ((_currentCalibration?.IsBusy == true && functionCode == 0x82) ||
                     (functionCode == 0x8A && frame.Length >= 10 && frame[5] == 3 && frame[6] == 2))
                 {
@@ -3193,7 +3083,7 @@ namespace FCU_氢燃料电池控
                         break;
 
                     case 0x82: // FCU参数设置响应(0x04 类统一响应码; 有在途 0x0504 指令时走专用处理器)
-                        HandleLoadManualResponse(frame);
+                        HandleLoadManualResponse(frame, manualRequest);
                         break;
 
                     case 0x87: // FCU电堆信息响应
@@ -3201,11 +3091,11 @@ namespace FCU_氢燃料电池控
                         break;
 
                     case 0x88: // 启动响应
-                        HandleStartResponse(frame);
+                        HandleStartResponse(frame, responseEpoch);
                         break;
 
                     case 0x89: // 关闭响应
-                        HandleStopResponse(frame);
+                        HandleStopResponse(frame, responseEpoch);
                         break;
 
                     case 0x8A: // 配置参数响应
@@ -3213,7 +3103,7 @@ namespace FCU_氢燃料电池控
                         break;
 
                     case 0x8C: // 修改设备地址响应
-                        HandleSetDeviceAddressResponse(frame);
+                        HandleSetDeviceAddressResponse(frame, responseEpoch);
                         break;
 
                     case ProtocolConstants.RESP_BMS_POLL: // BMS轮询使能响应 [SOC计划 §4.6]
@@ -3221,11 +3111,11 @@ namespace FCU_氢燃料电池控
                         break;
 
                     case ProtocolConstants.RESP_FLOW_PARAMS: // 工作流程参数设置响应(1B结果码)
-                        HandleSetParamResponse(frame);
+                        HandleSetParamResponse(frame, responseEpoch);
                         break;
 
                     case ProtocolConstants.RESP_FAN_MANUAL: // 风扇手动运行控制响应(1B结果码)
-                        HandleFanManualResponse(frame);
+                        HandleFanManualResponse(frame, manualRequest);
                         break;
 
                     case ProtocolConstants.RESP_SOC_PARAMS: // BMS/SOC参数设置响应(1B结果码)
@@ -3242,11 +3132,11 @@ namespace FCU_氢燃料电池控
                         break;
 
                     case 0xF0: // 报警信息上报
-                        HandleAlarmReport(frame);
+                        HandleAlarmReport(frame, responseEpoch);
                         break;
 
                     case 0xF1: // 状态变更上报
-                        HandleStateChangeReport(frame);
+                        HandleStateChangeReport(frame, responseEpoch);
                         break;
 
                     case 0xF2: // 拉载状态上报
@@ -3342,10 +3232,10 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 处理参数设置响应
         /// </summary>
-        private void HandleSetParamResponse(byte[] frame)
+        private void HandleSetParamResponse(byte[] frame, int epoch)
         {
             byte result = ResponseParser.ParseSetParamResponse(frame);
-            MarshalRxToUi(() =>
+            MarshalCurrentTargetResponse(frame, frame[3], 1, epoch, () =>
             {
                 if (result == 0x00)
                 {
@@ -3438,26 +3328,23 @@ namespace FCU_氢燃料电池控
         /// 处理风扇手动运行控制响应（0x8F，数据域1B结果码）。
         /// 只有FCU确认成功后才把界面状态切换为手动或自动。
         /// </summary>
-        private void HandleFanManualResponse(byte[] frame)
+        private void HandleFanManualResponse(byte[] frame, ManualControlRequest? request)
         {
+            if (request?.FanEnable == null) return;
             byte result = ResponseParser.ParseFanManualResponse(frame);
+            bool requestedEnable = request.FanEnable.Value;
+            byte requestedDuty = request.FanDuty;
 
             MarshalRxToUi(() =>
             {
-                // 与 SOC 超时处理器同款：计时器停止与 pending 清理统一编组到 UI 线程
+                if (!_pendingFanManualEnable.HasValue ||
+                    !IsCurrentManualResponse(frame, 0x8F, request)) return;
                 StopFanManualResponseTimeout();
-                bool? requestedEnable = _pendingFanManualEnable;
-                byte requestedDuty = _pendingFanManualDuty;
                 _pendingFanManualEnable = null;
+                _manualControlRequest = null;
                 if (result == ProtocolConstants.ERR_SUCCESS)
                 {
-                    if (requestedEnable == null)
-                    {
-                        tbk_FanManualMode.Text = "FCU已确认控制（当前模式无回读）";
-                        tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0x61, 0x61, 0x61));
-                        UpdateStatus("风扇运行控制成功，但未找到对应的待确认请求");
-                    }
-                    else if (requestedEnable == true)
+                    if (requestedEnable)
                     {
                         tbk_FanManualMode.Text = $"已确认手动请求：{requestedDuty}%（FCU重启或超温保护会自动恢复温控）";
                         tbk_FanManualMode.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x6C, 0x00));
@@ -3484,14 +3371,14 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 处理启动响应
         /// </summary>
-        private void HandleStartResponse(byte[] frame)
+        private void HandleStartResponse(byte[] frame, int epoch)
         {
             byte result = ResponseParser.ParseControlResponse(frame);
-            MarshalRxToUi(() =>
+            MarshalCurrentTargetResponse(frame, 0x88, 1, epoch, () =>
             {
                 string message = result switch
                 {
-                    0x00 => "电堆启动成功",
+                    0x00 => "启动请求已接受，正在启动；请以电堆状态为准",
                     0x01 => "启动失败：高压压力低于高压最小值",
                     0x02 => "启动失败：设备忙（非关机态）",
                     // 下位机 fcu_control_check_start_conditions() 有三条路径都返回 0x03，
@@ -3523,14 +3410,14 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 处理关闭响应
         /// </summary>
-        private void HandleStopResponse(byte[] frame)
+        private void HandleStopResponse(byte[] frame, int epoch)
         {
             byte result = ResponseParser.ParseControlResponse(frame);
-            MarshalRxToUi(() =>
+            MarshalCurrentTargetResponse(frame, 0x89, 1, epoch, () =>
             {
                 if (result == 0x00)
                 {
-                    UpdateStatus("电堆关闭成功");
+                    UpdateStatus("关闭请求已接受，请等待电堆状态变为关机");
                 }
                 else
                 {
@@ -3542,10 +3429,10 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 处理修改设备地址响应 (功能码0x8C)
         /// </summary>
-        private void HandleSetDeviceAddressResponse(byte[] frame)
+        private void HandleSetDeviceAddressResponse(byte[] frame, int epoch)
         {
             byte result = ResponseParser.ParseControlResponse(frame);
-            MarshalRxToUi(() =>
+            MarshalCurrentTargetResponse(frame, 0x8C, 1, epoch, () =>
             {
                 if (result == 0x00)
                 {
@@ -4008,10 +3895,10 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 处理报警信息上报
         /// </summary>
-        private void HandleAlarmReport(byte[] frame)
+        private void HandleAlarmReport(byte[] frame, int epoch)
         {
             AlarmData alarm = ResponseParser.ParseAlarmInfo(frame);
-            MarshalRxToUi(() =>
+            MarshalCurrentTargetResponse(frame, 0xF0, 5, epoch, () =>
             {
                 ShowAlarmMessage(alarm);
             });
@@ -4020,10 +3907,10 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 处理状态变更上报
         /// </summary>
-        private void HandleStateChangeReport(byte[] frame)
+        private void HandleStateChangeReport(byte[] frame, int epoch)
         {
             StateChangeData stateChange = ResponseParser.ParseStateChange(frame);
-            MarshalRxToUi(() =>
+            MarshalCurrentTargetResponse(frame, 0xF1, 4, epoch, () =>
             {
                 ShowStateChange(stateChange);
             });
@@ -5149,9 +5036,14 @@ namespace FCU_氢燃料电池控
                     {
                         // 将当前编辑区的值填入新配方
                         var (currents, times) = ReadRecipeTextBoxes();
-                        _recipeService.SaveRecipe(recipe.Id, currents, times);
+                        var (saved, saveMessage) = _recipeService.SaveRecipe(recipe.Id, currents, times);
                         LoadRecipeList();
                         lbx_RecipeList.SelectedItem = recipe;
+                        if (!saved)
+                        {
+                            HC.Growl.Warning($"配方已创建，但编辑参数未保存：{saveMessage}");
+                            return;
+                        }
                         HC.Growl.Success("配方创建成功");
                     }
                     else
@@ -5607,11 +5499,12 @@ namespace FCU_氢燃料电池控
                 return _owner.Dispatcher.Invoke(() =>
                 {
                     if (!_owner._isSerialOpen || _owner._standbyPeriod?.IsBusy == true || _owner._currentCalibration?.IsBusy == true ||
+                        _owner._standbyPeriod?.MayHaveLateAck == true || _owner._currentCalibration?.MayHaveLateAck == true ||
                         _owner._bmsCache?.Waiting == true || _owner._awaitingStackInfo || _owner._bmsService?.IsBusy == true ||
                         _owner._parameterWrite?.IsBusy == true || _owner._parameterWrite?.MayHaveLateAck == true ||
                         _owner._ordinaryQueries?.IsBusy == true || _owner._ordinaryQueries?.MayHaveLateReply == true ||
                         _owner._bmsBusExchangeInProgress || _owner._bmsReturnInFlight ||
-                        _owner._pendingLoadManualCmd != null || _owner._pendingValveTimingSet.HasValue ||
+                        _owner.ManualControlBusy || _owner.ManualControlQuiet ||
                         _owner._pendingSocWrite != null || _owner._pendingSocReadDeviceAddress.HasValue ||
                         _owner._pendingSecondMosWrite != null || _owner._diagProbePending || _owner._pendingFanManualEnable.HasValue ||
                         Environment.TickCount64 - _owner._lastSharedSetAt < 3000) return false;
