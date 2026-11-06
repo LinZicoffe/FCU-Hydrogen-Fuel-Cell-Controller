@@ -36,7 +36,11 @@ namespace FCU_氢燃料电池控
             _bmsCache = new BmsCacheSession(SendFrame);
             _standbyPeriod = new StandbyPeriodSession(SendFrame);
             _currentCalibration = new CurrentCalibrationSession(SendFrame);
-            _viewModel!.GetSerialPortManager().SendBlocked = frame => _standbyPeriod.Blocks(frame) || _currentCalibration.Blocks(frame);
+            _parameterWrite = new ParameterWriteSession(SendFrame, CanSendParameterWrite);
+            _ordinaryQueries = new OrdinaryQueryTracker();
+            _viewModel!.ParameterManager.ParameterWriter = BeginParameterWrite;
+            _viewModel.GetSerialPortManager().SendBlocked = frame => _standbyPeriod.Blocks(frame) ||
+                _currentCalibration.Blocks(frame) || _parameterWrite.Blocks(frame) || _ordinaryQueries.Blocks(frame);
             _firmwareMainTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             _firmwareMainTimer.Tick += (_, _) =>
             {
@@ -45,6 +49,10 @@ namespace FCU_氢燃料电池控
                 RenderStandbyPeriod();
                 _currentCalibration.Tick();
                 RenderCurrentCalibration();
+                RenderMonitoringStatus();
+                TickOrdinaryQueries();
+                _parameterWrite.Tick();
+                RenderParameterWrite();
                 if (!DirectBmsMode)
                 {
                     if (_cacheAutoRefresh && Environment.TickCount64 >= _nextCacheRead && CanReadBmsCache())
@@ -60,7 +68,8 @@ namespace FCU_氢燃料电池控
 
         private bool CanReadBmsCache() => _isSerialOpen && !_blUpgradeMode && !FirmwareUpgradeView.IsBusy &&
             !DirectBmsMode && !_bmsBusExchangeInProgress && !_bmsReturnInFlight && !_awaitingStackInfo &&
-            _bmsService?.IsBusy != true && _bmsCache?.Waiting != true && _standbyPeriod?.IsBusy != true && _currentCalibration?.IsBusy != true;
+            _bmsService?.IsBusy != true && _bmsCache?.Waiting != true && _standbyPeriod?.IsBusy != true &&
+            _currentCalibration?.IsBusy != true && _parameterWrite?.IsBusy != true && _ordinaryQueries?.IsBusy != true;
 
         private void RequestBmsCache()
         {
@@ -84,6 +93,10 @@ namespace FCU_氢燃料电池控
 
         private void ResetFirmwareMainSession()
         {
+            ResetMonitoring();
+            _ordinaryQueries?.Reset();
+            _parameterWrite?.Reset();
+            RenderParameterWrite();
             // 标定区与系统监控共用输入电流，连接/目标改变后等待新设备读数。
             if (_viewModel != null) _viewModel.DCDCInputCurrent = "--";
             _cacheAutoRefresh = false;
@@ -109,7 +122,9 @@ namespace FCU_氢燃料电池控
         {
             if (!_isSerialOpen || _blUpgradeMode || FirmwareUpgradeView.IsBusy)
             { ReportStandbyError("请先连接FCU并等待固件升级操作结束"); return; }
-            if (_standbyPeriod == null || _standbyPeriod.IsBusy || _currentCalibration?.IsBusy == true || _bmsCache?.Waiting == true || _awaitingStackInfo ||
+            if (_standbyPeriod == null || _standbyPeriod.IsBusy || _currentCalibration?.IsBusy == true ||
+                _parameterWrite?.IsBusy == true || _parameterWrite?.MayHaveLateAck == true || _bmsCache?.Waiting == true || _awaitingStackInfo ||
+                _ordinaryQueries?.IsBusy == true || _ordinaryQueries?.MayHaveLateReply == true ||
                 _bmsService?.IsBusy == true || _bmsBusExchangeInProgress || _bmsReturnInFlight ||
                 _pendingLoadManualCmd != null || _pendingValveTimingSet.HasValue || _pendingSocWrite != null ||
                 _pendingSocReadDeviceAddress.HasValue || _pendingFanManualEnable.HasValue || _pendingSecondMosWrite != null ||

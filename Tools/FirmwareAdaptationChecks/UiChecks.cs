@@ -1,4 +1,4 @@
-using System.IO.Ports;
+﻿using System.IO.Ports;
 using System.Reflection;
 using System.IO;
 using System.Windows;
@@ -18,9 +18,11 @@ internal static class UiChecks
     {
         public readonly List<byte[]> Sent = new();
         public Action<byte[]>? OnSend;
+        public bool FailSend;
         public override bool SendData(byte[] frame)
         {
             if (SendBlocked?.Invoke(frame) == true) return false;
+            if (FailSend) return false;
             Sent.Add(frame);
             OnSend?.Invoke(frame);
             return true;
@@ -112,7 +114,9 @@ internal static class UiChecks
             Program.Check(serial.Sent.All(f => f[3] != 0x0D), "cache connection and normal close do not write Flash");
             var standby = (StandbyPeriodSession)Get(window, "_standbyPeriod")!;
             var calibration = (CurrentCalibrationSession)Get(window, "_currentCalibration")!;
-            serial.SendBlocked = f => standby.Blocks(f) || calibration.Blocks(f);
+            var parameterWrite = (ParameterWriteSession)Get(window, "_parameterWrite")!;
+            serial.SendBlocked = f => standby.Blocks(f) || calibration.Blocks(f) || parameterWrite.Blocks(f) ||
+                ((OrdinaryQueryTracker)Get(window, "_ordinaryQueries")!).Blocks(f);
             var input = (TextBox)window.FindName("tbx_StandbyPeriod");
             var write = (Button)window.FindName("btn_WriteStandbyPeriod");
             foreach (string invalid in new[] { "0", "65536", "1.5", "-1", "abc" })
@@ -284,6 +288,11 @@ internal static class UiChecks
             Program.Check(!calibration.IsBusy && kInput.IsEnabled, "0302 common mode/upgrade reset releases UI");
             // 默认显示回归，呈现时不把示例系数当已保存默认值。
             kInput.Text = "1"; bInput.Text = "0";
+            CheckParameterWrites(window, vm, serial);
+            CheckPressureFields(window, vm, serial);
+            CheckPollingTimeoutHealth(window, vm, serial);
+            CheckProbeRecovery(window, vm, serial);
+            CheckMonitoring(window, vm);
             if (renderDirectory != null) RenderPages(window, renderDirectory);
         }
         finally
@@ -333,6 +342,357 @@ internal static class UiChecks
         vm.DeviceAddress = "2";
     }
 
+    private static void CheckParameterWrites(MainWindow window, MainViewModel vm, FakeSerial serial)
+    {
+        void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        void Receive(byte function, byte[] data)
+        {
+            Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, function, data)); Pump();
+        }
+        var session = (ParameterWriteSession)Get(window, "_parameterWrite")!;
+        var status = (TextBlock)window.FindName("tbk_ParameterWriteStatus");
+        Set(window, "_isSerialOpen", true); vm.IsConnected = true; vm.DeviceAddress = "2";
+        Set(window, "_lastSharedSetAt", -3001L); Set(window, "_lastParameterReadAt", -3001L);
+        Set(window, "_awaitingStackInfo", false); serial.OnSend = null;
+        // 底层发送返回false：真实时序按钮不再声称已发送。
+        for (int i = 1; i <= 15; i++)
+        {
+            ((TextBox)window.FindName($"tbx_Seq{i}_Current")).Text = i == 15 ? "" : "5";
+            ((TextBox)window.FindName($"tbx_Seq{i}_Time")).Text = i == 15 ? "" : "0.50";
+        }
+        serial.FailSend = true; int before = serial.Sent.Count;
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Program.Check(!session.IsBusy && !session.Verified && serial.Sent.Count == before && status.Text.Contains("发送失败"),
+            "actual sequence button reports transport false without sent/success claim");
+        serial.FailSend = false;
+        // 用可控时钟的新会话避免真实等待3秒的迟到ACK保护窗口。
+        long now = 10000;
+        session = new ParameterWriteSession(f => (bool)Call(window, "SendFrame", f)!,
+            () => (bool)Call(window, "CanSendParameterWrite")!, () => now);
+        Set(window, "_parameterWrite", session);
+        serial.SendBlocked = f => ((StandbyPeriodSession)Get(window, "_standbyPeriod")!).Blocks(f) ||
+            ((CurrentCalibrationSession)Get(window, "_currentCalibration")!).Blocks(f) || session.Blocks(f) ||
+            ((OrdinaryQueryTracker)Get(window, "_ordinaryQueries")!).Blocks(f);
+        Set(window, "_awaitingStackInfo", true); before = serial.Sent.Count;
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Program.Check(session.IsBusy && serial.Sent.Count == before && status.Text.Contains("尚未发送"),
+            "actual button queues behind existing monitoring request");
+        Call(window, "PollingTimer_Tick", window, EventArgs.Empty);
+        Call(window, "RequestBmsCache");
+        Program.Check(serial.Sent.Count == before && !(bool)Call(window, "SendFrame", ProtocolHandler.BuildRequestFrame(2, 10, new byte[] { 5, 1, 0 }))!,
+            "ordinary write suppresses monitoring/cache/manual reads while draining");
+        Receive(0x87, new byte[26]); session.Tick(); Call(window, "RenderParameterWrite");
+        Program.Check(serial.Sent.Count == before + 1 && serial.Sent[^1][3] == 4 &&
+            !((GroupBox)window.FindName("grp_LoadSequences")).IsEnabled,
+            "drained telemetry allows a single write and freezes submitted input group");
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Program.Check(serial.Sent.Count == before + 1, "repeat click cannot insert second write before ACK");
+        Program.Check((bool)Call(window, "SendFrame", ProtocolHandler.BuildRequestFrame(2, 9, Array.Empty<byte>()))! &&
+            (bool)Call(window, "SendFrame", ProtocolHandler.BuildRequestFrame(2, 13, new byte[] { 1 }))!,
+            "real transport lease preserves stack stop and BMS return");
+        Receive(0x82, new byte[] { 9 });
+        string failed = status.Text;
+        Receive(0x87, new byte[26]); Receive(0xF2, new byte[14]); Call(window, "RenderParameterWrite");
+        Program.Check(!session.IsBusy && !session.Verified && failed.Contains("存储失败") && status.Text == failed &&
+            ((GroupBox)window.FindName("grp_LoadSequences")).IsEnabled,
+            "save failure persists through both monitoring streams and releases group");
+        // 回读出厂默认值而非5A，不得覆盖用户输入或提示保存成功。
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Receive(0x82, new byte[] { 0 });
+        Program.Check(session.IsBusy && !session.Verified && serial.Sent[^1][3] == 10, "actual ACK route reads table before success");
+        byte[] defaults = new byte[3 + 14 * 4]; defaults[0] = 5; defaults[1] = 1;
+        for (int i = 0; i < 14; i++) { defaults[3 + i * 4 + 1] = 10; defaults[3 + i * 4 + 3] = 50; }
+        Receive(0x8A, defaults);
+        Program.Check(!session.Verified && status.Text.Contains("不一致") && ((TextBox)window.FindName("tbx_Seq1_Current")).Text == "5",
+            "default readback cannot masquerade as successful write or overwrite edits");
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs()); Receive(0x82, new byte[] { 0 });
+        for (int i = 0; i < 14; i++) defaults[3 + i * 4 + 1] = 50;
+        Receive(0x8A, defaults);
+        Program.Check(session.Verified && status.Text.Contains("回读一致"), "second complete sequence write can verify successfully");
+        // 压力MVVM/ParameterManager同样走事务，不依赖真实打开的串口对象。
+        vm.HighPressureMin = "100"; vm.HighPressureRed = "250"; vm.HighPressureYellow = "500"; vm.HighPressureMax = "5000";
+        vm.LowPressureMin = "20"; vm.LowPressureMax = "100"; vm.HighPressureRange = "5000"; vm.LowPressureRange = "250";
+        vm.WritePressureParamsCommand.Execute(null);
+        Program.Check(session.IsBusy && serial.Sent[^1][3] == 2, "pressure VM command uses common write session");
+        Receive(0x82, new byte[] { 0 }); Receive(0x8A, Convert.FromHexString("010100006400FA01F4138800140064138800FA"));
+        Program.Check(session.Verified && (bool)Get(window, "_pressureParamsLoadedFromDevice")!, "pressure verified readback satisfies initial-load gate");
+        // 旧会话已入站但尚未执行的ACK不能推进新的写入。
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x82, new byte[] { 0 }));
+        session.Reset(); now += 3000;
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs()); before = serial.Sent.Count; Pump();
+        Program.Check(session.IsBusy && serial.Sent.Count == before && !session.Verified,
+            "queued previous write ACK cannot request readback for new epoch");
+        now += 3000; session.Tick(); Call(window, "RenderParameterWrite");
+        Program.Check(!session.IsBusy && status.Text.Contains("超时"), "actual integration exposes missing ACK timeout");
+        now += 3000;
+        session.Reset();
+        Set(window, "_lastSharedSetAt", -3001L); Set(window, "_lastParameterReadAt", -3001L);
+        serial.OnSend = f => Call(window, "OnFrameSent", f); // 与真实 SerialPortManager.FrameSent 的统一接线相同。
+        Call(window, "SendFrame", ProtocolHandler.BuildRequestFrame(2, 7, Array.Empty<byte>()));
+        before = serial.Sent.Count;
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Program.Check(session.IsBusy && (bool)Get(window, "_awaitingStackInfo")! && serial.Sent.Count == before,
+            "manual07 observed at real send event prevents immediate parameter write");
+        Receive(0x87, new byte[26]); session.Tick();
+        Receive(0x82, new byte[] { 2 });
+        Set(window, "_lastSharedSetAt", -3001L); Set(window, "_lastParameterReadAt", -3001L);
+        Call(window, "SendReadConfigCommand", (byte)2, (byte)5, (byte)1, (byte)0);
+        before = serial.Sent.Count;
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        System.Threading.Thread.Sleep(400); session.Tick();
+        Program.Check(session.IsBusy && serial.Sent.Count == before, "unanswered0A longer than350ms still prevents write");
+        Receive(0x8A, defaults); session.Tick();
+        Program.Check(session.IsBusy && !session.Verified && serial.Sent.Count == before + 1 && serial.Sent[^1][3] == 4,
+            "old config response must drain before write and cannot verify new parameters");
+        Receive(0x82, new byte[] { 0 }); Receive(0x8A, defaults);
+        Program.Check(session.Verified, "new post-ACK readback verifies after old query has drained");
+        ((TextBox)window.FindName("tbx_Seq1_Current")).Text = "7";
+        serial.OnSend = f =>
+        {
+            if (f[3] == 10 && !session.IsBusy)
+                Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x8A, defaults));
+            Call(window, "OnFrameSent", f);
+        };
+        Call(window, "SendReadConfigCommand", (byte)2, (byte)5, (byte)1, (byte)0); Pump();
+        Program.Check(((TextBox)window.FindName("tbx_Seq1_Current")).Text == (5.0).ToString("0.0"),
+            "RX arriving before FrameSent observer still matches query in Dispatcher callback");
+        ((TextBox)window.FindName("tbx_Seq1_Current")).Text = "5";
+        serial.OnSend = f => Call(window, "OnFrameSent", f);
+        // RX先到并排队，UI事件尚未返回时又开始写入：旧回包仍须完成排空，不能覆盖编辑。
+        Set(window, "_lastSharedSetAt", -3001L); Set(window, "_lastParameterReadAt", -3001L);
+        ((TextBox)window.FindName("tbx_Seq1_Current")).Text = "7";
+        Call(window, "SendReadConfigCommand", (byte)2, (byte)5, (byte)1, (byte)0);
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x8A, defaults));
+        Set(window, "_lastParameterReadAt", -3001L);
+        before = serial.Sent.Count;
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Program.Check(session.IsBusy && serial.Sent.Count == before, "queued RX still holds query until UI response processing");
+        Pump();
+        Program.Check(!((OrdinaryQueryTracker)Get(window, "_ordinaryQueries")!).IsBusy &&
+            ((TextBox)window.FindName("tbx_Seq1_Current")).Text == "7" && !session.Verified,
+            "RX queued before write drains matching query without overwriting edits or verifying new write");
+        session.Tick();
+        Program.Check(session.IsBusy && serial.Sent.Count == before + 1 && serial.Sent[^1][3] == 4,
+            "queued matching config response releases draining write without false timeout");
+        Receive(0x82, new byte[] { 2 });
+        ((TextBox)window.FindName("tbx_Seq1_Current")).Text = "5";
+        var queries = new OrdinaryQueryTracker(() => now);
+        Set(window, "_ordinaryQueries", queries);
+        Set(window, "_lastSharedSetAt", -3001L); Set(window, "_lastParameterReadAt", -3001L);
+        Call(window, "SendReadConfigCommand", (byte)2, (byte)5, (byte)1, (byte)0);
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs()); before = serial.Sent.Count;
+        now += 3000; Call(window, "TickOrdinaryQueries"); session.Tick();
+        Program.Check(!session.IsBusy && serial.Sent.Count == before && status.Text.Contains("尚未发送"),
+            "query timeout cancels queued write instead of releasing it onto unknown response");
+        defaults[4] = 10;
+        Receive(0x8A, defaults);
+        Program.Check(((TextBox)window.FindName("tbx_Seq1_Current")).Text == "5", "unmatched late config cannot overwrite edits");
+        serial.OnSend = null;
+        Call(window, "ResetFirmwareMainSession");
+        Set(window, "_ordinaryQueries", new OrdinaryQueryTracker());
+        Set(window, "_parameterWrite", new ParameterWriteSession(f => (bool)Call(window, "SendFrame", f)!, () => true));
+        serial.SendBlocked = f => ((StandbyPeriodSession)Get(window, "_standbyPeriod")!).Blocks(f) ||
+            ((CurrentCalibrationSession)Get(window, "_currentCalibration")!).Blocks(f) || ((ParameterWriteSession)Get(window, "_parameterWrite")!).Blocks(f) ||
+            ((OrdinaryQueryTracker)Get(window, "_ordinaryQueries")!).Blocks(f);
+    }
+
+    private static void CheckPressureFields(MainWindow window, MainViewModel vm, FakeSerial serial)
+    {
+        void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        var tabs = (TabControl)window.FindName("MainTabControl");
+        tabs.SelectedItem = tabs.Items.OfType<TabItem>().Single(t => t.Header?.ToString() == "FCU参数配置");
+        var root = (FrameworkElement)window.Content;
+        root.Measure(new Size(1280, 780)); root.Arrange(new Rect(0, 0, 1280, 780)); root.UpdateLayout();
+        var red = (TextBox)window.FindName("tbx_HighPressureRed");
+        var yellow = (TextBox)window.FindName("tbx_HighPressureYellow");
+        var write = (Button)window.FindName("btn_WritePressureParams");
+        var status = (TextBlock)window.FindName("tbk_ParameterWriteStatus");
+        var session = (ParameterWriteSession)Get(window, "_parameterWrite")!;
+        Set(window, "_isSerialOpen", true); vm.IsConnected = true;
+        Set(window, "_lastSharedSetAt", -3001L); Set(window, "_lastParameterReadAt", -3001L);
+        Set(window, "_pressureParamsLoadedFromDevice", true);
+        red.Text = "250"; yellow.Text = "500"; vm.HighPressureRange = "300";
+        Pump();
+        int before = serial.Sent.Count;
+        write.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
+        Program.Check(red.Visibility == Visibility.Visible && yellow.Visibility == Visibility.Visible && vm.HighPressureRed == "250" && vm.HighPressureYellow == "500",
+            "pressure red/yellow always visible and bound on parameter page");
+        Program.Check(serial.Sent.Count == before && !session.IsBusy && status.Text.Contains("黄警值") && status.Text.Contains("量程"),
+            "range below visible threshold rejects whole pressure write with persistent field error");
+        red.Text = "100"; yellow.Text = "200"; vm.HighPressureMin = "50"; vm.HighPressureMax = "300"; Pump();
+        write.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
+        Program.Check(session.IsBusy && !red.IsEnabled && !yellow.IsEnabled &&
+            serial.Sent[^1][5..23].SequenceEqual(Convert.FromHexString("01010032006400C8012C00140064012C00FA")),
+            "visible pressure inputs build full eight-field big-endian write and freeze during confirmation");
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x82, new byte[] { 0 })); Pump();
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x8A,
+            Convert.FromHexString("0101000032006400C8012C00140064012C00FA"))); Pump();
+        Program.Check(session.Verified && red.IsEnabled && yellow.IsEnabled && status.Text.Contains("回读一致"),
+            "actual pressure button verifies all visible thresholds and range after ACK");
+        vm.HighPressureMin = "100"; red.Text = "250"; yellow.Text = "500"; vm.HighPressureMax = "5000"; vm.HighPressureRange = "5000";
+        Call(window, "ResetFirmwareMainSession");
+    }
+
+    private static void CheckPollingTimeoutHealth(MainWindow window, MainViewModel vm, FakeSerial serial)
+    {
+        Set(window, "_isSerialOpen", true); vm.IsConnected = true; vm.DeviceAddress = "2";
+        var polling = (DispatcherTimer)Get(window, "_pollingTimer")!;
+        var savedInterval = polling.Interval;
+        foreach (int interval in new[] { 1000, 5000 })
+        {
+            Call(window, "ResetFirmwareMainSession");
+            Set(window, "_awaitingStackInfo", false); Set(window, "_diagDoneForConnection", false);
+            long now = 10000;
+            Set(window, "_ordinaryQueries", new OrdinaryQueryTracker(() => now));
+            serial.OnSend = f => Call(window, "OnFrameSent", f);
+            polling.Interval = TimeSpan.FromMilliseconds(interval);
+            Call(window, "PollingTimer_Tick", window, EventArgs.Empty);
+            for (int i = 0; i < 5; i++)
+            {
+                // 驱动250ms超时清理后，再驱动较慢的轮询tick；不等真实设备或真实秒数。
+                now += 3000; Call(window, "TickOrdinaryQueries");
+                Program.Check(!(bool)Get(window, "_awaitingStackInfo")!, $"{interval}ms poll releases expired serial wait");
+                Call(window, "PollingTimer_Tick", window, EventArgs.Empty);
+            }
+            Program.Check((bool)Get(window, "_diagDoneForConnection")! && serial.Sent[^1][2] == 0,
+                $"{interval}ms polling retains missing-response diagnosis across query expiry");
+            Call(window, "StopStackInfoLinkDiagnosis"); Set(window, "_diagProbePending", false);
+            Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x87, new byte[26]));
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+            Program.Check(!(bool)Get(window, "_stackInfoResponseMissing")! && (int)Get(window, "_stackInfoMissCount")! == 0,
+                $"{interval}ms poll valid target response clears missing-response health");
+            Call(window, "btn_StopPolling_Click", window, new RoutedEventArgs());
+            Program.Check(!(bool)Get(window, "_stackInfoResponseMissing")!, "stop polling clears missing-response health");
+        }
+        Set(window, "_awaitingStackInfo", true); Set(window, "_stackInfoResponseMissing", true);
+        Set(window, "_diagDoneForConnection", true); Set(window, "_diagProbePending", true);
+        vm.DeviceAddress = "3";
+        Program.Check(!(bool)Get(window, "_awaitingStackInfo")! && !(bool)Get(window, "_stackInfoResponseMissing")! &&
+            !(bool)Get(window, "_diagDoneForConnection")! && !(bool)Get(window, "_diagProbePending")!,
+            "target change clears serial wait and polling diagnosis lifecycle together");
+        vm.DeviceAddress = "2";
+        polling.Interval = savedInterval;
+        Call(window, "ResetFirmwareMainSession");
+        serial.OnSend = null;
+        Set(window, "_ordinaryQueries", new OrdinaryQueryTracker());
+    }
+
+    private static void CheckProbeRecovery(MainWindow window, MainViewModel vm, FakeSerial serial)
+    {
+        void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        Set(window, "_isSerialOpen", true); vm.IsConnected = true; vm.DeviceAddress = "2";
+        Call(window, "ResetFirmwareMainSession");
+        Set(window, "_lastSharedSetAt", -3001L); Set(window, "_lastParameterReadAt", -3001L);
+        long now = 10000;
+        var queries = new OrdinaryQueryTracker(() => now);
+        Set(window, "_ordinaryQueries", queries);
+        var session = new ParameterWriteSession(f => (bool)Call(window, "SendFrame", f)!,
+            () => (bool)Call(window, "CanSendParameterWrite")!, () => now);
+        Set(window, "_parameterWrite", session);
+        serial.OnSend = f => Call(window, "OnFrameSent", f);
+        Call(window, "StartStackInfoLinkDiagnosis", (byte)2);
+        var timer = (DispatcherTimer)Get(window, "_diagProbeTimer")!;
+        Program.Check(timer.Interval.TotalMilliseconds == 600 && (bool)Get(window, "_diagProbePending")! && queries.IsBusy,
+            "diagnosis starts actual 600ms timer and tracks broadcast query");
+        System.Threading.Thread.Sleep(650); Pump();
+        Program.Check(!(bool)Get(window, "_diagProbePending")! && Get(window, "_diagProbeTimer") == null && queries.IsBusy,
+            "actual probe timeout releases diagnosis gate but preserves unanswered query isolation");
+        int before = serial.Sent.Count;
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Program.Check(session.IsBusy && serial.Sent.Count == before, "post-probe write waits for old broadcast query");
+        now += 3000; Call(window, "TickOrdinaryQueries");
+        Program.Check(!session.IsBusy && serial.Sent.Count == before, "unanswered broadcast query cancels queued write without sending");
+        now += 3000;
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x87, new byte[26])); Pump();
+        Call(window, "btn_SetLoadSequenceParams_Click", window, new RoutedEventArgs());
+        Program.Check(session.IsBusy && serial.Sent[^1][3] == 4, "recovered target can write after probe timeout and quiet window");
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x82, new byte[] { 2 })); Pump();
+        Call(window, "StartStackInfoLinkDiagnosis", (byte)2);
+        Set(window, "_stackInfoResponseMissing", true);
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(0, 0x87, new byte[26])); Pump();
+        Program.Check((bool)Get(window, "_stackInfoResponseMissing")!, "broadcast answer never clears configured-target health");
+        timer = (DispatcherTimer)Get(window, "_diagProbeTimer")!;
+        timer.Interval = TimeSpan.FromMilliseconds(1); System.Threading.Thread.Sleep(30); Pump();
+        Program.Check(vm.StatusMessage.Contains("疑似设备地址不匹配") && !(bool)Get(window, "_diagProbePending")!,
+            "answered probe result survives terminal pending cleanup");
+        Call(window, "StartStackInfoLinkDiagnosis", (byte)2);
+        Call(window, "btn_StopPolling_Click", window, new RoutedEventArgs());
+        Program.Check(!(bool)Get(window, "_diagProbePending")! && Get(window, "_diagProbeTimer") == null,
+            "stop polling cancels diagnosis timer and gate");
+        Call(window, "StartStackInfoLinkDiagnosis", (byte)2);
+        Call(window, "btn_StartPolling_Click", window, new RoutedEventArgs());
+        Program.Check(!(bool)Get(window, "_diagProbePending")! && Get(window, "_diagProbeTimer") == null,
+            "restart polling cancels prior diagnosis timer and gate");
+        Call(window, "btn_StopPolling_Click", window, new RoutedEventArgs());
+        Call(window, "ResetFirmwareMainSession");
+        serial.OnSend = null;
+        Set(window, "_ordinaryQueries", new OrdinaryQueryTracker());
+        Set(window, "_parameterWrite", new ParameterWriteSession(f => (bool)Call(window, "SendFrame", f)!, () => true));
+    }
+
+    private static void CheckMonitoring(MainWindow window, MainViewModel vm)
+    {
+        void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        void Receive(byte function, byte[] data, byte address = 2)
+        {
+            Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(address, function, data));
+            Pump();
+        }
+        Set(window, "_isSerialOpen", true);
+        vm.DeviceAddress = "2";
+        Call(window, "ResetMonitoring");
+        byte[] stack = new byte[26];
+        stack[0] = 2; stack[1] = 0x0D; stack[2] = 0xA6; stack[4] = 69;
+        stack[8] = 118; stack[10] = 19;
+        Receive(0x87, stack);
+        Program.Check(vm.HighPressure == "3494" && vm.LowPressure == "69" && vm.DCDCInputCurrent == (1.9).ToString("F1"),
+            "valid telemetry retains firmware pressure and current scaling");
+        Set(window, "_awaitingStackInfo", true);
+        Receive(0x87, Array.Empty<byte>());
+        Program.Check(vm.HighPressure == "3494" && vm.DCDCInputCurrent == (1.9).ToString("F1") &&
+            (bool)Get(window, "_awaitingStackInfo")! && ((TextBlock)window.FindName("tbk_StackDataStatus")).Text.Contains("无效"),
+            "malformed87 preserves last data and cannot acknowledge polling");
+        byte[] damaged = ProtocolHandler.BuildRequestFrame(2, 0x87, stack); damaged[^1] ^= 1;
+        Call(window, "OnFrameReceived", damaged); Pump();
+        Program.Check(vm.HighPressure == "3494", "invalid87 CRC never updates readings");
+        Receive(0x87, new byte[26], 3);
+        Program.Check(vm.HighPressure == "3494", "another device cannot overwrite telemetry");
+        Receive(0x87, new byte[26], 0);
+        Program.Check(vm.HighPressure == "3494", "broadcast probe cannot overwrite configured target telemetry");
+        Receive(0x87, new byte[26]);
+        Program.Check(vm.HighPressure == "0" && vm.DCDCInputCurrent == (0.0).ToString("F1"), "real zero telemetry remains valid");
+        byte[] load = new byte[14]; load[2] = 19; load[3] = 1; load[4] = 0x7C; load[8] = 233;
+        Receive(0xF2, load);
+        Receive(0xF2, Array.Empty<byte>());
+        Program.Check(((TextBlock)window.FindName("tbk_LoadCurrentPower")).Text == (23.3).ToString("F1") &&
+            ((TextBlock)window.FindName("tbk_LoadTargetCurrent")).Text == (38.0).ToString("F1") &&
+            ((Label)window.FindName("lbl_LoadPeakCurrent")).Content.ToString()!.Contains("扫描峰值"),
+            "load values stay unmodified on malformed F2 and peak has correct label");
+        Set(window, "_lastStackInfoAt", Environment.TickCount64 - 20000);
+        Call(window, "RenderMonitoringStatus");
+        Program.Check(((TextBlock)window.FindName("tbk_StackDataStatus")).Text.Contains("过期") && vm.HighPressure == "0",
+            "stale data explicitly labelled without inventing replacement values");
+        var timer = (DispatcherTimer)Get(window, "_pollingTimer")!;
+        timer.Interval = TimeSpan.FromMilliseconds(500);
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x87, stack));
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0xF2, load));
+        System.Threading.Thread.Sleep(3100); // 模拟 UI 忙，已经收到的报文仍排在 Dispatcher 队列。
+        Pump();
+        Program.Check(((TextBlock)window.FindName("tbk_StackDataStatus")).Text.Contains("过期") &&
+            ((TextBlock)window.FindName("tbk_LoadDataStatus")).Text.Contains("过期"),
+            "Dispatcher backlog cannot turn old RX packets into fresh readings");
+        vm.DeviceAddress = "0";
+        Receive(0x87, stack, 0);
+        Program.Check(vm.HighPressure == "3494", "configured broadcast target retains original monitoring support");
+        vm.DeviceAddress = "2";
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x87, stack));
+        Call(window, "ResetFirmwareMainSession"); Pump();
+        Program.Check(vm.HighPressure == "--" && ((TextBlock)window.FindName("tbk_LoadCurrentPower")).Text == "--",
+            "queued previous-session telemetry cannot refill cleared target");
+        Set(window, "_isSerialOpen", false);
+    }
+
     private static void RenderPages(MainWindow window, string directory)
     {
         Directory.CreateDirectory(directory);
@@ -364,12 +724,33 @@ internal static class UiChecks
             var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
             using var output = File.Create(Path.Combine(directory, name)); encoder.Save(output);
         }
+        void ScrollTo(FrameworkElement element, bool top = false)
+        {
+            DependencyObject? parent = element;
+            while (parent != null && parent is not ScrollViewer) parent = VisualTreeHelper.GetParent(parent);
+            if (parent is ScrollViewer viewer && viewer.Content is Visual content)
+            {
+                viewer.ScrollToVerticalOffset(top ? 0 : Math.Max(0, element.TransformToAncestor(content).Transform(new Point()).Y - 35));
+                root.UpdateLayout();
+                Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+                root.UpdateLayout();
+            }
+        }
+        ((MainViewModel)window.DataContext).IsConnected = true;
+        ((ParameterWriteSession)Get(window, "_parameterWrite")!).ReportRejection("电流时序回读不一致，未确认保存；请检查设备后重试");
+        Call(window, "RenderParameterWrite");
+        Select("FCU参数配置"); ScrollTo((FrameworkElement)window.FindName("grp_PressureParameters"), true);
+        Save(root, "压力整组与写入结果-离线验收.png");
         Select("BMS电池管理"); Save(root, "BMS缓存-离线验收.png");
         Select("电流设置");
         ((CurrentCalibrationSession)Get(window, "_currentCalibration")!).Reset();
         Call(window, "RenderCurrentCalibration");
         ((MainViewModel)window.DataContext).IsConnected = true;
-        Call(window, "UpdateViewModelStackInfo", new FCU_氢燃料电池控.Models.StackInfoData { DCDCInputCurrent = 123 });
+        byte[] stackSample = new byte[26];
+        stackSample[0] = 2; stackSample[1] = 0x0D; stackSample[2] = 0xA6; stackSample[4] = 69;
+        stackSample[5] = 1; stackSample[8] = 118; stackSample[10] = 57;
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0x87, stackSample));
+        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
         var calibrationGroup = (FrameworkElement)window.FindName("grp_CurrentCalibration");
         DependencyObject? calibrationScroll = calibrationGroup;
         while (calibrationScroll != null && calibrationScroll is not ScrollViewer) calibrationScroll = VisualTreeHelper.GetParent(calibrationScroll);
@@ -381,7 +762,14 @@ internal static class UiChecks
             root.UpdateLayout();
         }
         Save(root, "输入拉载标定0302-离线验收.png");
+        Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0xF2,
+            Convert.FromHexString("060039017C007602A202A2000001")));
+        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        ScrollTo((FrameworkElement)window.FindName("tbk_LoadState"));
+        Save(root, "拉载峰值与数据状态-离线验收.png");
         Select("系统监控");
+        ScrollTo((FrameworkElement)window.FindName("tbk_StackDataStatus"), true);
+        Save(root, "系统监控数据状态-离线验收.png");
         var input = (FrameworkElement)window.FindName("tbx_StandbyPeriod");
         DependencyObject? scroll = input;
         while (scroll != null && scroll is not ScrollViewer) scroll = VisualTreeHelper.GetParent(scroll);

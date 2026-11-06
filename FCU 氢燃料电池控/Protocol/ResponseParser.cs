@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using FCU_氢燃料电池控.Models;
 
 namespace FCU_氢燃料电池控.Protocol
@@ -153,67 +153,65 @@ namespace FCU_氢燃料电池控.Protocol
         /// <returns>电堆信息数据</returns>
         public static StackInfoData ParseStackInfo(byte[] frame)
         {
-            var data = new StackInfoData();
-
-            try
-            {
-                byte dataLen = frame[4];
-                if (dataLen != ProtocolConstants.STACK_INFO_DATA_LENGTH)
-                    return data;
-
-                int offset = 5; // 数据域起始位置
-
-                // 字节0: 电堆工作状态
-                data.WorkState = frame[offset];
-
-                // 字节1-2: 高压压力 (大端序)
-                data.HighPressure = (ushort)((frame[offset + 1] << 8) | frame[offset + 2]);
-
-                // 字节3-4: 低压压力
-                data.LowPressure = (ushort)((frame[offset + 3] << 8) | frame[offset + 4]);
-
-                // 字节5: 氢气阀状态
-                data.HydrogenValveState = frame[offset + 5];
-
-                // 字节6: 排水阀状态
-                data.DrainValveState = frame[offset + 6];
-
-                // 字节7-8: DCDC输入电压
-                data.DCDCInputVoltage = (ushort)((frame[offset + 7] << 8) | frame[offset + 8]);
-
-                // 字节9-10: DCDC输入电流
-                data.DCDCInputCurrent = (ushort)((frame[offset + 9] << 8) | frame[offset + 10]);
-
-                // 字节11-12: DCDC输出电压
-                data.DCDCOutputVoltage = (ushort)((frame[offset + 11] << 8) | frame[offset + 12]);
-
-                // 字节13-14: DCDC输出电流
-                data.DCDCOutputCurrent = (ushort)((frame[offset + 13] << 8) | frame[offset + 14]);
-
-                // 字节15-16: 风扇转速
-                data.FanSpeed = (ushort)((frame[offset + 15] << 8) | frame[offset + 16]);
-
-                // 字节17-18: PT1000 电堆温度 (有符号, 0.1℃)
-                // 下位机 fcu_sensor.c 允许温度低至 -40℃，编码时按二进制补码塞进 uint16，
-                // 因此必须按 short 解析，否则 -40.0℃ 会被读成 65136 → 显示 6513.6℃
-                data.StackTemperature = (short)((frame[offset + 17] << 8) | frame[offset + 18]);
-
-                // 字节19-20: FCU控制器温度 (无符号, 0.1℃)
-                data.FCUTemperature = (ushort)((frame[offset + 19] << 8) | frame[offset + 20]);
-
-                // 字节21-24: 累计运行时间 (大端序, 4字节)
-                data.RunTime = (uint)((frame[offset + 21] << 24) | (frame[offset + 22] << 16) |
-                                      (frame[offset + 23] << 8) | frame[offset + 24]);
-
-                // 字节25: 故障码
-                data.FaultCode = frame[offset + 25];
-            }
-            catch
-            {
-                // 解析异常时返回默认值
-            }
-
+            if (!TryParseStackInfo(frame, out var data))
+                throw new FormatException("电堆信息响应的帧长、功能码或CRC无效");
             return data;
+        }
+
+        public static bool TryParseStackInfo(byte[]? frame, out StackInfoData data)
+        {
+            data = new StackInfoData();
+            if (frame == null || frame.Length < 7 ||
+                !FirmwareMainProtocol.IsResponse(frame, frame[2], 0x87, ProtocolConstants.STACK_INFO_DATA_LENGTH))
+                return false;
+
+            int offset = 5; // 数据域起始位置
+
+            // 字节0: 电堆工作状态
+            data.WorkState = frame[offset];
+
+            // 字节1-2: 高压压力 (大端序)
+            data.HighPressure = (ushort)((frame[offset + 1] << 8) | frame[offset + 2]);
+
+            // 字节3-4: 低压压力
+            data.LowPressure = (ushort)((frame[offset + 3] << 8) | frame[offset + 4]);
+
+            // 字节5: 氢气阀状态
+            data.HydrogenValveState = frame[offset + 5];
+
+            // 字节6: 排水阀状态
+            data.DrainValveState = frame[offset + 6];
+
+            // 字节7-8: DCDC输入电压
+            data.DCDCInputVoltage = (ushort)((frame[offset + 7] << 8) | frame[offset + 8]);
+
+            // 字节9-10: DCDC输入电流
+            data.DCDCInputCurrent = (ushort)((frame[offset + 9] << 8) | frame[offset + 10]);
+
+            // 字节11-12: DCDC输出电压
+            data.DCDCOutputVoltage = (ushort)((frame[offset + 11] << 8) | frame[offset + 12]);
+
+            // 字节13-14: DCDC输出电流
+            data.DCDCOutputCurrent = (ushort)((frame[offset + 13] << 8) | frame[offset + 14]);
+
+            // 字节15-16: 风扇转速
+            data.FanSpeed = (ushort)((frame[offset + 15] << 8) | frame[offset + 16]);
+
+            // 字节17-18: PT1000 电堆温度 (有符号, 0.1℃)
+            // 下位机 fcu_sensor.c 允许温度低至 -40℃，编码时按二进制补码塞进 uint16，
+            // 因此必须按 short 解析，否则 -40.0℃ 会被读成 65136 → 显示 6513.6℃
+            data.StackTemperature = (short)((frame[offset + 17] << 8) | frame[offset + 18]);
+
+            // 字节19-20: FCU控制器温度 (无符号, 0.1℃)
+            data.FCUTemperature = (ushort)((frame[offset + 19] << 8) | frame[offset + 20]);
+
+            // 字节21-24: 累计运行时间 (大端序, 4字节)
+            data.RunTime = (uint)((frame[offset + 21] << 24) | (frame[offset + 22] << 16) |
+                                  (frame[offset + 23] << 8) | frame[offset + 24]);
+
+            // 字节25: 故障码
+            data.FaultCode = frame[offset + 25];
+            return true;
         }
 
         /// <summary>
@@ -628,31 +626,29 @@ namespace FCU_氢燃料电池控.Protocol
         /// <returns>拉载状态数据</returns>
         public static LoadStatusData ParseLoadStatusReport(byte[] frame)
         {
-            var data = new LoadStatusData();
-
-            try
-            {
-                byte dataLen = frame[4];
-                if (dataLen != ProtocolConstants.LOAD_STATUS_DATA_LENGTH)
-                    return data;
-
-                int offset = 5; // 数据域起始位置
-
-                data.CurrentSequence = frame[offset];
-                data.CurrentCurrent = (ushort)((frame[offset + 1] << 8) | frame[offset + 2]);
-                data.TargetCurrent = (ushort)((frame[offset + 3] << 8) | frame[offset + 4]);
-                data.CurrentVoltage = (ushort)((frame[offset + 5] << 8) | frame[offset + 6]);
-                data.CurrentPower = (ushort)((frame[offset + 7] << 8) | frame[offset + 8]);
-                data.MaxPower = (ushort)((frame[offset + 9] << 8) | frame[offset + 10]);
-                data.LockCurrent = (ushort)((frame[offset + 11] << 8) | frame[offset + 12]);
-                data.LoadState = frame[offset + 13];
-            }
-            catch
-            {
-                // 解析异常时返回默认值
-            }
-
+            if (!TryParseLoadStatusReport(frame, out var data))
+                throw new FormatException("拉载状态响应的帧长、功能码或CRC无效");
             return data;
+        }
+
+        public static bool TryParseLoadStatusReport(byte[]? frame, out LoadStatusData data)
+        {
+            data = new LoadStatusData();
+            if (frame == null || frame.Length < 7 ||
+                !FirmwareMainProtocol.IsResponse(frame, frame[2], 0xF2, ProtocolConstants.LOAD_STATUS_DATA_LENGTH))
+                return false;
+
+            int offset = 5; // 数据域起始位置
+
+            data.CurrentSequence = frame[offset];
+            data.CurrentCurrent = (ushort)((frame[offset + 1] << 8) | frame[offset + 2]);
+            data.TargetCurrent = (ushort)((frame[offset + 3] << 8) | frame[offset + 4]);
+            data.CurrentVoltage = (ushort)((frame[offset + 5] << 8) | frame[offset + 6]);
+            data.CurrentPower = (ushort)((frame[offset + 7] << 8) | frame[offset + 8]);
+            data.MaxPower = (ushort)((frame[offset + 9] << 8) | frame[offset + 10]);
+            data.LockCurrent = (ushort)((frame[offset + 11] << 8) | frame[offset + 12]);
+            data.LoadState = frame[offset + 13];
+            return true;
         }
 
         /// <summary>

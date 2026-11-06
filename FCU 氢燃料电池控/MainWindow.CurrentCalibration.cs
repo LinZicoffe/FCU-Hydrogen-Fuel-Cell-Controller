@@ -17,7 +17,9 @@ namespace FCU_氢燃料电池控
             void Reject(string reason) { _currentCalibration.ReportRejection(reason); RenderCurrentCalibration(); }
             if (!_isSerialOpen || _blUpgradeMode || _upgradePrecheckMode || FirmwareUpgradeView.IsBusy)
             { Reject("请先连接FCU并等待固件升级操作结束"); return; }
-            if (_currentCalibration.IsBusy || _standbyPeriod?.IsBusy == true || _bmsCache?.Waiting == true ||
+            if (_currentCalibration.IsBusy || _standbyPeriod?.IsBusy == true || _parameterWrite?.IsBusy == true ||
+                _parameterWrite?.MayHaveLateAck == true || _bmsCache?.Waiting == true ||
+                _ordinaryQueries?.IsBusy == true || _ordinaryQueries?.MayHaveLateReply == true ||
                 _awaitingStackInfo || _bmsService?.IsBusy == true || _bmsBusExchangeInProgress || _bmsReturnInFlight ||
                 _pendingLoadManualCmd != null || _pendingValveTimingSet.HasValue || _pendingSocWrite != null ||
                 _pendingSocReadDeviceAddress.HasValue || _pendingFanManualEnable.HasValue || _pendingSecondMosWrite != null ||
