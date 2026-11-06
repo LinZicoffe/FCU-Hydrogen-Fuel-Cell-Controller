@@ -19,6 +19,17 @@ namespace FCU_氢燃料电池控
             SerialPortHelper.TryParseDeviceAddress(GetDeviceAddress(), out byte address, showError: false) &&
             frame.Length >= 7 && frame[2] == address;
 
+        // 串口接收与界面执行之间可能切换目标，必须在回调执行时复核会话。
+        private void MarshalCurrentTargetResponse(byte[] frame, byte function, int dataLength, int epoch, Action action)
+        {
+            MarshalRxToUi(() =>
+            {
+                if (!IsCurrentTelemetry(frame, epoch) ||
+                    !FirmwareMainProtocol.IsResponse(frame, frame[2], function, dataLength)) return;
+                action();
+            });
+        }
+
         private void ResetMonitoring()
         {
             _monitoringEpoch++;

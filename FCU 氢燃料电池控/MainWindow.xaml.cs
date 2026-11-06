@@ -2712,7 +2712,7 @@ namespace FCU_氢燃料电池控
                     });
                     return;
                 }
-                HandleSetParamResponse(frame);
+                HandleSetParamResponse(frame, _monitoringEpoch);
                 return;
             }
 
@@ -3138,6 +3138,7 @@ namespace FCU_氢燃料电池控
         /// </summary>
         private void OnFrameReceived(byte[] frame)
         {
+            int responseEpoch = _monitoringEpoch;
             AppendCommunicationFrame(CommunicationDirection.Rx, frame);
 
             // 广播给固件升级页 (S1 前置检查读 0x87 / S8 存活确认等 0x81) [BL设计 §4.2]
@@ -3201,11 +3202,11 @@ namespace FCU_氢燃料电池控
                         break;
 
                     case 0x88: // 启动响应
-                        HandleStartResponse(frame);
+                        HandleStartResponse(frame, responseEpoch);
                         break;
 
                     case 0x89: // 关闭响应
-                        HandleStopResponse(frame);
+                        HandleStopResponse(frame, responseEpoch);
                         break;
 
                     case 0x8A: // 配置参数响应
@@ -3213,7 +3214,7 @@ namespace FCU_氢燃料电池控
                         break;
 
                     case 0x8C: // 修改设备地址响应
-                        HandleSetDeviceAddressResponse(frame);
+                        HandleSetDeviceAddressResponse(frame, responseEpoch);
                         break;
 
                     case ProtocolConstants.RESP_BMS_POLL: // BMS轮询使能响应 [SOC计划 §4.6]
@@ -3221,7 +3222,7 @@ namespace FCU_氢燃料电池控
                         break;
 
                     case ProtocolConstants.RESP_FLOW_PARAMS: // 工作流程参数设置响应(1B结果码)
-                        HandleSetParamResponse(frame);
+                        HandleSetParamResponse(frame, responseEpoch);
                         break;
 
                     case ProtocolConstants.RESP_FAN_MANUAL: // 风扇手动运行控制响应(1B结果码)
@@ -3242,11 +3243,11 @@ namespace FCU_氢燃料电池控
                         break;
 
                     case 0xF0: // 报警信息上报
-                        HandleAlarmReport(frame);
+                        HandleAlarmReport(frame, responseEpoch);
                         break;
 
                     case 0xF1: // 状态变更上报
-                        HandleStateChangeReport(frame);
+                        HandleStateChangeReport(frame, responseEpoch);
                         break;
 
                     case 0xF2: // 拉载状态上报
@@ -3342,10 +3343,10 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 处理参数设置响应
         /// </summary>
-        private void HandleSetParamResponse(byte[] frame)
+        private void HandleSetParamResponse(byte[] frame, int epoch)
         {
             byte result = ResponseParser.ParseSetParamResponse(frame);
-            MarshalRxToUi(() =>
+            MarshalCurrentTargetResponse(frame, frame[3], 1, epoch, () =>
             {
                 if (result == 0x00)
                 {
@@ -3484,14 +3485,14 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 处理启动响应
         /// </summary>
-        private void HandleStartResponse(byte[] frame)
+        private void HandleStartResponse(byte[] frame, int epoch)
         {
             byte result = ResponseParser.ParseControlResponse(frame);
-            MarshalRxToUi(() =>
+            MarshalCurrentTargetResponse(frame, 0x88, 1, epoch, () =>
             {
                 string message = result switch
                 {
-                    0x00 => "电堆启动成功",
+                    0x00 => "启动请求已接受，正在启动；请以电堆状态为准",
                     0x01 => "启动失败：高压压力低于高压最小值",
                     0x02 => "启动失败：设备忙（非关机态）",
                     // 下位机 fcu_control_check_start_conditions() 有三条路径都返回 0x03，
@@ -3523,14 +3524,14 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 处理关闭响应
         /// </summary>
-        private void HandleStopResponse(byte[] frame)
+        private void HandleStopResponse(byte[] frame, int epoch)
         {
             byte result = ResponseParser.ParseControlResponse(frame);
-            MarshalRxToUi(() =>
+            MarshalCurrentTargetResponse(frame, 0x89, 1, epoch, () =>
             {
                 if (result == 0x00)
                 {
-                    UpdateStatus("电堆关闭成功");
+                    UpdateStatus("关闭请求已接受，请等待电堆状态变为关机");
                 }
                 else
                 {
@@ -3542,10 +3543,10 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 处理修改设备地址响应 (功能码0x8C)
         /// </summary>
-        private void HandleSetDeviceAddressResponse(byte[] frame)
+        private void HandleSetDeviceAddressResponse(byte[] frame, int epoch)
         {
             byte result = ResponseParser.ParseControlResponse(frame);
-            MarshalRxToUi(() =>
+            MarshalCurrentTargetResponse(frame, 0x8C, 1, epoch, () =>
             {
                 if (result == 0x00)
                 {
@@ -4008,10 +4009,10 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 处理报警信息上报
         /// </summary>
-        private void HandleAlarmReport(byte[] frame)
+        private void HandleAlarmReport(byte[] frame, int epoch)
         {
             AlarmData alarm = ResponseParser.ParseAlarmInfo(frame);
-            MarshalRxToUi(() =>
+            MarshalCurrentTargetResponse(frame, 0xF0, 5, epoch, () =>
             {
                 ShowAlarmMessage(alarm);
             });
@@ -4020,10 +4021,10 @@ namespace FCU_氢燃料电池控
         /// <summary>
         /// 处理状态变更上报
         /// </summary>
-        private void HandleStateChangeReport(byte[] frame)
+        private void HandleStateChangeReport(byte[] frame, int epoch)
         {
             StateChangeData stateChange = ResponseParser.ParseStateChange(frame);
-            MarshalRxToUi(() =>
+            MarshalCurrentTargetResponse(frame, 0xF1, 4, epoch, () =>
             {
                 ShowStateChange(stateChange);
             });
