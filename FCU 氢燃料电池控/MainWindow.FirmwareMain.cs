@@ -40,7 +40,8 @@ namespace FCU_氢燃料电池控
             _ordinaryQueries = new OrdinaryQueryTracker();
             _viewModel!.ParameterManager.ParameterWriter = BeginParameterWrite;
             _viewModel.GetSerialPortManager().SendBlocked = frame => _standbyPeriod.Blocks(frame) ||
-                _currentCalibration.Blocks(frame) || _parameterWrite.Blocks(frame) || _ordinaryQueries.Blocks(frame);
+                _currentCalibration.Blocks(frame) || _parameterWrite.Blocks(frame) || _ordinaryQueries.Blocks(frame) ||
+                BlocksManualControlFrame(frame);
             _firmwareMainTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             _firmwareMainTimer.Tick += (_, _) =>
             {
@@ -69,7 +70,7 @@ namespace FCU_氢燃料电池控
         private bool CanReadBmsCache() => _isSerialOpen && !_blUpgradeMode && !FirmwareUpgradeView.IsBusy &&
             !DirectBmsMode && !_bmsBusExchangeInProgress && !_bmsReturnInFlight && !_awaitingStackInfo &&
             _bmsService?.IsBusy != true && _bmsCache?.Waiting != true && _standbyPeriod?.IsBusy != true &&
-            _currentCalibration?.IsBusy != true && _parameterWrite?.IsBusy != true && _ordinaryQueries?.IsBusy != true;
+            _currentCalibration?.IsBusy != true && _parameterWrite?.IsBusy != true && _ordinaryQueries?.IsBusy != true && !ManualControlBusy;
 
         private void RequestBmsCache()
         {
@@ -94,6 +95,7 @@ namespace FCU_氢燃料电池控
         private void ResetFirmwareMainSession()
         {
             ResetMonitoring();
+            ResetManualControls();
             _ordinaryQueries?.Reset();
             _parameterWrite?.Reset();
             RenderParameterWrite();
@@ -123,10 +125,11 @@ namespace FCU_氢燃料电池控
             if (!_isSerialOpen || _blUpgradeMode || FirmwareUpgradeView.IsBusy)
             { ReportStandbyError("请先连接FCU并等待固件升级操作结束"); return; }
             if (_standbyPeriod == null || _standbyPeriod.IsBusy || _currentCalibration?.IsBusy == true ||
+                (write && _standbyPeriod.MayHaveLateAck) || _currentCalibration?.MayHaveLateAck == true ||
                 _parameterWrite?.IsBusy == true || _parameterWrite?.MayHaveLateAck == true || _bmsCache?.Waiting == true || _awaitingStackInfo ||
                 _ordinaryQueries?.IsBusy == true || _ordinaryQueries?.MayHaveLateReply == true ||
                 _bmsService?.IsBusy == true || _bmsBusExchangeInProgress || _bmsReturnInFlight ||
-                _pendingLoadManualCmd != null || _pendingValveTimingSet.HasValue || _pendingSocWrite != null ||
+                ManualControlBusy || ManualControlQuiet || _pendingSocWrite != null ||
                 _pendingSocReadDeviceAddress.HasValue || _pendingFanManualEnable.HasValue || _pendingSecondMosWrite != null ||
                 Environment.TickCount64 - _lastSharedSetAt < 3000)
             { ReportStandbyError("其他指令正在等待响应，请稍候再操作待机周期"); return; }

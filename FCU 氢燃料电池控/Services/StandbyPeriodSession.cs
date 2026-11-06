@@ -11,10 +11,12 @@ namespace FCU_氢燃料电池控.Services
         private readonly Func<byte[], bool> _send;
         private readonly Func<long> _clock;
         private long _started;
+        private long _quietUntil;
         private byte _address;
         private ushort _requested;
         private volatile byte[]? _ownedFrame;
         public bool IsBusy => _phase != Phase.Idle;
+        public bool MayHaveLateAck => _clock() < _quietUntil;
         public ushort? ActualPeriod { get; private set; }
         public bool Verified { get; private set; }
         public int Epoch { get; private set; }
@@ -31,7 +33,10 @@ namespace FCU_氢燃料电池控.Services
 
         public bool Blocks(byte[] frame)
         {
-            if (!IsBusy || ReferenceEquals(frame, _ownedFrame)) return false;
+            if (ReferenceEquals(frame, _ownedFrame)) return false;
+            if (!IsBusy)
+                return MayHaveLateAck && frame.Length >= 7 && frame[0] == 0xAA && frame[1] == 0x55 &&
+                    frame[3] is 0x02 or 0x03 or 0x04 or 0x05 or 0x06 or 0x0B;
             // 安全停机与归还BMS轮询始终放行；其余请求不进入固件单槽等待区。
             if (frame.Length >= 7 && frame[0] == 0xAA && frame[1] == 0x55 &&
                 (frame[3] == 0x09 || (frame.Length == 8 && frame[3] == 0x0D && frame[5] == 1))) return false;
@@ -48,6 +53,11 @@ namespace FCU_氢燃料电池控.Services
         private bool Begin(byte address, ushort seconds, Phase phase)
         {
             if (IsBusy) return false;
+            if (phase == Phase.Writing && MayHaveLateAck)
+            {
+                Status = "上一条待机周期写入结果未知，等待迟到应答静默窗口；请稍后重试";
+                return false;
+            }
             Epoch++;
             _address = address;
             _requested = seconds;
@@ -66,7 +76,7 @@ namespace FCU_氢燃料电池控.Services
             try
             {
                 if (_send(frame)) return true;
-                Finish("发送失败，设备结果未知；请重新读取核对");
+                Finish("发送失败，设备结果未知；请重新读取核对", unknown: true);
                 return false;
             }
             finally { _ownedFrame = null; }
@@ -115,18 +125,23 @@ namespace FCU_氢燃料电池控.Services
         public void Tick()
         {
             if (IsBusy && _clock() - _started >= 3000)
-                Finish("待机周期响应超时，设备结果未知；请检查固件支持并重新读取核对");
+                Finish("待机周期响应超时，设备结果未知；请检查固件支持并重新读取核对", unknown: true);
         }
 
         public void Reset()
         {
             Epoch++;
-            if (IsBusy) Finish("连接或操作模式已改变，待机参数操作中断，设备结果未知；请重新读取");
+            if (IsBusy) Finish("连接或操作模式已改变，待机参数操作中断，设备结果未知；请重新读取", unknown: true);
             else Status = "尚未读取当前设备待机周期";
             ActualPeriod = null;
             Verified = false;
         }
 
-        private void Finish(string message) { _phase = Phase.Idle; Status = message; }
+        private void Finish(string message, bool unknown = false)
+        {
+            if (unknown && _phase is Phase.Writing or Phase.Verifying) _quietUntil = _clock() + 3000;
+            _phase = Phase.Idle;
+            Status = message;
+        }
     }
 }
