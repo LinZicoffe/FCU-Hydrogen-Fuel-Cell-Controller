@@ -235,6 +235,8 @@ namespace FCU_氢燃料电池控
             // 升级期间拦截 ParameterManager 的 AA55 发送 (MVVM 命令 CanExecute 只查 IsConnected 拦不住)
             _viewModel.ParameterManager.SendBlocked = () => _blUpgradeMode || _upgradePrecheckMode;
             InitializeFirmwareMain();
+            _recipeService = new RecipeService();
+            LoadRecipeList();
 
             // 图表初始化（保留）
             InitializePowerChart();
@@ -5034,9 +5036,14 @@ namespace FCU_氢燃料电池控
                     {
                         // 将当前编辑区的值填入新配方
                         var (currents, times) = ReadRecipeTextBoxes();
-                        _recipeService.SaveRecipe(recipe.Id, currents, times);
+                        var (saved, saveMessage) = _recipeService.SaveRecipe(recipe.Id, currents, times);
                         LoadRecipeList();
                         lbx_RecipeList.SelectedItem = recipe;
+                        if (!saved)
+                        {
+                            HC.Growl.Warning($"配方已创建，但编辑参数未保存：{saveMessage}");
+                            return;
+                        }
                         HC.Growl.Success("配方创建成功");
                     }
                     else
