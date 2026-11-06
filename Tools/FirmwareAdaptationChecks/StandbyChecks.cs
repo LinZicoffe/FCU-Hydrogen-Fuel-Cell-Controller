@@ -42,6 +42,11 @@ internal static class StandbyChecks
         session.Write(1, 10); int epoch = session.Epoch;
         session.Reset();
         Program.Check(!session.IsBusy && session.Epoch != epoch && session.Status.Contains("中断"), "disconnect/mode/address resets transaction epoch");
+        Program.Check(session.MayHaveLateAck && !session.Write(1, 10) &&
+            session.Blocks(ProtocolHandler.BuildRequestFrame(1, 4, new byte[] { 5, 4, 0x15, 0, 50 })) &&
+            !session.Blocks(FirmwareMainProtocol.ReadBmsCache(1)), "cancelled standby write guards shared82 but permits diagnostic reads");
+        now += 3000;
+        Program.Check(!session.MayHaveLateAck, "standby late ACK window expires after three seconds");
         foreach (ushort seconds in new ushort[] { 1, 65535 })
         {
             session.Write(1, seconds); session.Receive(Ack(1, 0)); session.Receive(Readback(seconds));
@@ -49,5 +54,6 @@ internal static class StandbyChecks
         }
         var failure = new StandbyPeriodSession(_ => false, () => now);
         Program.Check(!failure.Write(1, 10) && !failure.IsBusy && !failure.Verified, "failed send releases transaction");
+        Program.Check(failure.MayHaveLateAck, "uncertain standby send retains late ACK protection");
     }
 }

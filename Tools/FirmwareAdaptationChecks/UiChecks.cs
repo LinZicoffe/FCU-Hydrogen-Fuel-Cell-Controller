@@ -159,6 +159,9 @@ internal static class UiChecks
             Set(window, "_pendingSocReadDeviceAddress", (byte?)2);
             Program.Check(!bridge.TryPrepareUpgrade(), "upgrade rejected while standalone SOC read pending");
             Set(window, "_pendingSocReadDeviceAddress", null);
+            Program.Check(!bridge.TryPrepareUpgrade() && standby.MayHaveLateAck,
+                "upgrade also waits for cancelled standby write late ACK window");
+            typeof(StandbyPeriodSession).GetField("_quietUntil", Flags)!.SetValue(standby, Environment.TickCount64 - 1);
             Program.Check(bridge.TryPrepareUpgrade() && (bool)Get(window, "_upgradePrecheckMode")!, "upgrade preparation locks ordinary sends");
             Program.Check(!(bool)Call(window, "SendFrame", FirmwareMainProtocol.ReadBmsCache(2))!, "cache cannot send during upgrade prechecks");
             view.GetType().GetField("_busy", Flags)!.SetValue(view, true);
@@ -293,6 +296,7 @@ internal static class UiChecks
             CheckPollingTimeoutHealth(window, vm, serial);
             CheckProbeRecovery(window, vm, serial);
             CheckMonitoring(window, vm);
+            ControlSafetyChecks.Run();
             if (renderDirectory != null) RenderPages(window, renderDirectory);
         }
         finally
@@ -679,6 +683,7 @@ internal static class UiChecks
         Call(window, "OnFrameReceived", ProtocolHandler.BuildRequestFrame(2, 0xF2, load));
         System.Threading.Thread.Sleep(3100); // 模拟 UI 忙，已经收到的报文仍排在 Dispatcher 队列。
         Pump();
+        Call(window, "RenderMonitoringStatus"); // 明确刷新年龄，不依赖250ms定时器与队列的先后顺序。
         Program.Check(((TextBlock)window.FindName("tbk_StackDataStatus")).Text.Contains("过期") &&
             ((TextBlock)window.FindName("tbk_LoadDataStatus")).Text.Contains("过期"),
             "Dispatcher backlog cannot turn old RX packets into fresh readings");
