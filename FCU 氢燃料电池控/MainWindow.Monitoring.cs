@@ -40,7 +40,7 @@ namespace FCU_氢燃料电池控
                 _viewModel.StackTemperature = _viewModel.FCUTemperature = "--";
                 _viewModel.RunTime = _viewModel.FaultCode = "--";
             }
-            _currentInputVoltage = _currentInputCurrent = _currentOutputVoltage = _currentOutputCurrent = 0;
+            _currentInputVoltage = _currentInputCurrent = 0;
             tbk_LoadState.Text = tbk_LoadCurrentSequence.Text = tbk_LoadCurrentCurrent.Text = "--";
             tbk_LoadTargetCurrent.Text = tbk_LoadCurrentVoltage.Text = tbk_LoadCurrentPower.Text = "--";
             tbk_LoadMaxPower.Text = tbk_LoadLockCurrent.Text = "--";
