@@ -516,6 +516,14 @@ namespace FCU_氢燃料电池控.Protocol
         /// <summary>帧间隙超时, 半帧作废 (镜像 BL 侧 rs232.c:49 RS232_CTO_RX_PACKET_TIMEOUT_MS=200)</summary>
         public const int XCP_FRAME_GAP_TIMEOUT_MS = 200;
 
+        /// <summary>[核查问题2修复] 应答超时后 SYNCH 同步屏障尝试次数: 超时意味着链路上可能仍有
+        /// 旧应答在飞 (SET_MTA/PROGRAM* 成功应答同为单字节 0xFF, 无法区分归属), 重发前必须 SYNCH
+        /// 且确认 [FE 00] (OpenBltXcpClient.IsSynchPositive), 两次尝试仍无确认即中止本次下载。</summary>
+        public const int XCP_SYNCH_BARRIER_ATTEMPTS = 2;
+
+        /// <summary>[核查问题2修复] SYNCH 屏障尝试间隔 (留给在途旧应答排空, 57600 下 1B≈0.17ms, 200ms 充裕)</summary>
+        public const int XCP_SYNCH_BARRIER_RETRY_DELAY_MS = 200;
+
         /// <summary>
         /// XCP 错误码 → 中文描述 (xcp.h:148-162; 仅主机端可能遇到的条目)
         /// </summary>
