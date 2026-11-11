@@ -176,6 +176,16 @@ dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release
 
 ## 更新日志
 
+### 2026-11-11（升级链路完整性修复）
+
+> 分支 `fix/upgrade-integrity-audit`（基于 master `13e2ac3`，**待同事审查，未合并**）。
+> 输入：同事 BL 部分核查报告三项发现，经逐条对源码复核属实后按 1→2→3 修复。
+
+- **强制全镜像读回校验**（核查问题1，高）：移除 `VERIFY_BY_UPLOAD` 联调开关，固化 (PROGRAM(0)) 后无条件 UPLOAD 全镜像比对（跳过 0x1D8 校验字 4 字节），不一致即中止——不重启、不报成功，设备留 BL 可重升。依据：BL 侧校验字仅覆盖前 7 个向量字（flash.c Two's complement），串口传输无校验字节（CS_TYPE=0），读回比对是整机完整性唯一保障。
+- **XCP 应答超时后 SYNCH 同步屏障**（核查问题2，高）：SET_MTA/PROGRAM* 成功应答同为单字节 0xFF 无法区分归属，超时直接重发会让迟到旧应答冒充新命令成功（MTA 未恢复仍报 Ok → 写错地址）。现超时后先 SYNCH 并确认 `[FE 00]`（`IsSynchPositive`：1B 迟到应答长度不符被丢弃无法冒充；非零错误码不算；显式错误=BL 已应答无需屏障），屏障 2 次×200ms 未通过即中止；接入幂等命令与写入块两条重试路径。
+- **AA55 应答槽事务过滤 + 地址核对**（核查问题3，中）：新增 `Services/AppFrameWaitSlot`，收帧入口按当前事务（功能码+设备地址）过滤，心跳/主动上报/他机应答不再覆盖已收应答（前置检查不再误判 APP 不在线、0x92 拒绝原因不再退化为泛化超时）；`RequestAppFrame` 补地址核对（应答须与请求同地址，广播除外）。
+- 零改动：SrecFile 守卫、XCP 帧格式、升级互斥/退出归一化、0x12/0x92 语义、BMS 缓存与心跳静默。Debug 0 警告 0 错误，离线回归 PASS 434 项（新增 21，含核查报告两个复现场景转绿）。**真机待验证**；本批次豁免三路 Agent 审查，由同事负责审查。
+
 ### 2026-11-11（分支合并与远程推送）
 
 - 按用户指示先合并 PR #2（shimu-huang666 fork 的控制应答归属与拉载配方保存修复，master `b334b37→9bbb99b`），再将 `feature/bl-software-entry-adapt`（软件进入 Bootloader 升级适配批次）本地合并至 master 并推送远程。功能分支合并前先以 master（PR #2）刷新，`OnFrameReceived` 中 `0x92` 分发 case 与手动控制早退路径共存，`BlAppFrameReceived` 广播仍先于全部守卫。
