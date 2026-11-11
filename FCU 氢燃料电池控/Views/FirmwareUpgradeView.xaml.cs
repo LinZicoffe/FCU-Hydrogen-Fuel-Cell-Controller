@@ -60,14 +60,15 @@ namespace FCU_氢燃料电池控.Views
         private volatile bool _busy;
         private bool? _lastExitAppAlive;    /* 最近一次退出归一化的探活结果 */
 
-        /// <summary>读回校验开关 (实施文档 §7 联调第 2 项"UPLOAD 全镜像比对"入口, 联调时置 true, 平时关闭省时)。
-        /// 用 static readonly 而非 const, 避免 const 常量传播触发 CS0162 不可达代码警告。</summary>
-        private static readonly bool VERIFY_BY_UPLOAD = false;
+        /* [核查问题1修复] 全镜像读回校验已由联调开关改为强制步骤: BL 侧校验字只覆盖前 7 个向量字
+         * (flash.c FlashWriteChecksum, 0x1D8 槽), 串口传输又无校验字节 (plausibility.h CS_TYPE=0),
+         * 不读回比对则传输损坏只要不碰向量表就会"升级成功"。失败即中止, 不重启不报成功。 */
 
         /// <summary>升级流程进行中 (含全流程与退出归一化全程), 供 MainWindow.OnClosing 关窗拦截</summary>
         public bool IsBusy => _busy;
-        private byte[]? _appFrameWait;    /* AppFrameReceived 事件暂存 (lock 保护) */
-        private readonly object _frameLock = new();
+        /* [核查问题3修复] AA55 应答事务等待槽: 收帧入口按当前事务(功能码+地址)过滤,
+         * 心跳/主动上报/他机应答不再覆盖已收应答 (原单槽覆盖会造成假超时/误判 APP 不在线) */
+        private readonly AppFrameWaitSlot _frameSlot = new();
 
         private BrushesStub _ui = null!;
 
@@ -136,7 +137,7 @@ namespace FCU_氢燃料电池控.Views
                 string[] texts =
                 {
                     "① 选择固件文件并核对", "② 前置检查 (电堆状态 / BMS 总线接管)",
-                    "③ 进入 Bootloader (待测版软件请求; 旧固件断电重启)", "④ 连机 / 擦除 / 写入 / 固化", "⑤ 重启验证"
+                    "③ 进入 Bootloader (待测版软件请求; 旧固件断电重启)", "④ 连机 / 擦除 / 写入 / 固化 / 读回校验", "⑤ 重启验证"
                 };
                 var tbs = new[] { _v.tbk_Step1, _v.tbk_Step2, _v.tbk_Step3, _v.tbk_Step4, _v.tbk_Step5 };
                 for (int i = 0; i < 5; i++)
@@ -173,41 +174,40 @@ namespace FCU_氢燃料电池控.Views
 
         private void OnAppFrame(byte[] frame)
         {
-            lock (_frameLock)
-            {
-                _appFrameWait = frame;
-                Monitor.Pulse(_frameLock);
-            }
+            _frameSlot.Offer(frame);
         }
 
-        /// <summary>发送 AA55 请求并等待指定响应功能码 (超时返回 null)</summary>
+        /// <summary>发送 AA55 请求并等待指定响应功能码 (超时返回 null)。
+        /// [核查问题3修复] 事务过滤器在收帧入口匹配 功能码+设备地址: 心跳/主动上报/他机应答
+        /// 不入槽不覆盖, 且应答必须与请求同地址 (单播; 地址 0 广播请求不过滤地址)。</summary>
         private byte[]? RequestAppFrame(byte[] request, byte respFunc, int timeoutMs, CancellationToken ct)
         {
             if (_bridge == null) return null;
 
-            lock (_frameLock) _appFrameWait = null;
-
-            for (int attempt = 0; attempt < 3 && !ct.IsCancellationRequested; attempt++)
+            byte address = request.Length > 2 ? request[2] : (byte)0;
+            _frameSlot.Begin(f => f.Length > 4 && f[3] == respFunc && (address == 0 || f[2] == address));
+            try
             {
-                if (!_bridge.SendAppFrame(request)) return null;
-
-                var deadline = Environment.TickCount64 + timeoutMs;
-                lock (_frameLock)
+                for (int attempt = 0; attempt < 3 && !ct.IsCancellationRequested; attempt++)
                 {
-                    while (_appFrameWait == null)
+                    if (!_bridge.SendAppFrame(request)) return null;
+
+                    var deadline = Environment.TickCount64 + timeoutMs;
+                    while (!ct.IsCancellationRequested)
                     {
                         long remain = deadline - Environment.TickCount64;
-                        if (remain <= 0 || ct.IsCancellationRequested) break;
-                        Monitor.Wait(_frameLock, (int)Math.Min(remain, 500));
+                        if (remain <= 0) break;
+                        var frame = _frameSlot.WaitOne((int)Math.Min(remain, 500));
+                        if (frame != null && frame.Length > 3 && frame[3] == respFunc)
+                            return frame;   /* Begin 已按 功能码+地址 过滤, 此处保留防御性复核 */
                     }
-                    if (_appFrameWait != null && _appFrameWait.Length > 3 && _appFrameWait[3] == respFunc)
-                    {
-                        return _appFrameWait;
-                    }
-                    _appFrameWait = null;
                 }
+                return null;
             }
-            return null;
+            finally
+            {
+                _frameSlot.End();
+            }
         }
 
         /* ---------------- 软件进入 Bootloader (待测版固件 0x12/0x92, 会话校验见 EnterBootloaderSession) ---------------- */
@@ -218,39 +218,55 @@ namespace FCU_氢燃料电池控.Views
         private EnterBootloaderSession AwaitEnterBootloaderAck(CancellationToken ct)
         {
             var session = new EnterBootloaderSession(_bridge!.SendAppFrame);
-            /* 先清应答暂存槽再发送 (对齐 RequestAppFrame 先清后发序): 0x92 应答 8B@9600≈8ms 即可到达,
-             * 若发送后才清槽, 应答先到会被误清导致假超时 */
-            lock (_frameLock) _appFrameWait = null;
-            byte address = _bridge.DeviceAddress;   /* 组帧与核对使用同一地址快照 */
-            if (!session.Request(address))
+            /* 先登记 0x92 事务过滤器再发送 (对齐先清后发序): 0x92 应答 8B@9600≈8ms 即可到达;
+             * [核查问题3修复] 心跳/上报不入槽, 应答不会被覆盖丢失, 拒绝原因不再退化为泛化超时 */
+            _frameSlot.Begin(f => f.Length == ProtocolConstants.MIN_FRAME_LENGTH + 1 &&
+                f[3] == ProtocolConstants.RESP_ENTER_BOOTLOADER);
+            try
             {
-                if (session.OutcomeValue != EnterBootloaderSession.Outcome.SendFailed)
-                    throw new UpgradeException("升级请求会话状态异常");   /* 仅可能为重复调用，防御 */
-                return session;
-            }
-
-            while (true)
-            {
-                session.Tick();
-                if (session.Terminal) return session;
-                if (ct.IsCancellationRequested) throw new OperationCanceledException(ct);
-
-                lock (_frameLock)
+                byte address = _bridge.DeviceAddress;   /* 组帧与核对使用同一地址快照 */
+                if (!session.Request(address))
                 {
-                    while (_appFrameWait == null)
-                    {
-                        int remain = session.RemainMs;
-                        if (remain <= 0 || ct.IsCancellationRequested) break;
-                        Monitor.Wait(_frameLock, Math.Min(remain, 200));
-                    }
-                    if (_appFrameWait != null)
-                    {
-                        var frame = _appFrameWait;
-                        _appFrameWait = null;
-                        if (session.Receive(frame)) return session;   /* 非本事务帧在会话内被丢弃继续等 */
-                    }
+                    if (session.OutcomeValue != EnterBootloaderSession.Outcome.SendFailed)
+                        throw new UpgradeException("升级请求会话状态异常");   /* 仅可能为重复调用，防御 */
+                    return session;
+                }
+
+                while (true)
+                {
+                    session.Tick();
+                    if (session.Terminal) return session;
+                    if (ct.IsCancellationRequested) throw new OperationCanceledException(ct);
+
+                    int remain = session.RemainMs;
+                    if (remain <= 0) continue;   /* 边界: 下一轮 Tick 即超时终态, 不忙等 */
+
+                    var frame = _frameSlot.WaitOne(Math.Min(remain, 200));
+                    if (frame != null && session.Receive(frame)) return session;   /* 会话内仍严格核对地址/长度/错误码 */
                 }
             }
+            finally
+            {
+                _frameSlot.End();
+            }
+        }
+
+        /// <summary>[核查问题2修复] XCP 应答超时后的 SYNCH 同步屏障: 超时意味着链路上可能仍有旧应答在飞
+        /// (SET_MTA/PROGRAM* 成功应答同为单字节 0xFF, 协议上无法区分归属), 直接重发会让迟到旧应答
+        /// 冒充新命令的成功。重发前必须 SYNCH 并确认 [FE 00] (IsSynchPositive), 仍未确认即中止——
+        /// 绝不在链路状态未知时继续擦写。显式错误响应不算超时 (BL 已应答, 无在途旧帧), 无需屏障。</summary>
+        private async Task ResyncAfterTimeoutAsync(string commandName, CancellationToken ct)
+        {
+            for (int attempt = 1; attempt <= ProtocolConstants.XCP_SYNCH_BARRIER_ATTEMPTS; attempt++)
+            {
+                if (OpenBltXcpClient.IsSynchPositive(_client.Synch()))
+                    return;
+                Log($"{commandName} 超时后 SYNCH 同步未确认 (尝试 {attempt}/{ProtocolConstants.XCP_SYNCH_BARRIER_ATTEMPTS})...");
+                await Task.Delay(ProtocolConstants.XCP_SYNCH_BARRIER_RETRY_DELAY_MS, ct);
+            }
+            throw new UpgradeException(
+                $"{commandName} 应答超时且 SYNCH 同步屏障未通过: 链路状态未知, 已中止以防迟到应答冒充成功导致写入错位。" +
+                "请重新点击\"开始升级\" (设备常驻 Bootloader, 无需断电, 可直接续升)。");
         }
 
         /// <summary>0x92 显式拒绝错误码 → 用户文案 (错误码语义依据 fcu_boot_request/fcu_handle_enter_bootloader)</summary>
@@ -320,7 +336,7 @@ namespace FCU_氢燃料电池控.Views
 
             var confirm = MessageBox.Show(
                 $"即将开始固件升级 (OpenBLT XCP @ {BL_BAUD}, 镜像 {_srecFile.Length / 1024.0:F1} KB @ 0x{_srecFile.BaseAddress:X8})。\n\n" +
-                "升级过程中: ① 电堆须处于完全停机 (OFF) ② 待测版固件 (bootloader-test) 将自动发送软件升级请求进入引导；旧固件不支持软件进入，需按提示断电重新上电 ③ 请勿关闭程序或拔出串口 ④ 总线上仅这一台 FCU\n\n" +
+                "升级过程中: ① 电堆须处于完全停机 (OFF) ② 待测版固件 (bootloader-test) 将自动发送软件升级请求进入引导；旧固件不支持软件进入，需按提示断电重新上电 ③ 请勿关闭程序或拔出串口 ④ 总线上仅这一台 FCU ⑤ 写入完成后将全镜像读回校验 (UPLOAD 比对，约多耗时 1 分钟，请耐心等待)\n\n" +
                 "旧独立 main (从 0x08000000 启动) 镜像不适用本页，应通过 SWD 烧录。\n\n确认开始?",
                 "固件升级", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (confirm != MessageBoxResult.Yes) return;
@@ -494,6 +510,10 @@ namespace FCU_氢燃料电池控.Views
                     for (int retry = 1; !result.Ok && retry <= ProtocolConstants.XCP_IDEMPOTENT_CMD_RETRIES; retry++)
                     {
                         Log($"{name} 失败 ({DescribeXcp(result)}), 重试 {retry}/{ProtocolConstants.XCP_IDEMPOTENT_CMD_RETRIES}...");
+                        /* [核查问题2修复] 超时(可能仍有旧应答在飞)→先 SYNCH 屏障再重发;
+                         * 显式错误=BL 已应答, 链路同步, 直接重试 */
+                        if (result.Timeout)
+                            await ResyncAfterTimeoutAsync(name, token);
                         await Task.Delay(ProtocolConstants.XCP_IDEMPOTENT_RETRY_DELAY_MS, token);
                         result = send();
                     }
@@ -527,7 +547,11 @@ namespace FCU_氢燃料电池控.Views
                         ? _client.ProgramMax(chunk) : _client.Program(chunk);
                     for (int retry = 1; !w.Ok && retry <= 3; retry++)
                     {
-                        Log($"写入块 @0x{addr:X8} 失败 ({DescribeXcp(w)}), 重试 {retry}/3 (重新 SET_MTA)...");
+                        Log($"写入块 @0x{addr:X8} 失败 ({DescribeXcp(w)}), 重试 {retry}/3 (SYNCH 同步后重新 SET_MTA)...");
+                        /* [核查问题2修复] 超时→先 SYNCH 屏障: 防上一块 PROGRAM 的迟到成功应答冒充
+                         * SET_MTA 的确认, 导致 MTA 未恢复仍报 Ok、后续数据写错地址 */
+                        if (w.Timeout)
+                            await ResyncAfterTimeoutAsync($"写入块 @0x{addr:X8}", ct);
                         await Task.Delay(100, ct);
                         var m = _client.SetMta(addr);   /* MTA 状态未知, 重新定位 */
                         w = !m.Ok ? m
@@ -553,9 +577,10 @@ namespace FCU_氢燃料电池控.Views
                 if (!fin.Ok) throw new UpgradeException($"PROGRAM(0) 结束指令失败: {DescribeXcp(fin)}");
                 Log("PROGRAM(0) 已确认, BL 已写入校验字 ✓");
 
-                /* 读回校验 (联调开关, 默认关; 必须在 PROGRAM(0) 后——此前数据可能仍缓冲在 BL RAM bootblock) */
-                if (VERIFY_BY_UPLOAD)
-                    await VerifyByUploadAsync(img, baseAddr, ct);
+                /* [核查问题1修复] 全镜像读回校验 (强制, 不可关): BL 校验字仅覆盖前 7 向量字、传输无校验字节,
+                 * 唯一整机完整性保障; 失败抛 UpgradeException → 不 RESET、不报成功 (设备留 BL 可重升)。
+                 * 必须在 PROGRAM(0) 后——此前数据可能仍缓冲在 BL RAM bootblock。52KB≈411 次 UPLOAD 往返。 */
+                await VerifyByUploadAsync(img, baseAddr, ct);
 
                 _ui.StepState(4, "done");
 
@@ -650,9 +675,10 @@ namespace FCU_氢燃料电池控.Views
             }
         }
 
-        /// <summary>UPLOAD 全镜像分段读回比对 (实施文档 §7 联调第 2 项入口, VERIFY_BY_UPLOAD 开关启用)。
+        /// <summary>UPLOAD 全镜像分段读回比对 ([核查问题1修复] 强制步骤, 原 VERIFY_BY_UPLOAD 联调开关已移除)。
         /// 必须在 PROGRAM(0) 之后调用 (此前尾块数据可能仍在 BL 的 RAM bootblock 未落盘);
-        /// 比对跳过镜像偏移 0x1D8-0x1DB (校验字已被 BL 覆写, 与文件占位值不同属预期)。</summary>
+        /// 比对跳过镜像偏移 0x1D8-0x1DB (校验字已被 BL 覆写, 与文件占位值不同属预期);
+        /// 不一致即抛 UpgradeException → 不 RESET、不报成功, 设备留 BL 可重新升级。</summary>
         private async Task VerifyByUploadAsync(byte[] img, uint baseAddr, CancellationToken ct)
         {
             Status("读回校验 (UPLOAD)");

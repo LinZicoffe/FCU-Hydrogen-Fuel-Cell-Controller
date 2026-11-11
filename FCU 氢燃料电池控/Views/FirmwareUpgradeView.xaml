@@ -6,7 +6,7 @@
              mc:Ignorable="d"
              d:DesignHeight="620" d:DesignWidth="900">
 
-    <!-- 固件升级页 (OpenBLT XCP): 选 S-record → 前置检查 → 软件进入/断电进入 BL → 连机/擦除/写入/固化 → 重启验证 -->
+    <!-- 固件升级页 (OpenBLT XCP): 选 S-record → 前置检查 → 软件进入/断电进入 BL → 连机/擦除/写入/固化/读回校验 → 重启验证 -->
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <Grid Margin="10" MinHeight="540">
         <Grid.RowDefinitions>
@@ -51,7 +51,7 @@
                 <TextBlock Name="tbk_Step1" Text="① 选择固件文件并核对" Margin="0,2"/>
                 <TextBlock Name="tbk_Step2" Text="② 前置检查（电堆状态，暂停轮询）" Margin="0,2"/>
                 <TextBlock Name="tbk_Step3" Text="③ 进入 Bootloader（待测版软件请求；旧固件断电重启）" Margin="0,2"/>
-                <TextBlock Name="tbk_Step4" Text="④ 连机 / 擦除 / 写入 / 固化" Margin="0,2"/>
+                <TextBlock Name="tbk_Step4" Text="④ 连机 / 擦除 / 写入 / 固化 / 读回校验" Margin="0,2"/>
                 <TextBlock Name="tbk_Step5" Text="⑤ 重启验证" Margin="0,2"/>
             </StackPanel>
         </Border>

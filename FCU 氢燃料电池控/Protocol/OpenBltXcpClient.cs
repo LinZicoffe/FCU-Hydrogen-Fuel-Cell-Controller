@@ -34,12 +34,26 @@ namespace FCU_氢燃料电池控.Protocol
         private byte[] _respPayload = Array.Empty<byte>();
         private int _expectedLen = -1;       /* 当前命令期待的应答 payload 长度, -1 不校验 */
 
-        private readonly SerialPortManager _serial;
+        private readonly Func<byte[], bool> _send;
 
         public OpenBltXcpClient(SerialPortManager serial)
+            : this(serial != null ? f => serial.SendData(f)
+                  : throw new ArgumentNullException(nameof(serial)))
         {
-            _serial = serial ?? throw new ArgumentNullException(nameof(serial));
         }
+
+        /// <summary>注入构造: 直接提供发送委托, 不依赖串口管理器 (对齐会话类 send 注入模式, 供离线检查使用)。</summary>
+        public OpenBltXcpClient(Func<byte[], bool> send)
+        {
+            _send = send ?? throw new ArgumentNullException(nameof(send));
+        }
+
+        /// <summary>SYNCH 同步屏障通过判据: 已连接的 BL 对 SYNCH 回 [FE 00] (err=0, 2B)——该应答本身
+        /// Ok=false, 不能用 Ok 判定; 在途迟到的单字节 0xFF 成功应答因长度不符被丢弃, 无法冒充屏障
+        /// (xcp.c:302-306; 非零错误码的 [FE xx] 亦不算, 防旧命令错误应答冒充)。</summary>
+        public static bool IsSynchPositive(XcpResult result) =>
+            !result.Timeout && result.Data.Length == 2 &&
+            result.Data[0] == ProtocolConstants.XCP_PID_ERR && result.Data[1] == 0;
 
         /// <summary>复位接收状态机与挂起应答 (进入/退出升级模式、波特率切换后调用, 对齐 BlUpgradeClient.Reset 先例)</summary>
         public void Reset()
@@ -133,7 +147,7 @@ namespace FCU_氢燃料电池控.Protocol
                 _expectedLen = expectedLen;
             }
 
-            if (!_serial.SendData(frame))
+            if (!_send(frame))
                 /* 发送瞬时失败(串口未开/驱动忙)同样以 Timeout 标记返回失败; 命令级重试由上层
                  * 升级流程的写入循环负责(对齐旧 FirmwareUpgradeView S5 每块 3 次重试模式) */
                 return new XcpResult(false, true, 0, Array.Empty<byte>());

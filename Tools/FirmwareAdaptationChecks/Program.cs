@@ -21,6 +21,8 @@ internal static class Program
             ParameterWriteChecks.Run();
             AlarmChecks();
             EnterBootloaderChecks.Run();
+            XcpClientChecks.Run();
+            AppFrameWaitSlotChecks.Run();
             SrecChecks.Run();
             RecipeChecks.Run();
             int renderIndex = Array.IndexOf(args, "--render-dir");
