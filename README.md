@@ -176,6 +176,11 @@ dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release
 
 ## 更新日志
 
+### 2026-11-11（分支合并与远程推送）
+
+- 按用户指示先合并 PR #2（shimu-huang666 fork 的控制应答归属与拉载配方保存修复，master `b334b37→9bbb99b`），再将 `feature/bl-software-entry-adapt`（软件进入 Bootloader 升级适配批次）本地合并至 master 并推送远程。功能分支合并前先以 master（PR #2）刷新，`OnFrameReceived` 中 `0x92` 分发 case 与手动控制早退路径共存，`BlAppFrameReceived` 广播仍先于全部守卫。
+- 合并后复验：Debug 构建 0 警告 0 错误，离线回归 PASS 413 项（385 + EnterBootloaderChecks 28）。**真机升级仍待板测**（清单见 docs/实施步骤-软件进入Bootloader升级适配.md §7）；未调整版本号、未生成安装包、未发布 release。
+
 ### 2026-11-10（软件进入 Bootloader 升级适配）
 
 - 适配待测版固件 `bootloader-test-20261030-01`（450V_FCU_NewPCB APP@99aedb7 + Boot-For-FCU BL@169cdf0）：升级页在 APP 在线且电堆完全停机 (OFF) 时自动发送软件升级请求 `0x12`（单播+确认字节 0x01），严格核对 `0x92` 应答（地址/功能码/长度/错误码，CRC 走既有完整帧链路）后自动切换 57600 进入既有 XCP 下载流程，免去断电重新上电步骤。
