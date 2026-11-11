@@ -13,9 +13,10 @@ namespace FCU_氢燃料电池控
         private long _lastParameterReadAt = -3001;
 
         private bool CanSendParameterWrite() => !_awaitingStackInfo && _bmsCache?.Waiting != true &&
+            _standbyPeriod?.MayHaveLateAck != true && _currentCalibration?.MayHaveLateAck != true &&
             _ordinaryQueries?.IsBusy != true && _ordinaryQueries?.MayHaveLateReply != true &&
             _bmsService?.IsBusy != true && Environment.TickCount64 - _lastParameterReadAt >= 350 &&
-            Environment.TickCount64 - _lastSharedSetAt >= 3000;
+            Environment.TickCount64 - _lastSharedSetAt >= 3000 && !ManualControlBusy && !ManualControlQuiet;
 
         private bool BeginParameterWrite(byte function, byte[] data, string name)
         {
@@ -28,9 +29,10 @@ namespace FCU_氢燃料电池控
             if (!_isSerialOpen || _blUpgradeMode || _upgradePrecheckMode || FirmwareUpgradeView.IsBusy)
                 return RejectParameterWrite("参数未发送：请先打开串口并等待固件升级结束");
             if (_standbyPeriod?.IsBusy == true || _currentCalibration?.IsBusy == true ||
+                _standbyPeriod?.MayHaveLateAck == true || _currentCalibration?.MayHaveLateAck == true ||
                 _ordinaryQueries?.MayHaveLateReply == true ||
-                _bmsBusExchangeInProgress || _bmsReturnInFlight || _pendingLoadManualCmd != null ||
-                _pendingValveTimingSet.HasValue || _pendingSocWrite != null || _pendingSocReadDeviceAddress.HasValue ||
+                _bmsBusExchangeInProgress || _bmsReturnInFlight || ManualControlBusy || ManualControlQuiet ||
+                _pendingSocWrite != null || _pendingSocReadDeviceAddress.HasValue ||
                 _pendingFanManualEnable.HasValue || _pendingSecondMosWrite != null || _diagProbePending)
                 return RejectParameterWrite("参数未发送：其他控制指令正在等待响应，请稍后重试");
             if (!SerialPortHelper.TryParseDeviceAddress(GetDeviceAddress(), out byte address, showError: false))
@@ -66,7 +68,7 @@ namespace FCU_氢燃料电池控
             ushort? id = _parameterWrite.IsBusy ? _parameterWrite.ParameterId : null;
             grp_PressureParameters.IsEnabled = id != 0x0101;
             grp_FanParameters.IsEnabled = id != 0x0401;
-            grp_ValveParameters.IsEnabled = id is not (0x0201 or 0x0601);
+            grp_ValveParameters.IsEnabled = id is not (0x0201 or 0x0202 or 0x0601);
             grp_DcdcParameters.IsEnabled = id != 0x0301;
             grp_LoadSequences.IsEnabled = grp_RecipeParameters.IsEnabled = id != 0x0501;
             grp_LoadControlParameters.IsEnabled = id is not (0x0502 or 0x0503);

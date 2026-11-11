@@ -87,7 +87,11 @@ namespace FCU_氢燃料电池控.Services
             };
 
             _userRecipes.Add(recipe);
-            SaveUserRecipes();
+            if (!SaveUserRecipes(out string error))
+            {
+                _userRecipes.Remove(recipe);
+                return (false, error, null);
+            }
             return (true, "配方创建成功", recipe);
         }
 
@@ -104,7 +108,11 @@ namespace FCU_氢燃料电池控.Services
             copy.Name = newName ?? $"{source.Name} (副本)";
 
             _userRecipes.Add(copy);
-            SaveUserRecipes();
+            if (!SaveUserRecipes(out string error))
+            {
+                _userRecipes.Remove(copy);
+                return (false, error, null);
+            }
             return (true, "配方复制成功", copy);
         }
 
@@ -120,9 +128,16 @@ namespace FCU_氢燃料电池控.Services
             if (recipe == null)
                 return (false, "未找到该用户配方");
 
+            string oldName = recipe.Name;
+            DateTime oldModifiedAt = recipe.ModifiedAt;
             recipe.Name = newName.Trim();
             recipe.ModifiedAt = DateTime.Now;
-            SaveUserRecipes();
+            if (!SaveUserRecipes(out string error))
+            {
+                recipe.Name = oldName;
+                recipe.ModifiedAt = oldModifiedAt;
+                return (false, error);
+            }
             return (true, "重命名成功");
         }
 
@@ -135,8 +150,13 @@ namespace FCU_氢燃料电池控.Services
             if (index < 0)
                 return (false, "未找到该用户配方");
 
+            var recipe = _userRecipes[index];
             _userRecipes.RemoveAt(index);
-            SaveUserRecipes();
+            if (!SaveUserRecipes(out string error))
+            {
+                _userRecipes.Insert(index, recipe);
+                return (false, error);
+            }
             return (true, "配方已删除");
         }
 
@@ -152,10 +172,19 @@ namespace FCU_氢燃料电池控.Services
             if (currents.Length != 15 || times.Length != 15)
                 return (false, "参数数据长度不正确");
 
+            ushort[] oldCurrents = (ushort[])recipe.Currents.Clone();
+            ushort[] oldTimes = (ushort[])recipe.Times.Clone();
+            DateTime oldModifiedAt = recipe.ModifiedAt;
             Array.Copy(currents, recipe.Currents, 15);
             Array.Copy(times, recipe.Times, 15);
             recipe.ModifiedAt = DateTime.Now;
-            SaveUserRecipes();
+            if (!SaveUserRecipes(out string error))
+            {
+                Array.Copy(oldCurrents, recipe.Currents, 15);
+                Array.Copy(oldTimes, recipe.Times, 15);
+                recipe.ModifiedAt = oldModifiedAt;
+                return (false, error);
+            }
             return (true, "配方已保存");
         }
 
@@ -186,17 +215,34 @@ namespace FCU_氢燃料电池控.Services
         /// <summary>
         /// 保存用户配方到磁盘
         /// </summary>
-        private void SaveUserRecipes()
+        private bool SaveUserRecipes(out string error)
         {
+            string? temporaryFile = null;
             try
             {
                 var collection = new RecipeCollection { UserRecipes = _userRecipes };
                 var json = JsonSerializer.Serialize(collection, _jsonOptions);
-                File.WriteAllText(_recipeFilePath, json);
+                string directory = Path.GetDirectoryName(Path.GetFullPath(_recipeFilePath))!;
+                temporaryFile = Path.Combine(directory, $".recipes-{Guid.NewGuid():N}.tmp");
+                // 先写同目录临时文件，再替换目标，写入失败不能截断旧配方。
+                File.WriteAllText(temporaryFile, json);
+                File.Move(temporaryFile, _recipeFilePath, overwrite: true);
+                error = string.Empty;
+                return true;
             }
-            catch
+            catch (Exception ex)
             {
-                // 保存失败静默处理
+                error = $"配方未保存：{ex.Message}";
+                return false;
+            }
+            finally
+            {
+                if (temporaryFile != null && File.Exists(temporaryFile))
+                {
+                    try { File.Delete(temporaryFile); }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
+                }
             }
         }
 
@@ -214,38 +260,6 @@ namespace FCU_氢燃料电池控.Services
                     IsSystemPreset = true,
                     Currents = new ushort[]{ 5, 10, 20, 30, 40, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50 },
                     Times = new ushort[]{ 5, 5, 5, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10 }
-                },
-                new LoadRecipe
-                {
-                    Id = "preset-mid-current",
-                    Name = "中电流测试",
-                    IsSystemPreset = true,
-                    Currents = new ushort[]{ 5, 10, 20, 40, 70, 110, 150, 210, 280, 340, 360, 380, 360, 340, 1000 },
-                    Times = new ushort[]{ 5, 5, 5, 5, 5, 7, 7, 10, 10, 10, 10, 2, 5, 5, 5 }
-                },
-                new LoadRecipe
-                {
-                    Id = "preset-high-current",
-                    Name = "高电流测试",
-                    IsSystemPreset = true,
-                    Currents = new ushort[]{ 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1000, 800, 600, 1000 },
-                    Times = new ushort[]{ 10, 10, 10, 15, 15, 15, 20, 20, 20, 20, 10, 5, 10, 10, 10 }
-                },
-                new LoadRecipe
-                {
-                    Id = "preset-staircase",
-                    Name = "阶梯测试",
-                    IsSystemPreset = true,
-                    Currents = new ushort[]{ 100, 100, 100, 250, 250, 250, 400, 400, 400, 550, 550, 550, 700, 700, 700 },
-                    Times = new ushort[]{ 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30 }
-                },
-                new LoadRecipe
-                {
-                    Id = "preset-quick",
-                    Name = "快速测试",
-                    IsSystemPreset = true,
-                    Currents = new ushort[]{ 50, 200, 400, 600, 800, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-                    Times = new ushort[]{ 3, 3, 5, 5, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
                 }
             };
         }

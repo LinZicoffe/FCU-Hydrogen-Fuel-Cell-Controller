@@ -69,6 +69,13 @@ internal static class CalibrationChecks
         Program.Check(!session.Receive(back), "0302 idle late frame ignored");
         session.Read(1); int epoch = session.Epoch; session.Reset();
         Program.Check(session.Epoch != epoch && !session.IsBusy && session.Actual == null && session.Status.Contains("中断"), "0302 reset invalidates session");
+        session.Write(1, example); now += 3000; session.Tick();
+        Program.Check(session.MayHaveLateAck && !session.Write(1, example) &&
+            session.Blocks(FirmwareMainProtocol.WriteStandbyPeriod(1, 10)), "0302 write timeout guards all shared82 writes");
+        Program.Check(session.Read(1) && session.Receive(back) && !session.Verified, "0302 diagnostic read remains available during quiet window");
+        now += 3000;
+        Program.Check(!session.MayHaveLateAck && session.Write(1, example), "0302 write recovers when late ACK window expires");
+        session.Reset();
         var failure = new CurrentCalibrationSession(_ => false);
         Program.Check(!failure.Write(1, example) && !failure.IsBusy && !failure.Verified, "0302 write send failure");
         int sends = 0; var verifyFailure = new CurrentCalibrationSession(_ => ++sends == 1);

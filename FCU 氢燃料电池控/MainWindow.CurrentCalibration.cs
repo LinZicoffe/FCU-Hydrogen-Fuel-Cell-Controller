@@ -18,10 +18,11 @@ namespace FCU_氢燃料电池控
             if (!_isSerialOpen || _blUpgradeMode || _upgradePrecheckMode || FirmwareUpgradeView.IsBusy)
             { Reject("请先连接FCU并等待固件升级操作结束"); return; }
             if (_currentCalibration.IsBusy || _standbyPeriod?.IsBusy == true || _parameterWrite?.IsBusy == true ||
+                (write && _currentCalibration.MayHaveLateAck) || _standbyPeriod?.MayHaveLateAck == true ||
                 _parameterWrite?.MayHaveLateAck == true || _bmsCache?.Waiting == true ||
                 _ordinaryQueries?.IsBusy == true || _ordinaryQueries?.MayHaveLateReply == true ||
                 _awaitingStackInfo || _bmsService?.IsBusy == true || _bmsBusExchangeInProgress || _bmsReturnInFlight ||
-                _pendingLoadManualCmd != null || _pendingValveTimingSet.HasValue || _pendingSocWrite != null ||
+                ManualControlBusy || ManualControlQuiet || _pendingSocWrite != null ||
                 _pendingSocReadDeviceAddress.HasValue || _pendingFanManualEnable.HasValue || _pendingSecondMosWrite != null ||
                 _diagProbePending || Environment.TickCount64 - _lastSharedSetAt < 3000)
             { Reject("其他指令正在等待响应，请稍候再操作输入拉载标定"); return; }
