@@ -6,7 +6,7 @@
              mc:Ignorable="d"
              d:DesignHeight="620" d:DesignWidth="900">
 
-    <!-- 固件升级页 (OpenBLT XCP): 选 S-record → 前置检查 → 兼容引导设备断电进入 BL → 连机/擦除/写入/固化 → 重启验证 -->
+    <!-- 固件升级页 (OpenBLT XCP): 选 S-record → 前置检查 → 软件进入/断电进入 BL → 连机/擦除/写入/固化 → 重启验证 -->
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <Grid Margin="10" MinHeight="540">
         <Grid.RowDefinitions>
@@ -21,16 +21,16 @@
         <!-- 升级包选择 -->
         <Border Grid.Row="0" Background="{DynamicResource RegionBrush}" CornerRadius="4" Padding="10" Margin="0,0,0,8">
             <StackPanel>
-                <!-- [OpenBLT 适配] 本页面向 Boot-For-FCU(OpenBLT) 引导, 依据 docs/实施步骤-OpenBLT升级与固件适配.md -->
+                <!-- [软件进入适配] 待测版固件支持 0x12 软件进入引导，依据 docs/实施步骤-软件进入Bootloader升级适配.md -->
                 <TextBlock Name="tbk_UpgradeNotice"
-                           Text="ℹ 本升级面向 OpenBLT 引导的固件：需先 SWD 预烧 Boot-For-FCU 引导程序（BL 占 0x08000000 起 12K），固件文件为 codex/openblt-app-upgrade 分支构建的 S-record 产物；升级期间 RS485 总线上仅连接这一台 FCU（XCP 无设备地址过滤，多站同答会冲突）。"
+                           Text="ℹ 待测版固件（450V_FCU_NewPCB bootloader-test 配套）支持软件进入：电堆完全停机 (OFF) 后上位机自动发送升级请求 (0x12) 进入引导，无需断电重启。仍需 SWD 预烧 Boot-For-FCU 引导程序（BL 占 0x08000000 起 12K），固件文件为 0x08003000 基址的配套 S-record 产物；升级期间 RS485 总线上仅连接这一台 FCU（XCP 无设备地址过滤，多站同答会冲突）。"
                            TextWrapping="Wrap" Foreground="#1565C0" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <StackPanel Orientation="Horizontal">
                     <Button Content="选择 S-record 固件 (.srec/.s19/.mot)..." Padding="12,4" Click="BtnSelectFile_Click"/>
                     <TextBlock Name="tbk_FilePath" Text="未选择" VerticalAlignment="Center" Margin="10,0,0,0"
                                TextTrimming="CharacterEllipsis" MaxWidth="560" ToolTip="{Binding RelativeSource={RelativeSource Self}, Path=Text}"/>
                 </StackPanel>
-                <TextBlock Text="本页仅适用于已安装兼容OpenBLT引导的设备和配套S-record镜像。当前main独立APP从0x08000000启动，应通过SWD烧录，不能直接在此升级。" TextWrapping="Wrap" Foreground="#EF6C00" Margin="0,8,0,0"/>
+                <TextBlock Text="旧固件说明：旧固件无软件进入能力（0x12 无应答，升级将停止并提示）；已预烧兼容引导的旧固件设备可断电后点开始、30 秒内重新上电经 3 秒连接窗口进入引导。旧独立 main（从 0x08000000 启动）镜像不适用本页，应通过 SWD 烧录。" TextWrapping="Wrap" Foreground="#EF6C00" Margin="0,8,0,0"/>
                 <TextBlock Name="tbk_PkgInfo" Text="包信息: --" Margin="0,6,0,0" Foreground="{DynamicResource SecondaryTextBrush}"/>
             </StackPanel>
         </Border>
@@ -49,8 +49,8 @@
         <Border Grid.Row="2" Background="{DynamicResource RegionBrush}" CornerRadius="4" Padding="10" Margin="0,0,0,8">
             <StackPanel>
                 <TextBlock Name="tbk_Step1" Text="① 选择固件文件并核对" Margin="0,2"/>
-                <TextBlock Name="tbk_Step2" Text="② 前置检查（电堆关机/故障，暂停轮询）" Margin="0,2"/>
-                <TextBlock Name="tbk_Step3" Text="③ 连接已安装的OpenBLT引导（按提示断电重启）" Margin="0,2"/>
+                <TextBlock Name="tbk_Step2" Text="② 前置检查（电堆状态，暂停轮询）" Margin="0,2"/>
+                <TextBlock Name="tbk_Step3" Text="③ 进入 Bootloader（待测版软件请求；旧固件断电重启）" Margin="0,2"/>
                 <TextBlock Name="tbk_Step4" Text="④ 连机 / 擦除 / 写入 / 固化" Margin="0,2"/>
                 <TextBlock Name="tbk_Step5" Text="⑤ 重启验证" Margin="0,2"/>
             </StackPanel>

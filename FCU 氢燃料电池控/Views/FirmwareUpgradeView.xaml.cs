@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using FCU_氢燃料电池控.Models;
 using FCU_氢燃料电池控.Protocol;
+using FCU_氢燃料电池控.Services;
 
 namespace FCU_氢燃料电池控.Views
 {
@@ -134,8 +135,8 @@ namespace FCU_氢燃料电池控.Views
             {
                 string[] texts =
                 {
-                    "① 选择固件文件并核对", "② 前置检查 (电堆关机 / BMS 总线接管)",
-                    "③ 进入 Bootloader (加载指令; 无应答按提示断电重启)", "④ 连机 / 擦除 / 写入 / 固化", "⑤ 重启验证"
+                    "① 选择固件文件并核对", "② 前置检查 (电堆状态 / BMS 总线接管)",
+                    "③ 进入 Bootloader (待测版软件请求; 旧固件断电重启)", "④ 连机 / 擦除 / 写入 / 固化", "⑤ 重启验证"
                 };
                 var tbs = new[] { _v.tbk_Step1, _v.tbk_Step2, _v.tbk_Step3, _v.tbk_Step4, _v.tbk_Step5 };
                 for (int i = 0; i < 5; i++)
@@ -209,6 +210,59 @@ namespace FCU_氢燃料电池控.Views
             return null;
         }
 
+        /* ---------------- 软件进入 Bootloader (待测版固件 0x12/0x92, 会话校验见 EnterBootloaderSession) ---------------- */
+
+        /// <summary>发送 0x12 升级请求并驱动等待 0x92 严格匹配应答直至终态 (接受/拒绝/发送失败/超时)。
+        /// 取消经 OperationCanceledException 上抛 (与 CONNECT 轮询口径一致，落入"已取消"分支而非失败)。
+        /// 互斥: 调用前 TryPrepareUpgrade 已挂起轮询并锁定普通发送，本握手独占 AA55 通道。</summary>
+        private EnterBootloaderSession AwaitEnterBootloaderAck(CancellationToken ct)
+        {
+            var session = new EnterBootloaderSession(_bridge!.SendAppFrame);
+            /* 先清应答暂存槽再发送 (对齐 RequestAppFrame 先清后发序): 0x92 应答 8B@9600≈8ms 即可到达,
+             * 若发送后才清槽, 应答先到会被误清导致假超时 */
+            lock (_frameLock) _appFrameWait = null;
+            byte address = _bridge.DeviceAddress;   /* 组帧与核对使用同一地址快照 */
+            if (!session.Request(address))
+            {
+                if (session.OutcomeValue != EnterBootloaderSession.Outcome.SendFailed)
+                    throw new UpgradeException("升级请求会话状态异常");   /* 仅可能为重复调用，防御 */
+                return session;
+            }
+
+            while (true)
+            {
+                session.Tick();
+                if (session.Terminal) return session;
+                if (ct.IsCancellationRequested) throw new OperationCanceledException(ct);
+
+                lock (_frameLock)
+                {
+                    while (_appFrameWait == null)
+                    {
+                        int remain = session.RemainMs;
+                        if (remain <= 0 || ct.IsCancellationRequested) break;
+                        Monitor.Wait(_frameLock, Math.Min(remain, 200));
+                    }
+                    if (_appFrameWait != null)
+                    {
+                        var frame = _appFrameWait;
+                        _appFrameWait = null;
+                        if (session.Receive(frame)) return session;   /* 非本事务帧在会话内被丢弃继续等 */
+                    }
+                }
+            }
+        }
+
+        /// <summary>0x92 显式拒绝错误码 → 用户文案 (错误码语义依据 fcu_boot_request/fcu_handle_enter_bootloader)</summary>
+        private static string DescribeEnterBlReject(byte errorCode) => errorCode switch
+        {
+            /* FCU_ERR_DEVICE_BUSY 三个触发分支: stack_state != OFF / s_boot_pending(上一请求处理中)
+             * / fcu_rs485_tx_busy(主动上报占用异步发送通道) */
+            0x03 => "设备拒绝进入升级 (0x03 设备忙)：电堆未处于完全停机(OFF)、上一升级请求仍在处理、或固件正在上报数据占用发送通道，请稍候或关机后重试。",
+            0x02 => "设备拒绝进入升级 (0x02 确认值错误)：固件校验升级确认字节失败（正常流程不应出现，请重试；仍复现请核对固件版本）。",  /* FCU_ERR_PARAM_INVALID */
+            _ => $"设备拒绝进入升级 (错误码 0x{errorCode:X2}: {ProtocolConstants.GetErrorCodeDescription(errorCode)})，本次升级已停止。"
+        };
+
         /* ---------------- 按钮事件 ---------------- */
 
         private void BtnSelectFile_Click(object sender, RoutedEventArgs e)
@@ -266,8 +320,8 @@ namespace FCU_氢燃料电池控.Views
 
             var confirm = MessageBox.Show(
                 $"即将开始固件升级 (OpenBLT XCP @ {BL_BAUD}, 镜像 {_srecFile.Length / 1024.0:F1} KB @ 0x{_srecFile.BaseAddress:X8})。\n\n" +
-                "升级过程中: ① 电堆必须处于关机/故障状态 ② 必须已安装兼容OpenBLT引导，按提示断电重新上电 ③ 请勿关闭程序或拔出串口 ④ 总线上仅这一台 FCU\n\n" +
-                "当前固件main是从0x08000000启动的独立APP，不具备此升级入口；其镜像应通过SWD烧录，不能直接用于本页。\n\n确认开始?",
+                "升级过程中: ① 电堆须处于完全停机 (OFF) ② 待测版固件 (bootloader-test) 将自动发送软件升级请求进入引导；旧固件不支持软件进入，需按提示断电重新上电 ③ 请勿关闭程序或拔出串口 ④ 总线上仅这一台 FCU\n\n" +
+                "旧独立 main (从 0x08000000 启动) 镜像不适用本页，应通过 SWD 烧录。\n\n确认开始?",
                 "固件升级", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (confirm != MessageBoxResult.Yes) return;
 
@@ -330,11 +384,13 @@ namespace FCU_氢燃料电池控.Views
                 var readInfo = BuildAppRequest(0x07);
                 byte[]? info = RequestAppFrame(readInfo, 0x87, 2000, ct);
                 bool appOnline = info != null;
+                byte appStackState = 0;   /* APP 在线时的电堆工作状态 (0=OFF, 3=FAULT)，步骤③软件进入门控用 */
                 if (info != null)
                 {
                     if (info.Length < 6 || info[4] != ProtocolConstants.STACK_INFO_DATA_LENGTH)
                         throw new UpgradeException($"电堆状态应答长度异常 (LEN={info[4]})");
                     byte stackState = info[5];   /* 数据域首字节 = 工作状态 (0=OFF, 3=FAULT) */
+                    appStackState = stackState;
                     if (stackState != 0 && stackState != 3)
                         throw new UpgradeException($"电堆未处于可升级状态 (状态={stackState}), 仅关机(0)/故障(3)态接受升级, 请先关闭电堆");
                     Log($"前置检查: 电堆状态 = {stackState} ({(stackState == 0 ? "关机" : "故障")}) ✓");
@@ -350,12 +406,41 @@ namespace FCU_氢燃料电池控.Views
                 activeStep = 3;
                 if (appOnline)
                 {
-                    // main@2c8be1d没有进入引导命令；0x11是缓存查询，禁止发送猜测裸字节。
-                    Log("未发送加载命令；仅对已安装兼容OpenBLT的设备使用断电连接窗口");
-                    Status("请断电重新上电 FCU (30 秒内)");
-                    _ = Dispatcher.BeginInvoke(() => MessageBox.Show(
-                        "请现在给 FCU 断电, 3 秒后重新上电。\n\n上电后引导程序短暂开放连接窗口, 上位机会自动连上 (30 秒内完成)。",
-                        "进入 Bootloader", MessageBoxButton.OK, MessageBoxImage.Information));
+                    /* 待测版固件 (bootloader-test-20261030-01) 支持 0x12 软件进入；旧固件无 0x12 处理不应答。
+                     * 固件仅完全停机 OFF 接受 (fcu_boot_request: stack_state != OFF 返回 0x03)，
+                     * 软件入口与固件限制一致：非 OFF 不发送。 */
+                    if (appStackState != 0)
+                        throw new UpgradeException(appStackState == 3
+                            ? "软件进入升级要求电堆完全停机 (OFF)。当前为故障态(3)，请先处理故障使电堆回到关机状态后重试。"
+                            : $"软件进入升级要求电堆完全停机 (OFF)。当前状态={appStackState}，请先关闭电堆后重试。");
+
+                    Status("发送软件升级请求 (0x12)...");
+                    Log("软件进入: 发送 0x12 升级请求 (单播, 确认字节 0x01)...");
+                    var enterResult = AwaitEnterBootloaderAck(ct);
+                    switch (enterResult.OutcomeValue)
+                    {
+                        case EnterBootloaderSession.Outcome.Accepted:
+                            Log("设备已接受软件升级请求 (0x92/0x00)，正在复位进入 Bootloader...");
+                            Status("设备复位进入 Bootloader...");
+                            break;
+
+                        case EnterBootloaderSession.Outcome.Rejected:
+                            throw new UpgradeException(DescribeEnterBlReject(enterResult.ErrorCode));
+
+                        case EnterBootloaderSession.Outcome.SendFailed:
+                            throw new UpgradeException("升级请求发送失败 (串口发送未成功)，本次升级已停止；请检查串口连接后重试。");
+
+                        default:
+                            /* 超时：绝不当作成功继续擦写；给出与现有恢复路径衔接的处置指引。
+                             * 失败退出归一化两条路径都会关闭串口(BtnStart 有 IsSerialOpen 门)，
+                             * 指引①须先重连; 指引②过早上电会使旧 APP 应答 0x07 再次进入本分支 (审查C) */
+                            throw new UpgradeException(
+                                "等待升级请求应答 (0x92) 超时：设备可能为不支持软件进入的旧固件，或应答在总线上丢失。\n\n" +
+                                "处置：\n" +
+                                "① 若设备可能已接受并复位进 Bootloader（应答丢失）：重新以 9600 连接串口后再点击\"开始升级\"，设备不再应答 0x07，上位机会自动探测引导续升（本次退出后串口已按规则关闭）；\n" +
+                                "② 旧固件设备若已 SWD 预烧兼容引导：先给 FCU 断电，重新连接并点击\"开始升级\"，待状态栏出现\"探测 Bootloader\"（前置检查约 7 秒完成）后再重新上电（30 秒内），经上电 3 秒连接窗口进入引导；过早重新上电会使旧 APP 应答 0x07 再次进入软件请求分支；\n" +
+                                "③ 旧独立 main (@0x08000000 启动) 镜像无引导共存，仍需 SWD 烧录。");
+                    }
                 }
                 else
                 {
