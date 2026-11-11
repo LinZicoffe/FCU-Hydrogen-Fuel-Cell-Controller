@@ -169,6 +169,12 @@ dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release
 
 ## 更新日志
 
+### 2026-11-10（软件进入 Bootloader 升级适配）
+
+- 适配待测版固件 `bootloader-test-20261030-01`（450V_FCU_NewPCB APP@99aedb7 + Boot-For-FCU BL@169cdf0）：升级页在 APP 在线且电堆完全停机 (OFF) 时自动发送软件升级请求 `0x12`（单播+确认字节 0x01），严格核对 `0x92` 应答（地址/功能码/长度/错误码，CRC 走既有完整帧链路）后自动切换 57600 进入既有 XCP 下载流程，免去断电重新上电步骤。
+- 新增 `Services/EnterBootloaderSession`（单发不重发、非本事务帧丢弃、2s 超时终态）与 `ProtocolConstants` 的 `0x12/0x92` 常量；`MainWindow.OnFrameReceived` 补 `0x92` 分发 case（不误交其它事务）。拒绝 (0x02/0x03)、发送失败、等待超时均准确提示并停止本次软件进入，绝不当作成功继续擦写；APP 无应答/BL 常驻/首次安装的探测与手动恢复路径原样保留；0x11/0x91 仍为 BMS 缓存查询不复用历史 IAP 旧值。
+- 镜像地址 (0x08003000)、校验字 (0x1D8)、参数页保护与 XCP 下载协议零改动。Debug 构建 0 警告 0 错误，离线回归 355 项通过（新增 EnterBootloaderChecks 28 项，含固件文档金样帧逐字节核对）。**离线验证通过，真机升级待验证**（板测清单见 docs/实施步骤-软件进入Bootloader升级适配.md §7）。
+
 ### 2026-11-06（分支合并与远程推送）
 
 - 按用户指示将 `codex/release-v1.9.5`（含 V1.9.4/V1.9.5 双安装包发布、现场读写/监控修复 02e7a4c、拉载锁定系数恢复开放批次，覆盖 codex/release-v1.9.4 与 codex/host-parameter-monitor-fixes 两分支）与 `feature/power-chart-fix`（功率曲线 Y 轴 0~600W 固定量程修复、按需求移除输出功率曲线）合并至 master。
