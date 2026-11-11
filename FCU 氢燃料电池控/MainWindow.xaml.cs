@@ -3131,6 +3131,12 @@ namespace FCU_氢燃料电池控
                         });
                         break;
 
+                    case ProtocolConstants.RESP_ENTER_BOOTLOADER: // 软件进入Bootloader结果(待测版0x92)
+                        // 本方法开头已经 BlAppFrameReceived 完整帧广播给升级页，由 EnterBootloaderSession
+                        // 严格核对 (地址/功能码/长度/错误码) 消费；此处仅拦截未知码提示，
+                        // 不做任何处理也不得转交其它事务 (前置模式下常规事务均已挂起)。
+                        break;
+
                     case 0xF0: // 报警信息上报
                         HandleAlarmReport(frame, responseEpoch);
                         break;

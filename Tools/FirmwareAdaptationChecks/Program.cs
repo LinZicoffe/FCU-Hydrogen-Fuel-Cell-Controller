@@ -20,6 +20,7 @@ internal static class Program
             CalibrationChecks.Run();
             ParameterWriteChecks.Run();
             AlarmChecks();
+            EnterBootloaderChecks.Run();
             SrecChecks.Run();
             RecipeChecks.Run();
             int renderIndex = Array.IndexOf(args, "--render-dir");

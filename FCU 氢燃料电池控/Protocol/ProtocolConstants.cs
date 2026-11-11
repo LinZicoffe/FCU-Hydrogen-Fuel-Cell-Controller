@@ -166,6 +166,26 @@ namespace FCU_氢燃料电池控.Protocol
         public const ushort PARAM_TYPE_STANDBY = 0x0902;
 
         /// <summary>
+        /// 功能码：软件进入 Bootloader 升级请求（待测版固件 450V_FCU_NewPCB@99aedb7, fcu_protocol.h:85）。
+        /// 单播专用（广播被固件静默拒绝）；数据域 1B 确认字节固定 0x01；仅完全停机 OFF 态接受。
+        /// 注意与历史 FUNC_ENTER_IAP(0x11) 是不同接口：0x11 在本待测版仍是 BMS 缓存查询。
+        /// </summary>
+        public const byte FUNC_ENTER_BOOTLOADER = 0x12;
+
+        /// <summary>
+        /// 响应功能码：软件进入 Bootloader 结果（数据域 1B 错误码：0x00 接受 / 0x02 确认值错误(FCU_ERR_PARAM_INVALID)
+        /// / 0x03 非OFF或设备忙(FCU_ERR_DEVICE_BUSY)）。固件先发本应答，等发送完成后写一次性升级标记并软复位（fcu_boot.c）。
+        /// </summary>
+        public const byte RESP_ENTER_BOOTLOADER = 0x92;
+
+        /// <summary>0x12 升级请求确认字节（fcu_protocol.c fcu_handle_enter_bootloader: request[5]==0x01 才受理）</summary>
+        public const byte ENTER_BL_CONFIRM = 0x01;
+
+        /// <summary>0x92 应答等待超时。固件应答 8B@9600≈8ms，其内部 TX 完成守卫上限 1s(FCU_RS_485_RESPONSE_TIMEOUT_MS)，
+        /// 主机取 2 倍裕量；超时视为旧固件无 0x12 处理或应答丢失，绝不继续进入擦写。</summary>
+        public const int ENTER_BL_ACK_TIMEOUT_MS = 2000;
+
+        /// <summary>
         /// 响应功能码：读取配置参数
         /// </summary>
         public const byte RESP_READ_CONFIG = 0x8A;
@@ -546,6 +566,8 @@ namespace FCU_氢燃料电池控.Protocol
                 RESP_SOC_PARAMS => "BMS/SOC参数设置响应",
                 FUNC_READ_BMS_CACHE => "读取BMS缓存",
                 RESP_BMS_CACHE => "BMS缓存响应（旧IAP同码须按长度区分）",
+                FUNC_ENTER_BOOTLOADER => "软件进入Bootloader升级请求（待测版，仅OFF单播）",
+                RESP_ENTER_BOOTLOADER => "软件进入Bootloader结果",
                 FUNC_ALARM_REPORT => "报警信息上报",
                 FUNC_STATE_CHANGE_REPORT => "状态变更上报",
                 FUNC_LOAD_STATUS_REPORT => "拉载状态上报",
