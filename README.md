@@ -178,7 +178,8 @@ dotnet publish "FCU 氢燃料电池控/FCU 氢燃料电池控.csproj" -c Release
 
 ### 2026-11-11（升级链路完整性修复）
 
-> 分支 `fix/upgrade-integrity-audit`（基于 master `13e2ac3`，**待同事审查，未合并**）。
+> 分支 `fix/upgrade-integrity-audit`（基于 master `13e2ac3`；2026-11-11 按东哥指示合并 master 并推送远程，
+> 同事审查结论回填于 `docs/评审记录-升级链路完整性修复.md` §三）。
 > 输入：同事 BL 部分核查报告三项发现，经逐条对源码复核属实后按 1→2→3 修复。
 
 - **强制全镜像读回校验**（核查问题1，高）：移除 `VERIFY_BY_UPLOAD` 联调开关，固化 (PROGRAM(0)) 后无条件 UPLOAD 全镜像比对（跳过 0x1D8 校验字 4 字节），不一致即中止——不重启、不报成功，设备留 BL 可重升。依据：BL 侧校验字仅覆盖前 7 个向量字（flash.c Two's complement），串口传输无校验字节（CS_TYPE=0），读回比对是整机完整性唯一保障。
